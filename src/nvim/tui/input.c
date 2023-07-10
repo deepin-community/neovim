@@ -2,23 +2,25 @@
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
 
+#include "nvim/api/private/helpers.h"
+#include "nvim/api/vim.h"
+#include "nvim/ascii.h"
+#include "nvim/autocmd.h"
+#include "nvim/charset.h"
+#include "nvim/ex_docmd.h"
+#include "nvim/macros.h"
+#include "nvim/main.h"
+#include "nvim/option.h"
+#include "nvim/os/input.h"
+#include "nvim/os/os.h"
+#include "nvim/tui/tui.h"
 #include "nvim/tui/input.h"
 #include "nvim/vim.h"
-#include "nvim/api/vim.h"
-#include "nvim/api/private/helpers.h"
-#include "nvim/ascii.h"
-#include "nvim/charset.h"
-#include "nvim/main.h"
-#include "nvim/macros.h"
-#include "nvim/aucmd.h"
-#include "nvim/ex_docmd.h"
-#include "nvim/option.h"
-#include "nvim/os/os.h"
-#include "nvim/os/input.h"
 #ifdef WIN32
 # include "nvim/os/os_win_console.h"
 #endif
 #include "nvim/event/rstream.h"
+#include "nvim/msgpack_rpc/channel.h"
 
 #define KEY_BUFFER_SIZE 0xfff
 
@@ -40,6 +42,7 @@ void tinput_init(TermInput *input, Loop *loop)
   input->paste = 0;
   input->in_fd = STDIN_FILENO;
   input->waiting_for_bg_response = 0;
+  input->extkeys_type = kExtkeysNone;
   // The main thread is waiting for the UI thread to call CONTINUE, so it can
   // safely access global variables.
   input->ttimeout = (bool)p_ttimeout;
@@ -53,7 +56,7 @@ void tinput_init(TermInput *input, Loop *loop)
   //    ls *.md | xargs nvim
 #ifdef WIN32
   if (!os_isatty(input->in_fd)) {
-      input->in_fd = os_get_conin_fd();
+    input->in_fd = os_get_conin_fd();
   }
 #else
   if (!os_isatty(input->in_fd) && os_isatty(STDERR_FILENO)) {
@@ -114,20 +117,39 @@ static void tinput_done_event(void **argv)
 static void tinput_wait_enqueue(void **argv)
 {
   TermInput *input = argv[0];
-  RBUFFER_UNTIL_EMPTY(input->key_buffer, buf, len) {
-    const String keys = { .data = buf, .size = len };
-    if (input->paste) {
-      String copy = copy_string(keys);
-      multiqueue_put(main_loop.events, tinput_paste_event, 3,
-                     copy.data, copy.size, (intptr_t)input->paste);
-      if (input->paste == 1) {
-        // Paste phase: "continue"
-        input->paste = 2;
-      }
-      rbuffer_consumed(input->key_buffer, len);
-      rbuffer_reset(input->key_buffer);
+  if (input->paste) {  // produce exactly one paste event
+    const size_t len = rbuffer_size(input->key_buffer);
+    String keys = { .data = xmallocz(len), .size = len };
+    rbuffer_read(input->key_buffer, keys.data, len);
+    if (ui_client_channel_id) {
+      Array args = ARRAY_DICT_INIT;
+      ADD(args, STRING_OBJ(keys));  // 'data'
+      ADD(args, BOOLEAN_OBJ(true));  // 'crlf'
+      ADD(args, INTEGER_OBJ(input->paste));  // 'phase'
+      rpc_send_event(ui_client_channel_id, "nvim_paste", args);
     } else {
-      const size_t consumed = input_enqueue(keys);
+      multiqueue_put(main_loop.events, tinput_paste_event, 3,
+                     keys.data, keys.size, (intptr_t)input->paste);
+    }
+    if (input->paste == 1) {
+      // Paste phase: "continue"
+      input->paste = 2;
+    }
+    rbuffer_reset(input->key_buffer);
+  } else {  // enqueue input for the main thread or Nvim server
+    RBUFFER_UNTIL_EMPTY(input->key_buffer, buf, len) {
+      const String keys = { .data = buf, .size = len };
+      size_t consumed;
+      if (ui_client_channel_id) {
+        Array args = ARRAY_DICT_INIT;
+        Error err = ERROR_INIT;
+        ADD(args, STRING_OBJ(copy_string(keys)));
+        // TODO(bfredl): could be non-blocking now with paste?
+        Object result = rpc_send_call(ui_client_channel_id, "nvim_input", args, &err);
+        consumed = result.type == kObjectTypeInteger ? (size_t)result.data.integer : 0;
+      } else {
+        consumed = input_enqueue(keys);
+      }
       if (consumed) {
         rbuffer_consumed(input->key_buffer, consumed);
       }
@@ -151,7 +173,7 @@ static void tinput_paste_event(void **argv)
   Error err = ERROR_INIT;
   nvim_paste(keys, true, phase, &err);
   if (ERROR_SET(&err)) {
-    emsgf("paste: %s", err.msg);
+    semsg("paste: %s", err.msg);
     api_clear_error(&err);
   }
 
@@ -221,7 +243,7 @@ static void forward_modified_utf8(TermInput *input, TermKeyKey *key)
         && !(key->modifiers & TERMKEY_KEYMOD_SHIFT)
         && ASCII_ISUPPER(key->code.codepoint)) {
       assert(len <= 62);
-      // Make remove for the S-
+      // Make room for the S-
       memmove(buf + 3, buf + 1, len - 1);
       buf[1] = 'S';
       buf[2] = '-';
@@ -279,25 +301,25 @@ static void forward_mouse_event(TermInput *input, TermKeyKey *key)
   }
 
   switch (ev) {
-    case TERMKEY_MOUSE_PRESS:
-      if (button == 4) {
-        len += (size_t)snprintf(buf + len, sizeof(buf) - len, "ScrollWheelUp");
-      } else if (button == 5) {
-        len += (size_t)snprintf(buf + len, sizeof(buf) - len,
-                                "ScrollWheelDown");
-      } else {
-        len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Mouse");
-        last_pressed_button = button;
-      }
-      break;
-    case TERMKEY_MOUSE_DRAG:
-      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Drag");
-      break;
-    case TERMKEY_MOUSE_RELEASE:
-      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Release");
-      break;
-    case TERMKEY_MOUSE_UNKNOWN:
-      abort();
+  case TERMKEY_MOUSE_PRESS:
+    if (button == 4) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "ScrollWheelUp");
+    } else if (button == 5) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len,
+                              "ScrollWheelDown");
+    } else {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Mouse");
+      last_pressed_button = button;
+    }
+    break;
+  case TERMKEY_MOUSE_DRAG:
+    len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Drag");
+    break;
+  case TERMKEY_MOUSE_RELEASE:
+    len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Release");
+    break;
+  case TERMKEY_MOUSE_UNKNOWN:
+    abort();
   }
 
   len += (size_t)snprintf(buf + len, sizeof(buf) - len, "><%d,%d>", col, row);
@@ -309,7 +331,6 @@ static TermKeyResult tk_getkey(TermKey *tk, TermKeyKey *key, bool force)
   return force ? termkey_getkey_force(tk, key) : termkey_getkey(tk, key);
 }
 
-static void tinput_timer_cb(TimeWatcher *watcher, void *data);
 
 static void tk_getkeys(TermInput *input, bool force)
 {
@@ -325,6 +346,39 @@ static void tk_getkeys(TermInput *input, bool force)
       forward_modified_utf8(input, &key);
     } else if (key.type == TERMKEY_TYPE_MOUSE) {
       forward_mouse_event(input, &key);
+    } else if (key.type == TERMKEY_TYPE_UNKNOWN_CSI) {
+      // There is no specified limit on the number of parameters a CSI sequence can contain, so just
+      // allocate enough space for a large upper bound
+      long args[16];
+      size_t nargs = 16;
+      unsigned long cmd;
+      if (termkey_interpret_csi(input->tk, &key, args, &nargs, &cmd) == TERMKEY_RES_KEY) {
+        uint8_t intermediate = (cmd >> 16) & 0xFF;
+        uint8_t initial = (cmd >> 8) & 0xFF;
+        uint8_t command = cmd & 0xFF;
+
+        // Currently unused
+        (void)intermediate;
+
+        if (input->waiting_for_csiu_response > 0) {
+          if (initial == '?' && command == 'u') {
+            // The first (and only) argument contains the current progressive
+            // enhancement flags. Only enable CSI u mode if the first bit
+            // (disambiguate escape codes) is not already set
+            if (nargs > 0 && (args[0] & 0x1) == 0) {
+              input->extkeys_type = kExtkeysCSIu;
+            } else {
+              input->extkeys_type = kExtkeysNone;
+            }
+          } else if (initial == '?' && command == 'c') {
+            // Received Primary Device Attributes response
+            input->waiting_for_csiu_response = 0;
+            tui_enable_extkeys(input->tui_data);
+          } else {
+            input->waiting_for_csiu_response--;
+          }
+        }
+      }
     }
   }
 
@@ -373,7 +427,7 @@ static bool handle_focus_event(TermInput *input)
     bool focus_gained = *rbuffer_get(input->read_stream.buffer, 2) == 'I';
     // Advance past the sequence
     rbuffer_consumed(input->read_stream.buffer, 3);
-    aucmd_schedule_focusgained(focus_gained);
+    autocmd_schedule_focusgained(focus_gained);
     return true;
   }
   return false;
@@ -418,22 +472,6 @@ static HandleState handle_bracketed_paste(TermInput *input)
     return kIncomplete;
   }
   return kNotApplicable;
-}
-
-// ESC NUL => <Esc>
-static bool handle_forced_escape(TermInput *input)
-{
-  if (rbuffer_size(input->read_stream.buffer) > 1
-      && !rbuffer_cmp(input->read_stream.buffer, "\x1b\x00", 2)) {
-    // skip the ESC and NUL and push one <esc> to the input buffer
-    size_t rcnt;
-    termkey_push_bytes(input->tk, rbuffer_read_ptr(input->read_stream.buffer,
-          &rcnt), 1);
-    rbuffer_consumed(input->read_stream.buffer, 2);
-    tk_getkeys(input, true);
-    return true;
-  }
-  return false;
 }
 
 static void set_bg_deferred(void **argv)
@@ -564,7 +602,6 @@ static void handle_raw_buffer(TermInput *input, bool force)
     if (!force
         && (handle_focus_event(input)
             || (is_paste = handle_bracketed_paste(input)) != kNotApplicable
-            || handle_forced_escape(input)
             || (is_bc = handle_background_color(input)) != kNotApplicable)) {
       if (is_paste == kIncomplete || is_bc == kIncomplete) {
         // Wait for the next input, leaving it in the raw buffer due to an
@@ -618,8 +655,7 @@ static void handle_raw_buffer(TermInput *input, bool force)
   } while (rbuffer_size(input->read_stream.buffer));
 }
 
-static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_,
-                           void *data, bool eof)
+static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_, void *data, bool eof)
 {
   TermInput *input = data;
 
@@ -637,7 +673,7 @@ static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_,
     // If 'ttimeout' is not set, start the timer with a timeout of 0 to process
     // the next input.
     long ms = input->ttimeout ?
-      (input->ttimeoutlen >= 0 ? input->ttimeoutlen : 0) : 0;
+              (input->ttimeoutlen >= 0 ? input->ttimeoutlen : 0) : 0;
     // Stop the current timer if already running
     time_watcher_stop(&input->timer_handle);
     time_watcher_start(&input->timer_handle, tinput_timer_cb, (uint32_t)ms, 0);

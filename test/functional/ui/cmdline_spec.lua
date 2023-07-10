@@ -4,6 +4,7 @@ local clear, feed = helpers.clear, helpers.feed
 local source = helpers.source
 local command = helpers.command
 local assert_alive = helpers.assert_alive
+local uname = helpers.uname
 
 local function new_screen(opt)
   local screen = Screen.new(25, 5)
@@ -14,6 +15,10 @@ local function new_screen(opt)
     [3] = {bold = true, reverse = true},
     [4] = {foreground = Screen.colors.Grey100, background = Screen.colors.Red},
     [5] = {bold = true, foreground = Screen.colors.SeaGreen4},
+    [6] = {foreground = Screen.colors.Magenta},
+    [7] = {bold = true, foreground = Screen.colors.Brown},
+    [8] = {background = Screen.colors.LightGrey},
+    [9] = {bold = true},
   })
   return screen
 end
@@ -267,7 +272,7 @@ local function test_cmdline(linegrid)
       special = {'"', true},
     }, {
       firstc = "=",
-      content = {{"1"}, {"+"}, {"2"}},
+      content = {{"1", 6}, {"+", 7}, {"2", 6}},
       pos = 3,
     }}
 
@@ -822,7 +827,7 @@ describe('cmdline redraw', function()
   end)
 
   it('with <Cmd>', function()
-    if 'openbsd' == helpers.uname() then
+    if string.find(uname(), 'bsd') then
       pending('FIXME #10804')
     end
     command('cmap a <Cmd>call sin(0)<CR>')  -- no-op
@@ -842,6 +847,37 @@ describe('cmdline redraw', function()
     :012345678901234567890123|
     456789^                   |
     ]], unchanged=true}
+  end)
+
+  it('after pressing Ctrl-C in cmdwin in Visual mode #18967', function()
+    screen:try_resize(40, 10)
+    command('set cmdwinheight=3')
+    feed('q:iabc<Esc>vhh')
+    screen:expect([[
+                                              |
+      {1:~                                       }|
+      {1:~                                       }|
+      {1:~                                       }|
+      {2:[No Name]                               }|
+      {1::}^a{8:bc}                                    |
+      {1:~                                       }|
+      {1:~                                       }|
+      {3:[Command Line]                          }|
+      {9:-- VISUAL --}                            |
+    ]])
+    feed('<C-C>')
+    screen:expect([[
+                                              |
+      {1:~                                       }|
+      {1:~                                       }|
+      {1:~                                       }|
+      {2:[No Name]                               }|
+      {1::}a{8:bc}                                    |
+      {1:~                                       }|
+      {1:~                                       }|
+      {3:[Command Line]                          }|
+      :^abc                                    |
+    ]])
   end)
 end)
 

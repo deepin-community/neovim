@@ -68,7 +68,7 @@ Syntax: clint.py [--verbose=#] [--output=vs7] [--filter=-x,+y,...]
         <file> [file] ...
 
   The style guidelines this tries to follow are those in
-    http://neovim.io/development-wiki/style-guide/style-guide.xml
+    http://neovim.io/develop/style-guide.xml
 
   Note: This is Google's cpplint.py modified for use with the Neovim project,
   which follows the Google C++ coding convention except with the following
@@ -191,7 +191,6 @@ _ERROR_CATEGORIES = [
     'readability/fn_size',
     'readability/multiline_comment',
     'readability/multiline_string',
-    'readability/nolint',
     'readability/nul',
     'readability/todo',
     'readability/utf8',
@@ -264,7 +263,7 @@ _error_suppressions_2 = set()
 
 # The allowed line length of files.
 # This is set by --linelength flag.
-_line_length = 80
+_line_length = 100
 
 # The allowed extensions for file names
 # This is set by --extensions flag.
@@ -298,9 +297,6 @@ def ParseNolintSuppressions(filename, raw_line, linenum, error):
                 if category in _ERROR_CATEGORIES:
                     _error_suppressions.setdefault(
                         category, set()).add(linenum)
-                else:
-                    error(filename, linenum, 'readability/nolint', 5,
-                          'Unknown NOLINT error category: %s' % category)
 
 
 def ParseKnownErrorSuppressions(filename, raw_lines, linenum):
@@ -373,7 +369,7 @@ def Search(pattern, s):
     return _regexp_compile_cache[pattern].search(s)
 
 
-class _IncludeState(dict):
+class _IncludeState(dict):  # lgtm [py/missing-equals]
 
     """Tracks line numbers for includes, and the order in which includes appear.
 
@@ -2544,6 +2540,7 @@ def CheckSpacing(filename, clean_lines, linenum, nesting_state, error):
                    r'(?<!\bPMap)'
                    r'(?<!\bArrayOf)'
                    r'(?<!\bDictionaryOf)'
+                   r'(?<!\bDict)'
                    r'\((?:const )?(?:struct )?[a-zA-Z_]\w*(?: *\*(?:const)?)*\)'
                    r' +'
                    r'-?(?:\*+|&)?(?:\w+|\+\+|--|\()', cast_line)
@@ -3190,8 +3187,8 @@ def CheckLanguage(filename, clean_lines, linenum, file_extension,
                        r'|li_(?:next|prev|tv))\b', line)
         if match:
             error(filename, linenum, 'runtime/deprecated', 4,
-                  'Accessing list_T internals directly is prohibited '
-                  '(hint: see commit d46e37cb4c71)')
+                  'Accessing list_T internals directly is prohibited; '
+                  'see https://github.com/neovim/neovim/wiki/List-management-in-Neovim')
 
     # Check for suspicious usage of "if" like
     # } if (a == b) {

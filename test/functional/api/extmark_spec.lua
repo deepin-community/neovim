@@ -12,6 +12,7 @@ local feed = helpers.feed
 local clear = helpers.clear
 local command = helpers.command
 local meths = helpers.meths
+local assert_alive = helpers.assert_alive
 
 local function expect(contents)
   return eq(contents, helpers.curbuf_contents())
@@ -103,10 +104,26 @@ describe('API/extmarks', function()
   it("can end extranges past final newline using end_col = 0", function()
     set_extmark(ns, marks[1], 0, 0, {
       end_col = 0,
-      end_line = 1
+      end_row = 1
     })
     eq("end_col value outside range",
-       pcall_err(set_extmark, ns, marks[2], 0, 0, { end_col = 1, end_line = 1 }))
+       pcall_err(set_extmark, ns, marks[2], 0, 0, { end_col = 1, end_row = 1 }))
+  end)
+
+  it("can end extranges past final newline when strict mode is false", function()
+    set_extmark(ns, marks[1], 0, 0, {
+      end_col = 1,
+      end_row = 1,
+      strict = false,
+    })
+  end)
+
+  it("can end extranges past final column when strict mode is false", function()
+    set_extmark(ns, marks[1], 0, 0, {
+      end_col = 6,
+      end_row = 0,
+      strict = false,
+    })
   end)
 
   it('adds, updates  and deletes marks', function()
@@ -419,7 +436,7 @@ describe('API/extmarks', function()
   end)
 
   it('marks move with open line', function()
-    -- open_line in misc1.c
+    -- open_line in change.c
     -- testing marks below are also moved
     feed("yyP")
     set_extmark(ns, marks[1], 0, 4)
@@ -488,7 +505,7 @@ describe('API/extmarks', function()
   end)
 
   it('marks move with line splits (using enter)', function()
-    -- open_line in misc1.c
+    -- open_line in change.c
     -- testing marks below are also moved
     feed("yyP")
     set_extmark(ns, marks[1], 0, 4)
@@ -499,7 +516,7 @@ describe('API/extmarks', function()
   end)
 
   it('marks at last line move on insert new line', function()
-    -- open_line in misc1.c
+    -- open_line in change.c
     set_extmark(ns, marks[1], 0, 4)
     feed('0i<cr><esc>')
     check_undo_redo(ns, marks[1], 0, 4, 1, 4)
@@ -907,7 +924,7 @@ describe('API/extmarks', function()
     eq(3, set_extmark(ns, 3, positions[2][1], positions[2][2]))
     eq(4, set_extmark(ns, 0, positions[1][1], positions[1][2]))
 
-    -- mixing manual and allocated id:s are not recommened, but it should
+    -- mixing manual and allocated id:s are not recommended, but it should
     -- do something reasonable
     eq(6, set_extmark(ns, 6, positions[2][1], positions[2][2]))
     eq(7, set_extmark(ns, 0, positions[1][1], positions[1][2]))
@@ -1381,13 +1398,13 @@ describe('API/extmarks', function()
   end)
 
   it('does not crash with append/delete/undo seqence', function()
-     meths.exec([[
+    meths.exec([[
       let ns = nvim_create_namespace('myplugin')
       call nvim_buf_set_extmark(0, ns, 0, 0, {})
       call append(0, '')
       %delete
       undo]],false)
-    eq(2, meths.eval('1+1')) -- did not crash
+    assert_alive()
   end)
 
   it('works with left and right gravity', function()
@@ -1422,6 +1439,67 @@ describe('API/extmarks', function()
     feed([["ap]])
     eq({ {1, 0, 0}, {2, 0, 8} },
         meths.buf_get_extmarks(0, ns, 0, -1, {}))
+  end)
+
+  it('can accept "end_row" or "end_line" #16548', function()
+    set_extmark(ns, marks[1], 0, 0, {
+      end_col = 0,
+      end_line = 1
+    })
+    eq({ {1, 0, 0, {
+      end_col = 0,
+      end_row = 1,
+      right_gravity = true,
+      end_right_gravity = false,
+    }} }, get_extmarks(ns, 0, -1, {details=true}))
+  end)
+
+  it('can get details', function()
+    set_extmark(ns, marks[1], 0, 0, {
+      end_col = 0,
+      end_row = 1,
+      right_gravity = false,
+      end_right_gravity = true,
+      priority = 0,
+      hl_eol = true,
+      hl_mode = "blend",
+      hl_group = "String",
+      virt_text = { { "text", "Statement" } },
+      virt_text_pos = "right_align",
+      virt_text_hide = true,
+      virt_lines = { { { "lines", "Statement" } }},
+      virt_lines_above = true,
+      virt_lines_leftcol = true,
+    })
+    set_extmark(ns, marks[2], 0, 0, {
+      priority = 0,
+      virt_text = { { "text", "Statement" } },
+      virt_text_win_col = 1,
+    })
+    eq({0, 0, {
+      end_col = 0,
+      end_row = 1,
+      right_gravity = false,
+      end_right_gravity = true,
+      priority = 0,
+      hl_eol = true,
+      hl_mode = "blend",
+      hl_group = "String",
+      virt_text = { { "text", "Statement" } },
+      virt_text_pos = "right_align",
+      virt_text_hide = true,
+      virt_lines = { { { "lines", "Statement" } }},
+      virt_lines_above = true,
+      virt_lines_leftcol = true,
+    } }, get_extmark_by_id(ns, marks[1], { details = true }))
+    eq({0, 0, {
+      right_gravity = true,
+      priority = 0,
+      virt_text = { { "text", "Statement" } },
+      virt_text_hide = false,
+      virt_text_pos = "win_col",
+      virt_text_win_col = 1,
+    } }, get_extmark_by_id(ns, marks[2], { details = true }))
   end)
 end)
 

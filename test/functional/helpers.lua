@@ -21,7 +21,6 @@ local map = global_helpers.tbl_map
 local ok = global_helpers.ok
 local sleep = global_helpers.sleep
 local tbl_contains = global_helpers.tbl_contains
-local write_file = global_helpers.write_file
 local fail = global_helpers.fail
 
 local module = {
@@ -38,17 +37,22 @@ module.nvim_prog = (
 module.nvim_set = (
   'set shortmess+=IS background=light noswapfile noautoindent startofline'
   ..' laststatus=1 undodir=. directory=. viewdir=. backupdir=.'
-  ..' belloff= wildoptions-=pum noshowcmd noruler nomore redrawdebug=invalid')
+  ..' belloff= wildoptions-=pum joinspaces noshowcmd noruler nomore redrawdebug=invalid')
 module.nvim_argv = {
   module.nvim_prog, '-u', 'NONE', '-i', 'NONE',
-  '--cmd', module.nvim_set, '--embed'}
+  '--cmd', module.nvim_set,
+  '--cmd', 'unmap Y',
+  '--cmd', 'unmap <C-L>',
+  '--cmd', 'iunmap <C-U>',
+  '--cmd', 'iunmap <C-W>',
+  '--embed'}
+
 -- Directory containing nvim.
 module.nvim_dir = module.nvim_prog:gsub("[/\\][^/\\]+$", "")
 if module.nvim_dir == module.nvim_prog then
   module.nvim_dir = "."
 end
 
-local tmpname = global_helpers.tmpname
 local iswin = global_helpers.iswin
 local prepend_argv
 
@@ -90,10 +94,7 @@ function module.get_session()
   return session
 end
 
-function module.set_session(s, keep)
-  if session and not keep then
-    session:close()
-  end
+function module.set_session(s)
   session = s
 end
 
@@ -360,7 +361,11 @@ local function remove_args(args, args_rm)
   return new_args
 end
 
-function module.spawn(argv, merge, env)
+function module.spawn(argv, merge, env, keep)
+  if session and not keep then
+    session:close()
+  end
+
   local child_stream = ChildProcessStream.spawn(
       merge and module.merge_args(prepend_argv, argv) or argv,
       env)
@@ -416,7 +421,7 @@ end
 
 -- Builds an argument list for use in clear().
 --
---@see clear() for parameters.
+---@see clear() for parameters.
 function module.new_argv(...)
   local args = {unpack(module.nvim_argv)}
   table.insert(args, '--headless')
@@ -444,6 +449,7 @@ function module.new_argv(...)
         'GCOV_ERROR_FILE',
         'XDG_DATA_DIRS',
         'TMPDIR',
+        'VIMRUNTIME',
       }) do
         if not env_tbl[k] then
           env_tbl[k] = os.getenv(k)
@@ -486,44 +492,38 @@ function module.feed_command(...)
   end
 end
 
-local sourced_fnames = {}
+-- @deprecated use nvim_exec()
 function module.source(code)
-  local fname = tmpname()
-  write_file(fname, code)
-  module.command('source '..fname)
-  -- DO NOT REMOVE FILE HERE.
-  -- do_source() has a habit of checking whether files are “same” by using inode
-  -- and device IDs. If you run two source() calls in quick succession there is
-  -- a good chance that underlying filesystem will reuse the inode, making files
-  -- appear as “symlinks” to do_source when it checks FileIDs. With current
-  -- setup linux machines (both QB, travis and mine(ZyX-I) with XFS) do reuse
-  -- inodes, Mac OS machines (again, both QB and travis) do not.
-  --
-  -- Files appearing as “symlinks” mean that both the first and the second
-  -- source() calls will use same SID, which may fail some tests which check for
-  -- exact numbers after `<SNR>` in e.g. function names.
-  sourced_fnames[#sourced_fnames + 1] = fname
-  return fname
+  module.exec(dedent(code))
 end
 
 function module.has_powershell()
   return module.eval('executable("'..(iswin() and 'powershell' or 'pwsh')..'")') == 1
 end
 
-function module.set_shell_powershell()
-  local shell = iswin() and 'powershell' or 'pwsh'
-  assert(module.has_powershell())
+--- Sets Nvim shell to powershell.
+---
+--- @param fake (boolean) If true, a fake will be used if powershell is not
+---             found on the system.
+--- @returns true if powershell was found on the system, else false.
+function module.set_shell_powershell(fake)
+  local found = module.has_powershell()
+  if not fake then
+    assert(found)
+  end
+  local shell = found and (iswin() and 'powershell' or 'pwsh') or module.testprg('pwsh-test')
   local set_encoding = '[Console]::InputEncoding=[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;'
   local cmd = set_encoding..'Remove-Item -Force '..table.concat(iswin()
     and {'alias:cat', 'alias:echo', 'alias:sleep'}
     or  {'alias:echo'}, ',')..';'
-  module.source([[
+  module.exec([[
     let &shell = ']]..shell..[['
     set shellquote= shellxquote=
-    let &shellpipe = '2>&1 | Out-File -Encoding UTF8 %s; exit $LastExitCode'
-    let &shellredir = '2>&1 | Out-File -Encoding UTF8 %s; exit $LastExitCode'
     let &shellcmdflag = '-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command ]]..cmd..[['
+    let &shellpipe = '2>&1 | Out-File -Encoding UTF8 %s; exit $LastExitCode'
+    let &shellredir = '-RedirectStandardOutput %s -NoNewWindow -Wait'
   ]])
+  return found
 end
 
 function module.nvim(method, ...)
@@ -567,7 +567,7 @@ function module.buf_lines(bufnr)
   return module.exec_lua("return vim.api.nvim_buf_get_lines((...), 0, -1, false)", bufnr)
 end
 
---@see buf_lines()
+---@see buf_lines()
 function module.curbuf_contents()
   module.poke_eventloop()  -- Before inspecting the buffer, do whatever.
   return table.concat(module.curbuf('get_lines', 0, -1, true), '\n')
@@ -779,29 +779,26 @@ function module.exec_lua(code, ...)
   return module.meths.exec_lua(code, {...})
 end
 
-function module.redir_exec(cmd)
-  module.meths.set_var('__redir_exec_cmd', cmd)
-  module.command([[
-    redir => g:__redir_exec_output
-      silent! execute g:__redir_exec_cmd
-    redir END
-  ]])
-  local ret = module.meths.get_var('__redir_exec_output')
-  module.meths.del_var('__redir_exec_output')
-  module.meths.del_var('__redir_exec_cmd')
-  return ret
-end
-
 function module.get_pathsep()
   return iswin() and '\\' or '/'
 end
 
+--- Gets the filesystem root dir, namely "/" or "C:/".
 function module.pathroot()
   local pathsep = package.config:sub(1,1)
   return iswin() and (module.nvim_dir:sub(1,2)..pathsep) or '/'
 end
 
--- Returns a valid, platform-independent $NVIM_LISTEN_ADDRESS.
+--- Gets the full `…/build/bin/{name}` path of a test program produced by
+--- `test/functional/fixtures/CMakeLists.txt`.
+---
+--- @param name (string) Name of the test program.
+function module.testprg(name)
+  local ext = module.iswin() and '.exe' or ''
+  return ('%s/%s%s'):format(module.nvim_dir, name, ext)
+end
+
+-- Returns a valid, platform-independent Nvim listen address.
 -- Useful for communicating with child instances.
 function module.new_pipename()
   -- HACK: Start a server temporarily, get the name, then stop it.
@@ -892,9 +889,6 @@ module = global_helpers.tbl_extend('error', module, global_helpers)
 return function(after_each)
   if after_each then
     after_each(function()
-      for _, fname in ipairs(sourced_fnames) do
-        os.remove(fname)
-      end
       check_logs()
       check_cores('build/bin/nvim')
       if session then

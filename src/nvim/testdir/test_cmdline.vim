@@ -7,6 +7,10 @@ func Test_complete_tab()
   call writefile(['testfile'], 'Xtestfile')
   call feedkeys(":e Xtestf\t\r", "tx")
   call assert_equal('testfile', getline(1))
+
+  " Pressing <Tab> after '%' completes the current file, also on MS-Windows
+  call feedkeys(":e %\t\r", "tx")
+  call assert_equal('e Xtestfile', @:)
   call delete('Xtestfile')
 endfunc
 
@@ -256,7 +260,7 @@ func Test_getcompletion()
   endif
   let groupcount = len(getcompletion('', 'event'))
   call assert_true(groupcount > 0)
-  let matchcount = len(getcompletion('File', 'event'))
+  let matchcount = len('File'->getcompletion('event'))
   call assert_true(matchcount > 0)
   call assert_true(groupcount > matchcount)
 
@@ -304,6 +308,11 @@ func Test_getcompletion()
   call assert_true(index(l, expand('sautest/')) >= 0)
   let l = getcompletion('NoMatch', 'dir')
   call assert_equal([], l)
+
+  if glob('~/*') !=# ''
+    let l = getcompletion('~/', 'dir')
+    call assert_true(l[0][0] ==# '~')
+  endif
 
   let l = getcompletion('exe', 'expression')
   call assert_true(index(l, 'executable(') >= 0)
@@ -418,6 +427,19 @@ func Test_getcompletion()
   let l = getcompletion('call paint', 'cmdline')
   call assert_equal([], l)
 
+  func T(a, c, p)
+    let g:cmdline_compl_params = [a:a, a:c, a:p]
+    return "oneA\noneB\noneC"
+  endfunc
+  command -nargs=1 -complete=custom,T MyCmd
+  let l = getcompletion('MyCmd ', 'cmdline')
+  call assert_equal(['oneA', 'oneB', 'oneC'], l)
+  call assert_equal(['', 'MyCmd ', 6], g:cmdline_compl_params)
+
+  delcommand MyCmd
+  delfunc T
+  unlet g:cmdline_compl_params
+
   " For others test if the name is recognized.
   let names = ['buffer', 'environment', 'file_in_path', 'mapping', 'tag', 'tag_listfiles', 'user']
   if has('cmdline_hist')
@@ -443,6 +465,51 @@ func Test_getcompletion()
 
   call assert_fails('call getcompletion("", "burp")', 'E475:')
   call assert_fails('call getcompletion("abc", [])', 'E475:')
+endfunc
+
+func Test_fullcommand()
+  let tests = {
+        \ '':           '',
+        \ ':':          '',
+        \ ':::':        '',
+        \ ':::5':       '',
+        \ 'not_a_cmd':  '',
+        \ 'Check':      '',
+        \ 'syntax':     'syntax',
+        \ ':syntax':    'syntax',
+        \ '::::syntax': 'syntax',
+        \ 'sy':         'syntax',
+        \ 'syn':        'syntax',
+        \ 'synt':       'syntax',
+        \ ':sy':        'syntax',
+        \ '::::sy':     'syntax',
+        \ 'match':      'match',
+        \ '2match':     'match',
+        \ '3match':     'match',
+        \ 'aboveleft':  'aboveleft',
+        \ 'abo':        'aboveleft',
+        \ 's':          'substitute',
+        \ '5s':         'substitute',
+        \ ':5s':        'substitute',
+        \ "'<,'>s":     'substitute',
+        \ ":'<,'>s":    'substitute',
+        \ 'CheckUni':   'CheckUnix',
+        \ 'CheckUnix':  'CheckUnix',
+  \ }
+
+  for [in, want] in items(tests)
+    call assert_equal(want, fullcommand(in))
+  endfor
+  call assert_equal('', fullcommand(v:_null_string))
+
+  call assert_equal('syntax', 'syn'->fullcommand())
+
+  command -buffer BufferLocalCommand :
+  command GlobalCommand :
+  call assert_equal('GlobalCommand', fullcommand('GlobalCom'))
+  call assert_equal('BufferLocalCommand', fullcommand('BufferL'))
+  delcommand BufferLocalCommand
+  delcommand GlobalCommand
 endfunc
 
 func Test_shellcmd_completion()
@@ -595,13 +662,26 @@ endfunc
 
 func Test_cmdline_complete_user_func()
   call feedkeys(":func Test_cmdline_complete_user\<Tab>\<Home>\"\<cr>", 'tx')
-  call assert_match('"func Test_cmdline_complete_user', @:)
+  call assert_match('"func Test_cmdline_complete_user_', @:)
   call feedkeys(":func s:ScriptL\<Tab>\<Home>\"\<cr>", 'tx')
   call assert_match('"func <SNR>\d\+_ScriptLocalFunction', @:)
 
   " g: prefix also works
   call feedkeys(":echo g:Test_cmdline_complete_user_f\<Tab>\<Home>\"\<cr>", 'tx')
   call assert_match('"echo g:Test_cmdline_complete_user_func', @:)
+
+  " using g: prefix does not result in just "g:" matches from a lambda
+  let Fx = { a ->  a }
+  call feedkeys(":echo g:\<Tab>\<Home>\"\<cr>", 'tx')
+  call assert_match('"echo g:[A-Z]', @:)
+
+  " existence of script-local dict function does not break user function name
+  " completion
+  function s:a_dict_func() dict
+  endfunction
+  call feedkeys(":call Test_cmdline_complete_user\<Tab>\<Home>\"\<cr>", 'tx')
+  call assert_match('"call Test_cmdline_complete_user_', @:)
+  delfunction s:a_dict_func
 endfunc
 
 func Test_cmdline_complete_user_names()
@@ -870,7 +950,7 @@ func Test_setcmdpos()
   call assert_equal('"12ab', @:)
 
   " setcmdpos() returns 1 when not editing the command line.
-  call assert_equal(1, setcmdpos(3))
+  call assert_equal(1, 3->setcmdpos())
 endfunc
 
 func Test_cmdline_overstrike()
@@ -1041,6 +1121,18 @@ func Test_cmdlineclear_tabenter()
 
   call StopVimInTerminal(buf)
   call delete('XtestCmdlineClearTabenter')
+endfunc
+
+func Test_cmdwin_tabpage()
+  tabedit
+  " v8.2.1919 isn't ported yet, so E492 is thrown after E11 here.
+  " v8.2.1183 also isn't ported yet, so we also can't assert E11 directly.
+  " For now, assert E11 and E492 separately. When v8.2.1183 is ported, the
+  " assert for E492 will fail and this workaround should be removed.
+  " call assert_fails("silent norm q/g	:I\<Esc>", 'E11:')
+  call assert_fails("silent norm q/g	", 'E11:')
+  call assert_fails("silent norm q/g	:I\<Esc>", 'E492:')
+  tabclose!
 endfunc
 
 " test that ";" works to find a match at the start of the first line

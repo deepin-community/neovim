@@ -2,6 +2,7 @@
 
 source shared.vim
 source check.vim
+source screendump.vim
 
 func Test_block_shift_multibyte()
   " Uses double-wide character.
@@ -18,6 +19,14 @@ func Test_block_shift_overflow()
   new
   normal ii
   exe "normal \<C-V>876543210>"
+  q!
+endfunc
+
+func Test_dotregister_paste()
+  new
+  exe "norm! ihello world\<esc>"
+  norm! 0ve".p
+  call assert_equal('hello world world', getline(1))
   q!
 endfunc
 
@@ -41,14 +50,6 @@ func Test_Visual_vapo()
   bwipe!
 endfunc
 
-func Test_dotregister_paste()
-  new
-  exe "norm! ihello world\<esc>"
-  norm! 0ve".p
-  call assert_equal('hello world world', getline(1))
-  q!
-endfunc
-
 func Test_Visual_inner_quote()
   new
   normal oxX
@@ -56,9 +57,37 @@ func Test_Visual_inner_quote()
   bwipe!
 endfunc
 
+" Test for Visual mode not being reset causing E315 error.
+func TriggerTheProblem()
+  " At this point there is no visual selection because :call reset it.
+  " Let's restore the selection:
+  normal gv
+  '<,'>del _
+  try
+      exe "normal \<Esc>"
+  catch /^Vim\%((\a\+)\)\=:E315/
+      echom 'Snap! E315 error!'
+      let g:msg = 'Snap! E315 error!'
+  endtry
+endfunc
+
+func Test_visual_mode_reset()
+  enew
+  let g:msg = "Everything's fine."
+  enew
+  setl buftype=nofile
+  call append(line('$'), 'Delete this line.')
+
+  " NOTE: this has to be done by a call to a function because executing :del
+  " the ex-way will require the colon operator which resets the visual mode
+  " thus preventing the problem:
+  exe "normal! GV:call TriggerTheProblem()\<CR>"
+  call assert_equal("Everything's fine.", g:msg)
+endfunc
+
 " Test for visual block shift and tab characters.
 func Test_block_shift_tab()
-  enew!
+  new
   call append(0, repeat(['one two three'], 5))
   call cursor(1,1)
   exe "normal i\<C-G>u"
@@ -67,7 +96,7 @@ func Test_block_shift_tab()
   call assert_equal('on1 two three', getline(2))
   call assert_equal('on1 two three', getline(5))
 
-  enew!
+  %d _
   call append(0, repeat(['abcdefghijklmnopqrstuvwxyz'], 5))
   call cursor(1,1)
   exe "normal \<C-V>4jI    \<Esc>j<<11|D"
@@ -92,12 +121,26 @@ func Test_block_shift_tab()
   call assert_equal("    abc\<Tab>\<Tab>defghijklmnopqrstuvwxyz", getline(4))
   call assert_equal("    abc\<Tab>    defghijklmnopqrstuvwxyz", getline(5))
 
-  enew!
+  " Test for block shift with space characters at the beginning and with
+  " 'noexpandtab' and 'expandtab'
+  %d _
+  call setline(1, ["      1", "      2", "      3"])
+  setlocal shiftwidth=2 noexpandtab
+  exe "normal gg\<C-V>3j>"
+  call assert_equal(["\t1", "\t2", "\t3"], getline(1, '$'))
+  %d _
+  call setline(1, ["      1", "      2", "      3"])
+  setlocal shiftwidth=2 expandtab
+  exe "normal gg\<C-V>3j>"
+  call assert_equal(["        1", "        2", "        3"], getline(1, '$'))
+  setlocal shiftwidth&
+
+  bw!
 endfunc
 
 " Tests Blockwise Visual when there are TABs before the text.
 func Test_blockwise_visual()
-  enew!
+  new
   call append(0, ['123456',
 	      \ '234567',
 	      \ '345678',
@@ -119,31 +162,35 @@ func Test_blockwise_visual()
 	      \ "\t\tsomext",
 	      \ "\t\ttesext"], getline(1, 7))
 
-  enew!
+  bw!
 endfunc
 
 " Test swapping corners in blockwise visual mode with o and O
 func Test_blockwise_visual_o_O()
-  enew!
+  new
 
   exe "norm! 10i.\<Esc>Y4P3lj\<C-V>4l2jr "
   exe "norm! gvO\<Esc>ra"
   exe "norm! gvO\<Esc>rb"
   exe "norm! gvo\<C-c>rc"
   exe "norm! gvO\<C-c>rd"
+  set selection=exclusive
+  exe "norm! gvOo\<C-c>re"
+  call assert_equal('...a   be.', getline(4))
+  exe "norm! gvOO\<C-c>rf"
+  set selection&
 
   call assert_equal(['..........',
         \            '...c   d..',
         \            '...     ..',
-        \            '...a   b..',
+        \            '...a   bf.',
         \            '..........'], getline(1, '$'))
 
-  enew!
+  bw!
 endfun
 
 " Test Virtual replace mode.
 func Test_virtual_replace()
-  throw 'skipped: TODO: '
   if exists('&t_kD')
     let save_t_kD = &t_kD
   endif
@@ -165,7 +212,6 @@ func Test_virtual_replace()
 	      \ ], getline(1, 6))
   normal G
   mark a
-  inoremap <C-D> <Del>
   exe "normal o0\<C-D>\nabcdefghi\njk\tlmn\n    opq\trst\n\<C-D>uvwxyz\n"
   exe "normal 'ajgR0\<C-D> 1\nA\nBCDEFGHIJ\n\tKL\nMNO\nPQR" . repeat("\<BS>", 29)
   call assert_equal([' 1',
@@ -241,35 +287,6 @@ func Test_virtual_replace2()
   " clean up
   %d_
   set bs&vim
-endfunc
-
-" Test for Visual mode not being reset causing E315 error.
-func TriggerTheProblem()
-  " At this point there is no visual selection because :call reset it.
-  " Let's restore the selection:
-  normal gv
-  '<,'>del _
-  try
-      exe "normal \<Esc>"
-  catch /^Vim\%((\a\+)\)\=:E315/
-      echom 'Snap! E315 error!'
-      let g:msg = 'Snap! E315 error!'
-  endtry
-endfunc
-
-func Test_visual_mode_reset()
-  enew
-  let g:msg = "Everything's fine."
-  enew
-  setl buftype=nofile
-  call append(line('$'), 'Delete this line.')
-
-  " NOTE: this has to be done by a call to a function because executing :del
-  " the ex-way will require the colon operator which resets the visual mode
-  " thus preventing the problem:
-  exe "normal! GV:call TriggerTheProblem()\<CR>"
-  call assert_equal("Everything's fine.", g:msg)
-
 endfunc
 
 func Test_Visual_word_textobject()
@@ -350,17 +367,6 @@ func Test_Visual_sentence_textobject()
   bwipe!
 endfunc
 
-func Test_curswant_not_changed()
-  new
-  call setline(1, ['one', 'two'])
-  au InsertLeave * call getcurpos()
-  call feedkeys("gg0\<C-V>jI123 \<Esc>j", 'xt')
-  call assert_equal([0, 2, 1, 0, 1], getcurpos())
-
-  bwipe!
-  au! InsertLeave
-endfunc
-
 func Test_Visual_paragraph_textobject()
   new
   call setline(1, ['First line.',
@@ -410,6 +416,17 @@ func Test_Visual_paragraph_textobject()
   bwipe!
 endfunc
 
+func Test_curswant_not_changed()
+  new
+  call setline(1, ['one', 'two'])
+  au InsertLeave * call getcurpos()
+  call feedkeys("gg0\<C-V>jI123 \<Esc>j", 'xt')
+  call assert_equal([0, 2, 1, 0, 1], getcurpos())
+
+  bwipe!
+  au! InsertLeave
+endfunc
+
 " Tests for "vaBiB", end could be wrong.
 func Test_Visual_Block()
   new
@@ -434,13 +451,15 @@ func Test_Visual_Block()
   close!
 endfunc
 
-func Test_visual_put_in_block()
+" Test for 'p'ut in visual block mode
+func Test_visual_block_put()
   new
-  call setline(1, ['xxxx', 'y∞yy', 'zzzz'])
-  normal 1G2yl
-  exe "normal 1G2l\<C-V>jjlp"
-  call assert_equal(['xxxx', 'y∞xx', 'zzxx'], getline(1, 3))
-  bwipe!
+  call append(0, ['One', 'Two', 'Three'])
+  normal gg
+  yank
+  call feedkeys("jl\<C-V>ljp", 'xt')
+  call assert_equal(['One', 'T', 'Tee', 'One', ''], getline(1, '$'))
+  bw!
 endfunc
 
 " Visual modes (v V CTRL-V) followed by an operator; count; repeating
@@ -611,6 +630,17 @@ func Test_characterwise_visual_mode()
   normal Gkvj$d
   call assert_equal(['', 'a', ''], getline(1, '$'))
 
+  " characterwise visual mode: replace a single character line and the eol
+  %d _
+  call setline(1, "a")
+  normal v$rx
+  call assert_equal(['x'], getline(1, '$'))
+
+  " replace a character with composing characters
+  call setline(1, "xã̳x")
+  normal gg0lvrb
+  call assert_equal("xbx", getline(1))
+
   bwipe!
 endfunc
 
@@ -645,6 +675,16 @@ func Test_characterwise_select_mode()
   call append('$', ['a', 'b', 'c'])
   exe "normal Gkgh\<Down>\<End>\<Del>"
   call assert_equal(['', 'a', ''], getline(1, '$'))
+
+  " CTRL-H in select mode behaves like 'x'
+  call setline(1, 'abcdef')
+  exe "normal! gggh\<Right>\<Right>\<Right>\<C-H>"
+  call assert_equal('ef', getline(1))
+
+  " CTRL-O in select mode switches to visual mode for one command
+  call setline(1, 'abcdef')
+  exe "normal! gggh\<C-O>3lm"
+  call assert_equal('mef', getline(1))
 
   sunmap <lt>End>
   sunmap <lt>Down>
@@ -745,8 +785,7 @@ endfunc
 func Test_visual_block_mode()
   new
   call append(0, '')
-  call setline(1, ['abcdefghijklm', 'abcdefghijklm', 'abcdefghijklm',
-        \ 'abcdefghijklm', 'abcdefghijklm'])
+  call setline(1, repeat(['abcdefghijklm'], 5))
   call cursor(1, 1)
 
   " Test shift-right of a block
@@ -764,6 +803,76 @@ func Test_visual_block_mode()
         \ 'axyzqqqqef mno        ghijklm',
         \ 'axyzqqqqefgmnoklm',
         \ 'abcdqqqqijklm'], getline(1, 5))
+
+  " Test 'C' to change till the end of the line
+  call cursor(3, 4)
+  exe "normal! \<C-V>j3lCooo"
+  call assert_equal(['axyooo', 'axyooo'], getline(3, 4))
+
+  " Test 'D' to delete till the end of the line
+  call cursor(3, 3)
+  exe "normal! \<C-V>j2lD"
+  call assert_equal(['ax', 'ax'], getline(3, 4))
+
+  " Test block insert with a short line that ends before the block
+  %d _
+  call setline(1, ["  one", "a", "  two"])
+  exe "normal gg\<C-V>2jIx"
+  call assert_equal(["  xone", "a", "  xtwo"], getline(1, '$'))
+
+  " Test block append at EOL with '$' and without '$'
+  %d _
+  call setline(1, ["one", "a", "two"])
+  exe "normal gg$\<C-V>2jAx"
+  call assert_equal(["onex", "ax", "twox"], getline(1, '$'))
+  %d _
+  call setline(1, ["one", "a", "two"])
+  exe "normal gg3l\<C-V>2jAx"
+  call assert_equal(["onex", "a  x", "twox"], getline(1, '$'))
+
+  " Test block replace with an empty line in the middle and use $ to jump to
+  " the end of the line.
+  %d _
+  call setline(1, ['one', '', 'two'])
+  exe "normal gg$\<C-V>2jrx"
+  call assert_equal(["onx", "", "twx"], getline(1, '$'))
+
+  " Test block replace with an empty line in the middle and move cursor to the
+  " end of the line
+  %d _
+  call setline(1, ['one', '', 'two'])
+  exe "normal gg2l\<C-V>2jrx"
+  call assert_equal(["onx", "", "twx"], getline(1, '$'))
+
+  " Replace odd number of characters with a multibyte character
+  %d _
+  call setline(1, ['abcd', 'efgh'])
+  exe "normal ggl\<C-V>2ljr\u1100"
+  call assert_equal(["a\u1100 ", "e\u1100 "], getline(1, '$'))
+
+  " During visual block append, if the cursor moved outside of the selected
+  " range, then the edit should not be applied to the block.
+  %d _
+  call setline(1, ['aaa', 'bbb', 'ccc'])
+  exe "normal 2G\<C-V>jAx\<Up>"
+  call assert_equal(['aaa', 'bxbb', 'ccc'], getline(1, '$'))
+
+  " During visual block append, if the cursor is moved before the start of the
+  " block, then the new text should be appended there.
+  %d _
+  call setline(1, ['aaa', 'bbb', 'ccc'])
+  exe "normal $\<C-V>2jA\<Left>x"
+  call assert_equal(['aaxa', 'bbxb', 'ccxc'], getline(1, '$'))
+  " Repeat the previous test but use 'l' to move the cursor instead of '$'
+  call setline(1, ['aaa', 'bbb', 'ccc'])
+  exe "normal! gg2l\<C-V>2jA\<Left>x"
+  call assert_equal(['aaxa', 'bbxb', 'ccxc'], getline(1, '$'))
+
+  " Change a characterwise motion to a blockwise motion using CTRL-V
+  %d _
+  call setline(1, ['123', '456', '789'])
+  exe "normal ld\<C-V>j"
+  call assert_equal(['13', '46', '789'], getline(1, '$'))
 
   " Test from ':help v_b_I_example'
   %d _
@@ -858,6 +967,15 @@ func Test_visual_block_mode()
 
   bwipe!
   set tabstop& shiftwidth&
+endfunc
+
+func Test_visual_force_motion_feedkeys()
+    onoremap <expr> i- execute('let g:mode = mode(1)')
+    call feedkeys('dvi-', 'x')
+    call assert_equal('nov', g:mode)
+    call feedkeys('di-', 'x')
+    call assert_equal('no', g:mode)
+    ounmap i-
 endfunc
 
 " Test block-insert using cursor keys for movement
@@ -987,6 +1105,15 @@ func Test_block_insert_replace_tabs()
   bwipe!
 endfunc
 
+func Test_visual_put_in_block()
+  new
+  call setline(1, ['xxxx', 'y∞yy', 'zzzz'])
+  normal 1G2yl
+  exe "normal 1G2l\<C-V>jjlp"
+  call assert_equal(['xxxx', 'y∞xx', 'zzxx'], getline(1, 3))
+  bwipe!
+endfunc
+
 func Test_visual_put_in_block_using_zp()
   new
   " paste using zP
@@ -1080,6 +1207,216 @@ func Test_visual_put_blockedit_zy_and_zp()
   call assert_equal(['aa', 'bbbbb', 'ccc', '', 'aaXX', 'bbbbbGGHHJ', 'cccRTZU'], getline(1, 7))
   set ve&vim
   bw!
+endfunc
+
+func Test_visual_block_yank_zy()
+  new
+  " this was reading before the start of the line
+  exe "norm o\<C-T>\<Esc>\<C-V>zy"
+  bwipe!
+endfunc
+
+func Test_visual_block_with_virtualedit()
+  CheckScreendump
+
+  let lines =<< trim END
+    call setline(1, ['aaaaaa', 'bbbb', 'cc'])
+    set virtualedit=block
+    normal G
+  END
+  call writefile(lines, 'XTest_block')
+
+  let buf = RunVimInTerminal('-S XTest_block', {'rows': 8, 'cols': 50})
+  call term_sendkeys(buf, "\<C-V>gg$")
+  call VerifyScreenDump(buf, 'Test_visual_block_with_virtualedit', {})
+
+  call term_sendkeys(buf, "\<Esc>gg\<C-V>G$")
+  call VerifyScreenDump(buf, 'Test_visual_block_with_virtualedit2', {})
+
+  " clean up
+  call term_sendkeys(buf, "\<Esc>")
+  call StopVimInTerminal(buf)
+  call delete('XTest_block')
+endfunc
+
+func Test_visual_block_ctrl_w_f()
+  " Emtpy block selected in new buffer should not result in an error.
+  au! BufNew foo sil norm f
+  edit foo
+
+  au! BufNew
+endfunc
+
+func Test_visual_block_append_invalid_char()
+  " this was going over the end of the line
+  new
+  call setline(1, ['	   let xxx', 'xxxxx', 'xxxxxxxxxxx'])
+  exe "normal 0\<C-V>jjA-\<Esc>"
+  call assert_equal(['	-   let xxx', 'xxxxx   -', 'xxxxxxxx-xxx'], getline(1, 3))
+  bwipe!
+endfunc
+
+func Test_visual_reselect_with_count()
+  " this was causing an illegal memory access
+  let lines =<< trim END
+
+
+
+      :
+      r<sfile>
+      exe "%norm e3\<c-v>kr\t"
+      :
+
+      :
+  END
+  call writefile(lines, 'XvisualReselect')
+  source XvisualReselect
+
+  bwipe!
+  call delete('XvisualReselect')
+endfunc
+
+func Test_visual_block_insert_round_off()
+  new
+  " The number of characters are tuned to fill a 4096 byte allocated block,
+  " so that valgrind reports going over the end.
+  call setline(1, ['xxxxx', repeat('0', 1350), "\t", repeat('x', 60)])
+  exe "normal gg0\<C-V>GI" .. repeat('0', 1320) .. "\<Esc>"
+  bwipe!
+endfunc
+
+" this was causing an ml_get error
+func Test_visual_exchange_windows()
+  enew!
+  new
+  call setline(1, ['foo', 'bar'])
+  exe "normal G\<C-V>gg\<C-W>\<C-X>OO\<Esc>"
+  bwipe!
+  bwipe!
+endfunc
+
+" this was leaving the end of the Visual area beyond the end of a line
+func Test_visual_ex_copy_line()
+  new
+  call setline(1, ["aaa", "bbbbbbbbbxbb"])
+  /x
+  exe "normal ggvjfxO"
+  t0
+  normal gNU
+  bwipe!
+endfunc
+
+" This was leaving the end of the Visual area beyond the end of a line.
+" Set 'undolevels' to start a new undo block.
+func Test_visual_undo_deletes_last_line()
+  new
+  call setline(1, ["aaa", "ccc", "dyd"])
+  set undolevels=100
+  exe "normal obbbbbbbbbxbb\<Esc>"
+  set undolevels=100
+  /y
+  exe "normal ggvjfxO"
+  undo
+  normal gNU
+
+  bwipe!
+endfunc
+
+func Test_visual_paste()
+  new
+
+  " v_p overwrites unnamed register.
+  call setline(1, ['xxxx'])
+  call setreg('"', 'foo')
+  call setreg('-', 'bar')
+  normal gg0vp
+  call assert_equal('x', @")
+  call assert_equal('x', @-)
+  call assert_equal('fooxxx', getline(1))
+  normal $vp
+  call assert_equal('x', @")
+  call assert_equal('x', @-)
+  call assert_equal('fooxxx', getline(1))
+  " Test with a different register as unnamed register.
+  call setline(2, ['baz'])
+  normal 2gg0"rD
+  call assert_equal('baz', @")
+  normal gg0vp
+  call assert_equal('f', @")
+  call assert_equal('f', @-)
+  call assert_equal('bazooxxx', getline(1))
+  normal $vp
+  call assert_equal('x', @")
+  call assert_equal('x', @-)
+  call assert_equal('bazooxxf', getline(1))
+
+  bwipe!
+endfunc
+
+func Test_visual_paste_clipboard()
+  CheckFeature clipboard_working
+
+  if has('gui')
+    " auto select feature breaks tests
+    set guioptions-=a
+  endif
+
+  " v_P does not overwrite unnamed register.
+  call setline(1, ['xxxx'])
+  call setreg('"', 'foo')
+  call setreg('-', 'bar')
+  normal gg0vP
+  call assert_equal('foo', @")
+  call assert_equal('bar', @-)
+  call assert_equal('fooxxx', getline(1))
+  normal $vP
+  call assert_equal('foo', @")
+  call assert_equal('bar', @-)
+  call assert_equal('fooxxfoo', getline(1))
+  " Test with a different register as unnamed register.
+  call setline(2, ['baz'])
+  normal 2gg0"rD
+  call assert_equal('baz', @")
+  normal gg0vP
+  call assert_equal('baz', @")
+  call assert_equal('bar', @-)
+  call assert_equal('bazooxxfoo', getline(1))
+  normal $vP
+  call assert_equal('baz', @")
+  call assert_equal('bar', @-)
+  call assert_equal('bazooxxfobaz', getline(1))
+
+  " Test for unnamed clipboard
+  set clipboard=unnamed
+  call setline(1, ['xxxx'])
+  call setreg('"', 'foo')
+  call setreg('-', 'bar')
+  call setreg('*', 'baz')
+  normal gg0vP
+  call assert_equal('foo', @")
+  call assert_equal('bar', @-)
+  call assert_equal('baz', @*)
+  call assert_equal('bazxxx', getline(1))
+
+  " Test for unnamedplus clipboard
+  if has('unnamedplus')
+    set clipboard=unnamedplus
+    call setline(1, ['xxxx'])
+    call setreg('"', 'foo')
+    call setreg('-', 'bar')
+    call setreg('+', 'baz')
+    normal gg0vP
+    call assert_equal('foo', @")
+    call assert_equal('bar', @-)
+    call assert_equal('baz', @+)
+    call assert_equal('bazxxx', getline(1))
+  endif
+
+  set clipboard&
+  if has('gui')
+    set guioptions&
+  endif
+  bwipe!
 endfunc
 
 

@@ -1,3 +1,2 @@
-version=3
-#opts=filenamemangle=s/.*v([0-9.]+)\.tar\.gz/neovim-$1.tar.gz/ \
-https://github.com/neovim/neovim/releases/ (?:.*/)?v([0-9.]+)\.tar\.gz
+version=4
+https://github.com/neovim/neovim/tags/ (?:.*/)?v([0-9.]+)\.tar\.gz

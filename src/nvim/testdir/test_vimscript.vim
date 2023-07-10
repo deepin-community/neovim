@@ -1,6 +1,9 @@
 " Test various aspects of the Vim script language.
 " Most of this was formerly in test49.
 
+source check.vim
+source shared.vim
+
 "-------------------------------------------------------------------------------
 " Test environment							    {{{1
 "-------------------------------------------------------------------------------
@@ -25,7 +28,7 @@ com! -nargs=1	     Xout     call Xout(<args>)
 " in the variable argument list.  This function is useful if similar tests are
 " to be made for a ":return" from a function call or a ":finish" in a script
 " file.
-function! MakeScript(funcname, ...)
+func MakeScript(funcname, ...)
     let script = tempname()
     execute "redir! >" . script
     execute "function" a:funcname
@@ -635,7 +638,7 @@ function! MSG(enr, emsg)
 	if v:errmsg == ""
 	    Xout "Message missing."
 	else
-	    let v:errmsg = escape(v:errmsg, '"')
+	    let v:errmsg = v:errmsg->escape('"')
 	    Xout "Unexpected message:" v:errmsg
 	endif
     endif
@@ -1152,6 +1155,86 @@ func Test_type()
     call assert_equal(v:t_float, type(0.0))
     call assert_equal(v:t_bool, type(v:false))
     call assert_equal(v:t_bool, type(v:true))
+    call assert_equal(v:t_string, type(v:_null_string))
+    call assert_equal(v:t_list, type(v:_null_list))
+    call assert_equal(v:t_dict, type(v:_null_dict))
+    call assert_equal(v:t_blob, type(v:_null_blob))
+
+    call assert_equal(0, 0 + v:false)
+    call assert_equal(1, 0 + v:true)
+    " call assert_equal(0, 0 + v:none)
+    call assert_equal(0, 0 + v:null)
+
+    call assert_equal('false', '' . v:false)
+    call assert_equal('true', '' . v:true)
+    " call assert_equal('none', '' . v:none)
+    call assert_equal('null', '' . v:null)
+
+    call assert_true(v:false == 0)
+    call assert_false(v:false != 0)
+    call assert_true(v:true == 1)
+    call assert_false(v:true != 1)
+    call assert_false(v:true == v:false)
+    call assert_true(v:true != v:false)
+
+    call assert_true(v:null == 0)
+    call assert_false(v:null != 0)
+    " call assert_true(v:none == 0)
+    " call assert_false(v:none != 0)
+
+    call assert_true(v:false is v:false)
+    call assert_true(v:true is v:true)
+    " call assert_true(v:none is v:none)
+    call assert_true(v:null is v:null)
+
+    call assert_false(v:false isnot v:false)
+    call assert_false(v:true isnot v:true)
+    " call assert_false(v:none isnot v:none)
+    call assert_false(v:null isnot v:null)
+
+    call assert_false(v:false is 0)
+    call assert_false(v:true is 1)
+    call assert_false(v:true is v:false)
+    " call assert_false(v:none is 0)
+    call assert_false(v:null is 0)
+    " call assert_false(v:null is v:none)
+
+    call assert_true(v:false isnot 0)
+    call assert_true(v:true isnot 1)
+    call assert_true(v:true isnot v:false)
+    " call assert_true(v:none isnot 0)
+    call assert_true(v:null isnot 0)
+    " call assert_true(v:null isnot v:none)
+
+    call assert_equal(v:false, eval(string(v:false)))
+    call assert_equal(v:true, eval(string(v:true)))
+    " call assert_equal(v:none, eval(string(v:none)))
+    call assert_equal(v:null, eval(string(v:null)))
+
+    call assert_equal(v:false, copy(v:false))
+    call assert_equal(v:true, copy(v:true))
+    " call assert_equal(v:none, copy(v:none))
+    call assert_equal(v:null, copy(v:null))
+
+    call assert_equal([v:false], deepcopy([v:false]))
+    call assert_equal([v:true], deepcopy([v:true]))
+    " call assert_equal([v:none], deepcopy([v:none]))
+    call assert_equal([v:null], deepcopy([v:null]))
+
+    call assert_true(empty(v:false))
+    call assert_false(empty(v:true))
+    call assert_true(empty(v:null))
+    " call assert_true(empty(v:none))
+
+    func ChangeYourMind()
+	try
+	    return v:true
+	finally
+	    return 'something else'
+	endtry
+    endfunc
+
+    call ChangeYourMind()
 endfunc
 
 "-------------------------------------------------------------------------------
@@ -1372,6 +1455,7 @@ func Test_bitwise_functions()
     " and
     call assert_equal(127, and(127, 127))
     call assert_equal(16, and(127, 16))
+    eval 127->and(16)->assert_equal(16)
     call assert_equal(0, and(127, 128))
     call assert_fails("call and(1.0, 1)", 'E805:')
     call assert_fails("call and([], 1)", 'E745:')
@@ -1382,6 +1466,7 @@ func Test_bitwise_functions()
     " or
     call assert_equal(23, or(16, 7))
     call assert_equal(15, or(8, 7))
+    eval 8->or(7)->assert_equal(15)
     call assert_equal(123, or(0, 123))
     call assert_fails("call or(1.0, 1)", 'E805:')
     call assert_fails("call or([], 1)", 'E745:')
@@ -1392,6 +1477,7 @@ func Test_bitwise_functions()
     " xor
     call assert_equal(0, xor(127, 127))
     call assert_equal(111, xor(127, 16))
+    eval 127->xor(16)->assert_equal(111)
     call assert_equal(255, xor(127, 128))
     call assert_fails("call xor(1.0, 1)", 'E805:')
     call assert_fails("call xor([], 1)", 'E745:')
@@ -1401,6 +1487,7 @@ func Test_bitwise_functions()
     call assert_fails("call xor(1, {})", 'E728:')
     " invert
     call assert_equal(65408, and(invert(127), 65535))
+    eval 127->invert()->and(65535)->assert_equal(65408)
     call assert_equal(65519, and(invert(16), 65535))
     call assert_equal(65407, and(invert(128), 65535))
     call assert_fails("call invert(1.0)", 'E805:')
@@ -1660,7 +1747,7 @@ func Test_function_defined_line()
     [CODE]
 
     call writefile(lines, 'Xtest.vim')
-    let res = system(v:progpath .. ' --clean -es -X -S Xtest.vim')
+    let res = system(GetVimCommandClean() .. ' -es -X -S Xtest.vim')
     call assert_equal(0, v:shell_error)
 
     let m = matchstr(res, 'function F1()[^[:print:]]*[[:print:]]*')
@@ -1682,6 +1769,26 @@ func Test_function_defined_line()
     call assert_match(' line 23$', m)
 
     call delete('Xtest.vim')
+endfunc
+
+func Test_for_over_string()
+  let res = ''
+  for c in 'aéc̀d'
+    let res ..= c .. '-'
+  endfor
+  call assert_equal('a-é-c̀-d-', res)
+
+  let res = ''
+  for c in ''
+    let res ..= c .. '-'
+  endfor
+  call assert_equal('', res)
+
+  let res = ''
+  for c in v:_null_string
+    let res ..= c .. '-'
+  endfor
+  call assert_equal('', res)
 endfunc
 
 "-------------------------------------------------------------------------------

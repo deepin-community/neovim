@@ -104,6 +104,8 @@ when the last window also has a status line:
 	'laststatus' = 0	never a status line
 	'laststatus' = 1	status line if there is more than one window
 	'laststatus' = 2	always a status line
+	'laststatus' = 3	have a global statusline at the bottom instead
+				of one for each window
 
 You can change the contents of the status line with the 'statusline' option.
 This option can be local to the window, so that you can have a different
@@ -116,13 +118,15 @@ other windows.  If 'mouse' is enabled, a status line can be dragged to resize
 windows.
 
 							*filler-lines*
-The lines after the last buffer line in a window are called filler lines.
-These lines start with a tilde (~) character. By default, these are
-highlighted as NonText (|hl-NonText|). The EndOfBuffer highlight group
-(|hl-EndOfBuffer|) can be used to change the highlighting of filler lines.
+The lines after the last buffer line in a window are called filler lines.  By
+default, these lines start with a tilde (~) character. The 'eob' item in the
+'fillchars' option can be used to change this character. By default, these
+characters are highlighted as NonText (|hl-NonText|). The EndOfBuffer
+highlight group (|hl-EndOfBuffer|) can be used to change the highlighting of
+the filler characters.
 
 ==============================================================================
-3. Opening and closing a window				*opening-window* *E36*
+3. Opening and closing a window				*opening-window*
 
 CTRL-W s						*CTRL-W_s*
 CTRL-W S						*CTRL-W_S*
@@ -221,6 +225,10 @@ CTRL-W ge						*CTRL-W_ge*
 
 Note that the 'splitbelow' and 'splitright' options influence where a new
 window will appear.
+								*E36*
+Creating a window will fail if there is not enough room.  Every window needs
+at least one screen line and column, sometimes more.   Options 'winminheight'
+and 'winminwidth' are relevant.
 
 						*:vert* *:vertical*
 :vert[ical] {cmd}
@@ -271,7 +279,7 @@ Closing a window
 ----------------
 
 :q[uit]
-:{count}q[uit]
+:{count}q[uit]						*:count_quit*
 CTRL-W q						*CTRL-W_q*
 CTRL-W CTRL-Q						*CTRL-W_CTRL-Q*
 		Without {count}: Quit the current window. If {count} is
@@ -363,7 +371,8 @@ CTRL-W CTRL-C						*CTRL-W_CTRL-C*
 CTRL-W o						*CTRL-W_o* *E445*
 CTRL-W CTRL-O					*CTRL-W_CTRL-O* *:on* *:only*
 		Make the current window the only one on the screen. All other
-		windows are closed. For {count} see |:quit|.
+		windows are closed.  For {count} see the `:quit` command
+ 		above |:count_quit|.
 
 		When the 'hidden' option is set, all buffers in closed windows
 		become hidden.
@@ -440,7 +449,7 @@ These commands can also be executed with ":wincmd":
 		the |CursorHold| autocommand event).  Or when a Normal mode
 		command is inconvenient.
 		The count can also be a window number.  Example: >
-			:exe nr . "wincmd w"
+			:exe nr .. "wincmd w"
 <		This goes to window "nr".
 
 ==============================================================================
@@ -902,12 +911,12 @@ CTRL-W g }						*CTRL-W_g}*
 		cursor.  This is less clever than using |:ptag|, but you don't
 		need a tags file and it will also find matches in system
 		include files.  Example: >
-  :au! CursorHold *.[ch] ++nested exe "silent! psearch " . expand("<cword>")
+  :au! CursorHold *.[ch] ++nested exe "silent! psearch " .. expand("<cword>")
 <		Warning: This can be slow.
 
 Example						*CursorHold-example*  >
 
-  :au! CursorHold *.[ch] ++nested exe "silent! ptag " . expand("<cword>")
+  :au! CursorHold *.[ch] ++nested exe "silent! ptag " .. expand("<cword>")
 
 This will cause a ":ptag" to be executed for the keyword under the cursor,
 when the cursor hasn't moved for the time set with 'updatetime'.  "++nested"
@@ -930,14 +939,14 @@ is no word under the cursor, and a few other things: >
   :
   :    " Delete any existing highlight before showing another tag
   :    silent! wincmd P			" jump to preview window
-  :    if &previewwindow			" if we really get there...
+  :    if &previewwindow		" if we really get there...
   :      match none			" delete existing highlight
   :      wincmd p			" back to old window
   :    endif
   :
   :    " Try displaying a matching tag for the word under the cursor
   :    try
-  :       exe "ptag " . w
+  :       exe "ptag " .. w
   :    catch
   :      return
   :    endtry
@@ -949,10 +958,10 @@ is no word under the cursor, and a few other things: >
   :	 endif
   :	 call search("$", "b")		" to end of previous line
   :	 let w = substitute(w, '\\', '\\\\', "")
-  :	 call search('\<\V' . w . '\>')	" position cursor on match
+  :	 call search('\<\V' .. w .. '\>')	" position cursor on match
   :	 " Add a match highlight to the word at this position
   :      hi previewWord term=bold ctermbg=green guibg=green
-  :	 exe 'match previewWord "\%' . line(".") . 'l\%' . col(".") . 'c\k*"'
+  :	 exe 'match previewWord "\%' .. line(".") .. 'l\%' .. col(".") .. 'c\k*"'
   :      wincmd p			" back to old window
   :    endif
   :  endif

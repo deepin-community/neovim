@@ -3,8 +3,9 @@
 source shared.vim
 source check.vim
 source term_util.vim
+source screendump.vim
 
-func! s:cleanup_buffers() abort
+func s:cleanup_buffers() abort
   for bnr in range(1, bufnr('$'))
     if bufloaded(bnr) && bufnr('%') != bnr
       execute 'bd! ' . bnr
@@ -33,7 +34,7 @@ if has('timers')
     let g:triggered = 0
     au CursorHoldI * let g:triggered += 1
     set updatetime=20
-    call timer_start(LoadAdjust(100), 'ExitInsertMode')
+    call timer_start(LoadAdjust(200), 'ExitInsertMode')
     call feedkeys('a', 'x!')
     call assert_equal(1, g:triggered)
     unlet g:triggered
@@ -42,9 +43,7 @@ if has('timers')
   endfunc
 
   func Test_cursorhold_insert_with_timer_interrupt()
-    if !has('job')
-      return
-    endif
+    CheckFeature job
     " Need to move the cursor.
     call feedkeys("ggG", "xt")
 
@@ -224,6 +223,7 @@ func Test_win_tab_autocmd()
 
   augroup testing
     au WinNew * call add(g:record, 'WinNew')
+    au WinClosed * call add(g:record, 'WinClosed')
     au WinEnter * call add(g:record, 'WinEnter') 
     au WinLeave * call add(g:record, 'WinLeave') 
     au TabNew * call add(g:record, 'TabNew')
@@ -240,8 +240,8 @@ func Test_win_tab_autocmd()
   call assert_equal([
 	\ 'WinLeave', 'WinNew', 'WinEnter',
 	\ 'WinLeave', 'TabLeave', 'WinNew', 'WinEnter', 'TabNew', 'TabEnter',
-	\ 'WinLeave', 'TabLeave', 'TabClosed', 'WinEnter', 'TabEnter',
-	\ 'WinLeave', 'WinEnter'
+	\ 'WinLeave', 'TabLeave', 'WinClosed', 'TabClosed', 'WinEnter', 'TabEnter',
+	\ 'WinLeave', 'WinClosed', 'WinEnter'
 	\ ], g:record)
 
   let g:record = []
@@ -252,13 +252,164 @@ func Test_win_tab_autocmd()
   call assert_equal([
 	\ 'WinLeave', 'TabLeave', 'WinNew', 'WinEnter', 'TabNew', 'TabEnter',
 	\ 'WinLeave', 'TabLeave', 'WinEnter', 'TabEnter',
-	\ 'TabClosed'
+	\ 'WinClosed', 'TabClosed'
 	\ ], g:record)
 
   augroup testing
     au!
   augroup END
   unlet g:record
+endfunc
+
+func Test_WinScrolled()
+  CheckRunVimInTerminal
+
+  let lines =<< trim END
+    set nowrap scrolloff=0
+    for ii in range(1, 18)
+      call setline(ii, repeat(nr2char(96 + ii), ii * 2))
+    endfor
+    let win_id = win_getid()
+    let g:matched = v:false
+    execute 'au WinScrolled' win_id 'let g:matched = v:true'
+    let g:scrolled = 0
+    au WinScrolled * let g:scrolled += 1
+    au WinScrolled * let g:amatch = str2nr(expand('<amatch>'))
+    au WinScrolled * let g:afile = str2nr(expand('<afile>'))
+  END
+  call writefile(lines, 'Xtest_winscrolled')
+  let buf = RunVimInTerminal('-S Xtest_winscrolled', {'rows': 6})
+
+  call term_sendkeys(buf, ":echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^0 ', term_getline(buf, 6))}, 1000)
+
+  " Scroll left/right in Normal mode.
+  call term_sendkeys(buf, "zlzh:echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^2 ', term_getline(buf, 6))}, 1000)
+
+  " Scroll up/down in Normal mode.
+  call term_sendkeys(buf, "\<c-e>\<c-y>:echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^4 ', term_getline(buf, 6))}, 1000)
+
+  " Scroll up/down in Insert mode.
+  call term_sendkeys(buf, "Mi\<c-x>\<c-e>\<Esc>i\<c-x>\<c-y>\<Esc>")
+  call term_sendkeys(buf, ":echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^6 ', term_getline(buf, 6))}, 1000)
+
+  " Scroll the window horizontally to focus the last letter of the third line
+  " containing only six characters. Moving to the previous and shorter lines
+  " should trigger another autocommand as Vim has to make them visible.
+  call term_sendkeys(buf, "5zl2k")
+  call term_sendkeys(buf, ":echo g:scrolled\<CR>")
+  call WaitForAssert({-> assert_match('^8 ', term_getline(buf, 6))}, 1000)
+
+  " Ensure the command was triggered for the specified window ID.
+  call term_sendkeys(buf, ":echo g:matched\<CR>")
+  call WaitForAssert({-> assert_match('^v:true ', term_getline(buf, 6))}, 1000)
+
+  " Ensure the expansion of <amatch> and <afile> matches the window ID.
+  call term_sendkeys(buf, ":echo g:amatch == win_id && g:afile == win_id\<CR>")
+  call WaitForAssert({-> assert_match('^v:true ', term_getline(buf, 6))}, 1000)
+
+  call StopVimInTerminal(buf)
+  call delete('Xtest_winscrolled')
+endfunc
+
+func Test_WinScrolled_close_curwin()
+  CheckRunVimInTerminal
+
+  let lines =<< trim END
+    set nowrap scrolloff=0
+    call setline(1, ['aaa', 'bbb'])
+    vsplit
+    au WinScrolled * close
+    au VimLeave * call writefile(['123456'], 'Xtestout')
+  END
+  call writefile(lines, 'Xtest_winscrolled_close_curwin')
+  let buf = RunVimInTerminal('-S Xtest_winscrolled_close_curwin', {'rows': 6})
+
+  " This was using freed memory
+  call term_sendkeys(buf, "\<C-E>")
+  call TermWait(buf)
+  call StopVimInTerminal(buf)
+
+  call assert_equal(['123456'], readfile('Xtestout'))
+
+  call delete('Xtest_winscrolled_close_curwin')
+  call delete('Xtestout')
+endfunc
+
+func Test_WinClosed()
+  " Test that the pattern is matched against the closed window's ID, and both
+  " <amatch> and <afile> are set to it.
+  new
+  let winid = win_getid()
+  let g:matched = v:false
+  augroup test-WinClosed
+    autocmd!
+    execute 'autocmd WinClosed' winid 'let g:matched = v:true'
+    autocmd WinClosed * let g:amatch = str2nr(expand('<amatch>'))
+    autocmd WinClosed * let g:afile = str2nr(expand('<afile>'))
+  augroup END
+  close
+  call assert_true(g:matched)
+  call assert_equal(winid, g:amatch)
+  call assert_equal(winid, g:afile)
+
+  " Test that WinClosed is non-recursive.
+  new
+  new
+  call assert_equal(3, winnr('$'))
+  let g:triggered = 0
+  augroup test-WinClosed
+    autocmd!
+    autocmd WinClosed * let g:triggered += 1
+    autocmd WinClosed * 2 wincmd c
+  augroup END
+  close
+  call assert_equal(1, winnr('$'))
+  call assert_equal(1, g:triggered)
+
+  autocmd! test-WinClosed
+  augroup! test-WinClosed
+  unlet g:matched
+  unlet g:amatch
+  unlet g:afile
+  unlet g:triggered
+endfunc
+
+func Test_WinClosed_throws()
+  vnew
+  let bnr = bufnr()
+  call assert_equal(1, bufloaded(bnr))
+  augroup test-WinClosed
+    autocmd WinClosed * throw 'foo'
+  augroup END
+  try
+    close
+  catch /.*/
+  endtry
+  call assert_equal(0, bufloaded(bnr))
+
+  autocmd! test-WinClosed
+  augroup! test-WinClosed
+endfunc
+
+func Test_WinClosed_throws_with_tabs()
+  tabnew
+  let bnr = bufnr()
+  call assert_equal(1, bufloaded(bnr))
+  augroup test-WinClosed
+    autocmd WinClosed * throw 'foo'
+  augroup END
+  try
+    close
+  catch /.*/
+  endtry
+  call assert_equal(0, bufloaded(bnr))
+
+  autocmd! test-WinClosed
+  augroup! test-WinClosed
 endfunc
 
 func s:AddAnAutocmd()
@@ -464,7 +615,7 @@ func Test_autocmd_bufwipe_in_SessLoadPost()
   [CODE]
 
   call writefile(content, 'Xvimrc')
-  call system(v:progpath. ' --headless -i NONE -u Xvimrc --noplugins -S Session.vim -c cq')
+  call system(GetVimCommand('Xvimrc') .. ' --headless --noplugins -S Session.vim -c cq')
   let errors = join(readfile('Xerrors'))
   call assert_match('E814', errors)
 
@@ -488,8 +639,7 @@ func Test_autocmd_blast_badd()
 
   call writefile(content, 'XblastBall')
   call system(GetVimCommand() .. ' --clean -S XblastBall')
-  " call assert_match('OK', readfile('Xerrors')->join())
-  call assert_match('OK', join(readfile('Xerrors')))
+  call assert_match('OK', readfile('Xerrors')->join())
 
   call delete('XblastBall')
   call delete('Xerrors')
@@ -525,7 +675,7 @@ func Test_autocmd_bufwipe_in_SessLoadPost2()
   [CODE]
 
   call writefile(content, 'Xvimrc')
-  call system(v:progpath. ' --headless -i NONE -u Xvimrc --noplugins -S Session.vim -c cq')
+  call system(GetVimCommand('Xvimrc') .. ' --headless --noplugins -S Session.vim -c cq')
   let errors = join(readfile('Xerrors'))
   " This probably only ever matches on unix.
   call assert_notmatch('Caught deadly signal SEGV', errors)
@@ -542,148 +692,610 @@ func Test_empty_doau()
 endfunc
 
 func s:AutoCommandOptionSet(match)
+  let template = "Option: <%s>, OldVal: <%s>, OldValLocal: <%s>, OldValGlobal: <%s>, NewVal: <%s>, Scope: <%s>, Command: <%s>\n"
   let item     = remove(g:options, 0)
-  let expected = printf("Option: <%s>, Oldval: <%s>, NewVal: <%s>, Scope: <%s>\n", item[0], item[1], item[2], item[3])
-  let actual   = printf("Option: <%s>, Oldval: <%s>, NewVal: <%s>, Scope: <%s>\n", a:match, v:option_old, v:option_new, v:option_type)
+  let expected = printf(template, item[0], item[1], item[2], item[3], item[4], item[5], item[6])
+  let actual   = printf(template, a:match, v:option_old, v:option_oldlocal, v:option_oldglobal, v:option_new, v:option_type, v:option_command)
   let g:opt    = [expected, actual]
   "call assert_equal(expected, actual)
 endfunc
 
 func Test_OptionSet()
   CheckFunction test_override
-  if !has("eval") || !exists("+autochdir")
-    return
-  endif
+  CheckOption autochdir
 
   call test_override('starting', 1)
   set nocp
   au OptionSet * :call s:AutoCommandOptionSet(expand("<amatch>"))
 
   " 1: Setting number option"
-  let g:options = [['number', 0, 1, 'global']]
+  let g:options = [['number', 0, 0, 0, 1, 'global', 'set']]
   set nu
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 2: Setting local number option"
-  let g:options = [['number', 1, 0, 'local']]
+  let g:options = [['number', 1, 1, '', 0, 'local', 'setlocal']]
   setlocal nonu
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 3: Setting global number option"
-  let g:options = [['number', 1, 0, 'global']]
+  let g:options = [['number', 1, '', 1, 0, 'global', 'setglobal']]
   setglobal nonu
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 4: Setting local autoindent option"
-  let g:options = [['autoindent', 0, 1, 'local']]
+  let g:options = [['autoindent', 0, 0, '', 1, 'local', 'setlocal']]
   setlocal ai
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 5: Setting global autoindent option"
-  let g:options = [['autoindent', 0, 1, 'global']]
+  let g:options = [['autoindent', 0, '', 0, 1, 'global', 'setglobal']]
   setglobal ai
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 6: Setting global autoindent option"
-  let g:options = [['autoindent', 1, 0, 'global']]
+  let g:options = [['autoindent', 1, 1, 1, 0, 'global', 'set']]
+  set ai!
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 6a: Setting global autoindent option"
+  let g:options = [['autoindent', 1, 1, 0, 0, 'global', 'set']]
+  noa setlocal ai
+  noa setglobal noai
   set ai!
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " Should not print anything, use :noa
   " 7: don't trigger OptionSet"
-  let g:options = [['invalid', 1, 1, 'invalid']]
+  let g:options = [['invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid']]
   noa set nonu
-  call assert_equal([['invalid', 1, 1, 'invalid']], g:options)
+  call assert_equal([['invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid']], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 8: Setting several global list and number option"
-  let g:options = [['list', 0, 1, 'global'], ['number', 0, 1, 'global']]
+  let g:options = [['list', 0, 0, 0, 1, 'global', 'set'], ['number', 0, 0, 0, 1, 'global', 'set']]
   set list nu
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 9: don't trigger OptionSet"
-  let g:options = [['invalid', 1, 1, 'invalid'], ['invalid', 1, 1, 'invalid']]
+  let g:options = [['invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid'], ['invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid']]
   noa set nolist nonu
-  call assert_equal([['invalid', 1, 1, 'invalid'], ['invalid', 1, 1, 'invalid']], g:options)
+  call assert_equal([['invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid'], ['invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid', 'invalid']], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 10: Setting global acd"
-  let g:options = [['autochdir', 0, 1, 'local']]
+  let g:options = [['autochdir', 0, 0, '', 1, 'local', 'setlocal']]
   setlocal acd
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 11: Setting global autoread (also sets local value)"
-  let g:options = [['autoread', 0, 1, 'global']]
+  let g:options = [['autoread', 0, 0, 0, 1, 'global', 'set']]
   set ar
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 12: Setting local autoread"
-  let g:options = [['autoread', 1, 1, 'local']]
+  let g:options = [['autoread', 1, 1, '', 1, 'local', 'setlocal']]
   setlocal ar
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 13: Setting global autoread"
-  let g:options = [['autoread', 1, 0, 'global']]
+  let g:options = [['autoread', 1, '', 1, 0, 'global', 'setglobal']]
   setglobal invar
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 14: Setting option backspace through :let"
-  let g:options = [['backspace', '', 'eol,indent,start', 'global']]
+  let g:options = [['backspace', '', '', '', 'eol,indent,start', 'global', 'set']]
   let &bs = "eol,indent,start"
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 15: Setting option backspace through setbufvar()"
-  let g:options = [['backup', 0, 1, 'local']]
+  let g:options = [['backup', 0, 0, '', 1, 'local', 'setlocal']]
   " try twice, first time, shouldn't trigger because option name is invalid,
   " second time, it should trigger
-  call assert_fails("call setbufvar(1, '&l:bk', 1)", "E355")
+  let bnum = bufnr('%')
+  call assert_fails("call setbufvar(bnum, '&l:bk', 1)", 'E355:')
   " should trigger, use correct option name
-  call setbufvar(1, '&backup', 1)
+  call setbufvar(bnum, '&backup', 1)
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 16: Setting number option using setwinvar"
-  let g:options = [['number', 0, 1, 'local']]
+  let g:options = [['number', 0, 0, '', 1, 'local', 'setlocal']]
   call setwinvar(0, '&number', 1)
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
   " 17: Setting key option, shouldn't trigger"
-  let g:options = [['key', 'invalid', 'invalid1', 'invalid']]
+  let g:options = [['key', 'invalid', 'invalid1', 'invalid2', 'invalid3', 'invalid4', 'invalid5']]
   setlocal key=blah
   setlocal key=
-  call assert_equal([['key', 'invalid', 'invalid1', 'invalid']], g:options)
+  call assert_equal([['key', 'invalid', 'invalid1', 'invalid2', 'invalid3', 'invalid4', 'invalid5']], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
-  " 18: Setting string option"
+
+  " 18a: Setting string global option"
+  let oldval = &backupext
+  let g:options = [['backupext', oldval, oldval, oldval, 'foo', 'global', 'set']]
+  set backupext=foo
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 18b: Resetting string global option"
+  let g:options = [['backupext', 'foo', 'foo', 'foo', oldval, 'global', 'set']]
+  set backupext&
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 18c: Setting global string global option"
+  let g:options = [['backupext', oldval, '', oldval, 'bar', 'global', 'setglobal']]
+  setglobal backupext=bar
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 18d: Setting local string global option"
+  " As this is a global option this sets the global value even though
+  " :setlocal is used!
+  noa set backupext& " Reset global and local value (without triggering autocmd)
+  let g:options = [['backupext', oldval, oldval, '', 'baz', 'local', 'setlocal']]
+  setlocal backupext=baz
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 18e: Setting again string global option"
+  noa setglobal backupext=ext_global " Reset global and local value (without triggering autocmd)
+  noa setlocal backupext=ext_local " Sets the global(!) value!
+  let g:options = [['backupext', 'ext_local', 'ext_local', 'ext_local', 'fuu', 'global', 'set']]
+  set backupext=fuu
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 19a: Setting string global-local (to buffer) option"
   let oldval = &tags
-  let g:options = [['tags', oldval, 'tagpath', 'global']]
+  let g:options = [['tags', oldval, oldval, oldval, 'tagpath', 'global', 'set']]
   set tags=tagpath
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
-  " 1l: Resetting string option"
-  let g:options = [['tags', 'tagpath', oldval, 'global']]
+  " 19b: Resetting string global-local (to buffer) option"
+  let g:options = [['tags', 'tagpath', 'tagpath', 'tagpath', oldval, 'global', 'set']]
   set tags&
   call assert_equal([], g:options)
   call assert_equal(g:opt[0], g:opt[1])
 
+  " 19c: Setting global string global-local (to buffer) option "
+  let g:options = [['tags', oldval, '', oldval, 'tagpath1', 'global', 'setglobal']]
+  setglobal tags=tagpath1
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 19d: Setting local string global-local (to buffer) option"
+  let g:options = [['tags', 'tagpath1', 'tagpath1', '', 'tagpath2', 'local', 'setlocal']]
+  setlocal tags=tagpath2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 19e: Setting again string global-local (to buffer) option"
+  " Note: v:option_old is the old global value for global-local string options
+  " but the old local value for all other kinds of options.
+  noa setglobal tags=tag_global " Reset global and local value (without triggering autocmd)
+  noa setlocal tags=tag_local
+  let g:options = [['tags', 'tag_global', 'tag_local', 'tag_global', 'tagpath', 'global', 'set']]
+  set tags=tagpath
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 19f: Setting string global-local (to buffer) option to an empty string"
+  " Note: v:option_old is the old global value for global-local string options
+  " but the old local value for all other kinds of options.
+  noa set tags=tag_global " Reset global and local value (without triggering autocmd)
+  noa setlocal tags= " empty string
+  let g:options = [['tags', 'tag_global', '', 'tag_global', 'tagpath', 'global', 'set']]
+  set tags=tagpath
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 20a: Setting string local (to buffer) option"
+  let oldval = &spelllang
+  let g:options = [['spelllang', oldval, oldval, oldval, 'elvish,klingon', 'global', 'set']]
+  set spelllang=elvish,klingon
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 20b: Resetting string local (to buffer) option"
+  let g:options = [['spelllang', 'elvish,klingon', 'elvish,klingon', 'elvish,klingon', oldval, 'global', 'set']]
+  set spelllang&
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 20c: Setting global string local (to buffer) option"
+  let g:options = [['spelllang', oldval, '', oldval, 'elvish', 'global', 'setglobal']]
+  setglobal spelllang=elvish
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 20d: Setting local string local (to buffer) option"
+  noa set spelllang& " Reset global and local value (without triggering autocmd)
+  let g:options = [['spelllang', oldval, oldval, '', 'klingon', 'local', 'setlocal']]
+  setlocal spelllang=klingon
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 20e: Setting again string local (to buffer) option"
+  " Note: v:option_old is the old global value for global-local string options
+  " but the old local value for all other kinds of options.
+  noa setglobal spelllang=spellglobal " Reset global and local value (without triggering autocmd)
+  noa setlocal spelllang=spelllocal
+  let g:options = [['spelllang', 'spelllocal', 'spelllocal', 'spellglobal', 'foo', 'global', 'set']]
+  set spelllang=foo
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 21a: Setting string global-local (to window) option"
+  let oldval = &statusline
+  let g:options = [['statusline', oldval, oldval, oldval, 'foo', 'global', 'set']]
+  set statusline=foo
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 21b: Resetting string global-local (to window) option"
+  " Note: v:option_old is the old global value for global-local string options
+  " but the old local value for all other kinds of options.
+  let g:options = [['statusline', 'foo', 'foo', 'foo', oldval, 'global', 'set']]
+  set statusline&
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 21c: Setting global string global-local (to window) option"
+  let g:options = [['statusline', oldval, '', oldval, 'bar', 'global', 'setglobal']]
+  setglobal statusline=bar
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 21d: Setting local string global-local (to window) option"
+  noa set statusline& " Reset global and local value (without triggering autocmd)
+  let g:options = [['statusline', oldval, oldval, '', 'baz', 'local', 'setlocal']]
+  setlocal statusline=baz
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 21e: Setting again string global-local (to window) option"
+  " Note: v:option_old is the old global value for global-local string options
+  " but the old local value for all other kinds of options.
+  noa setglobal statusline=bar " Reset global and local value (without triggering autocmd)
+  noa setlocal statusline=baz
+  let g:options = [['statusline', 'bar', 'baz', 'bar', 'foo', 'global', 'set']]
+  set statusline=foo
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 22a: Setting string local (to window) option"
+  let oldval = &foldignore
+  let g:options = [['foldignore', oldval, oldval, oldval, 'fo', 'global', 'set']]
+  set foldignore=fo
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 22b: Resetting string local (to window) option"
+  let g:options = [['foldignore', 'fo', 'fo', 'fo', oldval, 'global', 'set']]
+  set foldignore&
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 22c: Setting global string local (to window) option"
+  let g:options = [['foldignore', oldval, '', oldval, 'bar', 'global', 'setglobal']]
+  setglobal foldignore=bar
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 22d: Setting local string local (to window) option"
+  noa set foldignore& " Reset global and local value (without triggering autocmd)
+  let g:options = [['foldignore', oldval, oldval, '', 'baz', 'local', 'setlocal']]
+  setlocal foldignore=baz
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 22e: Setting again string local (to window) option"
+  noa setglobal foldignore=glob " Reset global and local value (without triggering autocmd)
+  noa setlocal foldignore=loc
+  let g:options = [['foldignore', 'loc', 'loc', 'glob', 'fo', 'global', 'set']]
+  set foldignore=fo
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 23a: Setting global number global option"
+  noa setglobal cmdheight=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal cmdheight=1 " Sets the global(!) value!
+  let g:options = [['cmdheight', '1', '', '1', '2', 'global', 'setglobal']]
+  setglobal cmdheight=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 23b: Setting local number global option"
+  noa setglobal cmdheight=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal cmdheight=1 " Sets the global(!) value!
+  let g:options = [['cmdheight', '1', '1', '', '2', 'local', 'setlocal']]
+  setlocal cmdheight=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 23c: Setting again number global option"
+  noa setglobal cmdheight=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal cmdheight=1 " Sets the global(!) value!
+  let g:options = [['cmdheight', '1', '1', '1', '2', 'global', 'set']]
+  set cmdheight=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 23d: Setting again number global option"
+  noa set cmdheight=8 " Reset global and local value (without triggering autocmd)
+  let g:options = [['cmdheight', '8', '8', '8', '2', 'global', 'set']]
+  set cmdheight=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 24a: Setting global number global-local (to buffer) option"
+  noa setglobal undolevels=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal undolevels=1
+  let g:options = [['undolevels', '8', '', '8', '2', 'global', 'setglobal']]
+  setglobal undolevels=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 24b: Setting local number global-local (to buffer) option"
+  noa setglobal undolevels=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal undolevels=1
+  let g:options = [['undolevels', '1', '1', '', '2', 'local', 'setlocal']]
+  setlocal undolevels=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 24c: Setting again number global-local (to buffer) option"
+  noa setglobal undolevels=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal undolevels=1
+  let g:options = [['undolevels', '1', '1', '8', '2', 'global', 'set']]
+  set undolevels=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 24d: Setting again global number global-local (to buffer) option"
+  noa set undolevels=8 " Reset global and local value (without triggering autocmd)
+  let g:options = [['undolevels', '8', '8', '8', '2', 'global', 'set']]
+  set undolevels=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 25a: Setting global number local (to buffer) option"
+  noa setglobal wrapmargin=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal wrapmargin=1
+  let g:options = [['wrapmargin', '8', '', '8', '2', 'global', 'setglobal']]
+  setglobal wrapmargin=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 25b: Setting local number local (to buffer) option"
+  noa setglobal wrapmargin=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal wrapmargin=1
+  let g:options = [['wrapmargin', '1', '1', '', '2', 'local', 'setlocal']]
+  setlocal wrapmargin=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 25c: Setting again number local (to buffer) option"
+  noa setglobal wrapmargin=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal wrapmargin=1
+  let g:options = [['wrapmargin', '1', '1', '8', '2', 'global', 'set']]
+  set wrapmargin=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 25d: Setting again global number local (to buffer) option"
+  noa set wrapmargin=8 " Reset global and local value (without triggering autocmd)
+  let g:options = [['wrapmargin', '8', '8', '8', '2', 'global', 'set']]
+  set wrapmargin=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 26: Setting number global-local (to window) option.
+  " Such option does currently not exist.
+
+
+  " 27a: Setting global number local (to window) option"
+  noa setglobal foldcolumn=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal foldcolumn=1
+  let g:options = [['foldcolumn', '8', '', '8', '2', 'global', 'setglobal']]
+  setglobal foldcolumn=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 27b: Setting local number local (to window) option"
+  noa setglobal foldcolumn=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal foldcolumn=1
+  let g:options = [['foldcolumn', '1', '1', '', '2', 'local', 'setlocal']]
+  setlocal foldcolumn=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 27c: Setting again number local (to window) option"
+  noa setglobal foldcolumn=8 " Reset global and local value (without triggering autocmd)
+  noa setlocal foldcolumn=1
+  let g:options = [['foldcolumn', '1', '1', '8', '2', 'global', 'set']]
+  set foldcolumn=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 27d: Setting again global number local (to window) option"
+  noa set foldcolumn=8 " Reset global and local value (without triggering autocmd)
+  let g:options = [['foldcolumn', '8', '8', '8', '2', 'global', 'set']]
+  set foldcolumn=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 28a: Setting global boolean global option"
+  noa setglobal nowrapscan " Reset global and local value (without triggering autocmd)
+  noa setlocal wrapscan " Sets the global(!) value!
+  let g:options = [['wrapscan', '1', '', '1', '0', 'global', 'setglobal']]
+  setglobal nowrapscan
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 28b: Setting local boolean global option"
+  noa setglobal nowrapscan " Reset global and local value (without triggering autocmd)
+  noa setlocal wrapscan " Sets the global(!) value!
+  let g:options = [['wrapscan', '1', '1', '', '0', 'local', 'setlocal']]
+  setlocal nowrapscan
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 28c: Setting again boolean global option"
+  noa setglobal nowrapscan " Reset global and local value (without triggering autocmd)
+  noa setlocal wrapscan " Sets the global(!) value!
+  let g:options = [['wrapscan', '1', '1', '1', '0', 'global', 'set']]
+  set nowrapscan
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 28d: Setting again global boolean global option"
+  noa set nowrapscan " Reset global and local value (without triggering autocmd)
+  let g:options = [['wrapscan', '0', '0', '0', '1', 'global', 'set']]
+  set wrapscan
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 29a: Setting global boolean global-local (to buffer) option"
+  noa setglobal noautoread " Reset global and local value (without triggering autocmd)
+  noa setlocal autoread
+  let g:options = [['autoread', '0', '', '0', '1', 'global', 'setglobal']]
+  setglobal autoread
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 29b: Setting local boolean global-local (to buffer) option"
+  noa setglobal noautoread " Reset global and local value (without triggering autocmd)
+  noa setlocal autoread
+  let g:options = [['autoread', '1', '1', '', '0', 'local', 'setlocal']]
+  setlocal noautoread
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 29c: Setting again boolean global-local (to buffer) option"
+  noa setglobal noautoread " Reset global and local value (without triggering autocmd)
+  noa setlocal autoread
+  let g:options = [['autoread', '1', '1', '0', '1', 'global', 'set']]
+  set autoread
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 29d: Setting again global boolean global-local (to buffer) option"
+  noa set noautoread " Reset global and local value (without triggering autocmd)
+  let g:options = [['autoread', '0', '0', '0', '1', 'global', 'set']]
+  set autoread
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 30a: Setting global boolean local (to buffer) option"
+  noa setglobal nocindent " Reset global and local value (without triggering autocmd)
+  noa setlocal cindent
+  let g:options = [['cindent', '0', '', '0', '1', 'global', 'setglobal']]
+  setglobal cindent
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 30b: Setting local boolean local (to buffer) option"
+  noa setglobal nocindent " Reset global and local value (without triggering autocmd)
+  noa setlocal cindent
+  let g:options = [['cindent', '1', '1', '', '0', 'local', 'setlocal']]
+  setlocal nocindent
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 30c: Setting again boolean local (to buffer) option"
+  noa setglobal nocindent " Reset global and local value (without triggering autocmd)
+  noa setlocal cindent
+  let g:options = [['cindent', '1', '1', '0', '1', 'global', 'set']]
+  set cindent
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 30d: Setting again global boolean local (to buffer) option"
+  noa set nocindent " Reset global and local value (without triggering autocmd)
+  let g:options = [['cindent', '0', '0', '0', '1', 'global', 'set']]
+  set cindent
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 31: Setting boolean global-local (to window) option
+  " Currently no such option exists.
+
+
+  " 32a: Setting global boolean local (to window) option"
+  noa setglobal nocursorcolumn " Reset global and local value (without triggering autocmd)
+  noa setlocal cursorcolumn
+  let g:options = [['cursorcolumn', '0', '', '0', '1', 'global', 'setglobal']]
+  setglobal cursorcolumn
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 32b: Setting local boolean local (to window) option"
+  noa setglobal nocursorcolumn " Reset global and local value (without triggering autocmd)
+  noa setlocal cursorcolumn
+  let g:options = [['cursorcolumn', '1', '1', '', '0', 'local', 'setlocal']]
+  setlocal nocursorcolumn
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 32c: Setting again boolean local (to window) option"
+  noa setglobal nocursorcolumn " Reset global and local value (without triggering autocmd)
+  noa setlocal cursorcolumn
+  let g:options = [['cursorcolumn', '1', '1', '0', '1', 'global', 'set']]
+  set cursorcolumn
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+  " 32d: Setting again global boolean local (to window) option"
+  noa set nocursorcolumn " Reset global and local value (without triggering autocmd)
+  let g:options = [['cursorcolumn', '0', '0', '0', '1', 'global', 'set']]
+  set cursorcolumn
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
+  " 33: Test autocommands when an option value is converted internally.
+  noa set backspace=1 " Reset global and local value (without triggering autocmd)
+  let g:options = [['backspace', 'indent,eol', 'indent,eol', 'indent,eol', '2', 'global', 'set']]
+  set backspace=2
+  call assert_equal([], g:options)
+  call assert_equal(g:opt[0], g:opt[1])
+
+
   " Cleanup
   au! OptionSet
   " set tags&
-  for opt in ['nu', 'ai', 'acd', 'ar', 'bs', 'backup', 'cul', 'cp', 'tags']
+  for opt in ['nu', 'ai', 'acd', 'ar', 'bs', 'backup', 'cul', 'cp', 'backupext', 'tags', 'spelllang', 'statusline', 'foldignore', 'cmdheight', 'undolevels', 'wrapmargin', 'foldcolumn', 'wrapscan', 'autoread', 'cindent', 'cursorcolumn']
     exe printf(":set %s&vim", opt)
   endfor
   call test_override('starting', 0)
@@ -998,6 +1610,7 @@ func Test_bufunload_all()
     endfunc
     au BufUnload * call UnloadAllBufs()
     au VimLeave * call writefile(['Test Finished'], 'Xout')
+    set nohidden
     edit Xxx1
     split Xxx2
     q
@@ -1006,7 +1619,7 @@ func Test_bufunload_all()
   call writefile(content, 'Xtest')
 
   call delete('Xout')
-  call system(v:progpath. ' -u NORC -i NONE -N -S Xtest')
+  call system(GetVimCommandClean() .. ' -N --headless -S Xtest')
   call assert_true(filereadable('Xout'))
 
   call delete('Xxx1')
@@ -1325,6 +1938,83 @@ endfunc
 func Test_autocommand_all_events()
   call assert_fails('au * * bwipe', 'E1155:')
   call assert_fails('au * x bwipe', 'E1155:')
+endfunc
+
+func Test_autocmd_user()
+  au User MyEvent let s:res = [expand("<afile>"), expand("<amatch>")]
+  doautocmd User MyEvent
+  call assert_equal(['MyEvent', 'MyEvent'], s:res)
+  au! User
+  unlet s:res
+endfunc
+
+function s:Before_test_dirchanged()
+  augroup test_dirchanged
+    autocmd!
+  augroup END
+  let s:li = []
+  let s:dir_this = getcwd()
+  let s:dir_foo = s:dir_this . '/Xfoo'
+  call mkdir(s:dir_foo)
+  let s:dir_bar = s:dir_this . '/Xbar'
+  call mkdir(s:dir_bar)
+endfunc
+
+function s:After_test_dirchanged()
+  call chdir(s:dir_this)
+  call delete(s:dir_foo, 'd')
+  call delete(s:dir_bar, 'd')
+  augroup test_dirchanged
+    autocmd!
+  augroup END
+endfunc
+
+function Test_dirchanged_global()
+  call s:Before_test_dirchanged()
+  autocmd test_dirchanged DirChangedPre global call add(s:li, expand("<amatch>") .. " pre cd " .. v:event.directory)
+  autocmd test_dirchanged DirChanged global call add(s:li, "cd:")
+  autocmd test_dirchanged DirChanged global call add(s:li, expand("<afile>"))
+  call chdir(s:dir_foo)
+  let expected = ["global pre cd " .. s:dir_foo, "cd:", s:dir_foo]
+  call assert_equal(expected, s:li)
+  call chdir(s:dir_foo)
+  call assert_equal(expected, s:li)
+  exe 'lcd ' .. fnameescape(s:dir_bar)
+  call assert_equal(expected, s:li)
+  call s:After_test_dirchanged()
+endfunc
+
+function Test_dirchanged_local()
+  call s:Before_test_dirchanged()
+  autocmd test_dirchanged DirChanged window call add(s:li, "lcd:")
+  autocmd test_dirchanged DirChanged window call add(s:li, expand("<afile>"))
+  call chdir(s:dir_foo)
+  call assert_equal([], s:li)
+  exe 'lcd ' .. fnameescape(s:dir_bar)
+  call assert_equal(["lcd:", s:dir_bar], s:li)
+  exe 'lcd ' .. fnameescape(s:dir_bar)
+  call assert_equal(["lcd:", s:dir_bar], s:li)
+  call s:After_test_dirchanged()
+endfunc
+
+function Test_dirchanged_auto()
+  CheckFunction test_autochdir
+  CheckOption autochdir
+  call s:Before_test_dirchanged()
+  call test_autochdir()
+  autocmd test_dirchanged DirChangedPre auto call add(s:li, "pre cd " .. v:event.directory)
+  autocmd test_dirchanged DirChanged auto call add(s:li, "auto:")
+  autocmd test_dirchanged DirChanged auto call add(s:li, expand("<afile>"))
+  set acd
+  cd ..
+  call assert_equal([], s:li)
+  exe 'edit ' . s:dir_foo . '/Xfile'
+  call assert_equal(s:dir_foo, getcwd())
+  let expected = ["pre cd " .. s:dir_foo, "auto:", s:dir_foo]
+  call assert_equal(expected, s:li)
+  set noacd
+  bwipe!
+  call s:After_test_dirchanged()
 endfunc
 
 " Test TextChangedI and TextChangedP
@@ -1766,6 +2456,19 @@ func Test_throw_in_BufWritePre()
   au! throwing
 endfunc
 
+func Test_autocmd_in_try_block()
+  call mkdir('Xdir')
+  au BufEnter * let g:fname = expand('%')
+  try
+    edit Xdir/
+  endtry
+  call assert_match('Xdir', g:fname)
+
+  unlet g:fname
+  au! BufEnter
+  call delete('Xdir', 'rf')
+endfunc
+
 func Test_autocmd_CmdWinEnter()
   CheckRunVimInTerminal
   " There is not cmdwin switch, so
@@ -1795,95 +2498,61 @@ func Test_autocmd_CmdWinEnter()
   call delete(filename)
 endfunc
 
-func Test_FileChangedShell_reload()
-  if !has('unix')
-    return
-  endif
-  augroup testreload
-    au FileChangedShell Xchanged let g:reason = v:fcs_reason | let v:fcs_choice = 'reload'
+func Test_autocmd_was_using_freed_memory()
+  pedit xx
+  n x
+  augroup winenter
+    au WinEnter * if winnr('$') > 2 | quit | endif
   augroup END
-  new Xchanged
-  call setline(1, 'reload this')
-  write
-  " Need to wait until the timestamp would change by at least a second.
-  sleep 2
-  silent !echo 'extra line' >>Xchanged
-  checktime
-  call assert_equal('changed', g:reason)
-  call assert_equal(2, line('$'))
-  call assert_equal('extra line', getline(2))
+  " Nvim needs large 'winwidth' and 'nowinfixwidth' to crash
+  set winwidth=99999 nowinfixwidth
+  split
 
-  " Only triggers once
-  let g:reason = ''
-  checktime
-  call assert_equal('', g:reason)
+  augroup winenter
+    au! WinEnter
+  augroup END
 
-  " When deleted buffer is not reloaded
-  silent !rm Xchanged
-  let g:reason = ''
-  checktime
-  call assert_equal('deleted', g:reason)
-  call assert_equal(2, line('$'))
-  call assert_equal('extra line', getline(2))
+  set winwidth& winfixwidth&
+  bwipe xx
+  bwipe x
+  pclose
+endfunc
 
-  " When recreated buffer is reloaded
-  call setline(1, 'buffer is changed')
-  silent !echo 'new line' >>Xchanged
-  let g:reason = ''
-  checktime
-  call assert_equal('conflict', g:reason)
-  call assert_equal(1, line('$'))
-  call assert_equal('new line', getline(1))
+func Test_BufWrite_lockmarks()
+  edit! Xtest
+  call setline(1, ['a', 'b', 'c', 'd'])
 
-  " Only mode changed
-  silent !chmod +x Xchanged
-  let g:reason = ''
-  checktime
-  call assert_equal('mode', g:reason)
-  call assert_equal(1, line('$'))
-  call assert_equal('new line', getline(1))
+  " :lockmarks preserves the marks
+  call SetChangeMarks(2, 3)
+  lockmarks write
+  call assert_equal([2, 3], [line("'["), line("']")])
 
-  " Only time changed
-  sleep 2
-  silent !touch Xchanged
-  let g:reason = ''
-  checktime
-  call assert_equal('time', g:reason)
-  call assert_equal(1, line('$'))
-  call assert_equal('new line', getline(1))
+  " *WritePre autocmds get the correct line range, but lockmarks preserves the
+  " original values for the user
+  augroup lockmarks
+    au!
+    au BufWritePre,FilterWritePre * call assert_equal([1, 4], [line("'["), line("']")])
+    au FileWritePre * call assert_equal([3, 4], [line("'["), line("']")])
+  augroup END
 
-  if has('persistent_undo')
-    " With an undo file the reload can be undone and a change before the
-    " reload.
-    set undofile
-    call setline(2, 'before write')
-    write
-    call setline(2, 'after write')
-    sleep 2
-    silent !echo 'different line' >>Xchanged
-    let g:reason = ''
-    checktime
-    call assert_equal('conflict', g:reason)
-    call assert_equal(3, line('$'))
-    call assert_equal('before write', getline(2))
-    call assert_equal('different line', getline(3))
-    " undo the reload
-    undo
-    call assert_equal(2, line('$'))
-    call assert_equal('after write', getline(2))
-    " undo the change before reload
-    undo
-    call assert_equal(2, line('$'))
-    call assert_equal('before write', getline(2))
+  lockmarks write
+  call assert_equal([2, 3], [line("'["), line("']")])
 
-    set noundofile
+  if executable('cat')
+    lockmarks %!cat
+    call assert_equal([2, 3], [line("'["), line("']")])
   endif
 
+  lockmarks 3,4write Xtest2
+  call assert_equal([2, 3], [line("'["), line("']")])
 
-  au! testreload
-  bwipe!
-  call delete('Xchanged')
+  au! lockmarks
+  augroup! lockmarks
+  call delete('Xtest')
+  call delete('Xtest2')
 endfunc
+
+" FileChangedShell tested in test_filechanged.vim
 
 func LogACmd()
   call add(g:logged, line('$'))
@@ -1955,7 +2624,7 @@ func Test_autocmd_sigusr1()
 
   let g:sigusr1_passed = 0
   au Signal SIGUSR1 let g:sigusr1_passed = 1
-  call system('/bin/kill -s usr1 ' . getpid())
+  call system('kill -s usr1 ' . getpid())
   call WaitForAssert({-> assert_true(g:sigusr1_passed)})
 
   au! Signal
@@ -2012,24 +2681,139 @@ func Test_close_autocmd_tab()
   %bwipe!
 endfunc
 
+func Test_Visual_doautoall_redraw()
+  call setline(1, ['a', 'b'])
+  new
+  wincmd p
+  call feedkeys("G\<C-V>", 'txn')
+  autocmd User Explode ++once redraw
+  doautoall User Explode
+  %bwipe!
+endfunc
+
 func Test_autocmd_closes_window()
   au BufNew,BufWinLeave * e %e
   file yyy
   au BufNew,BufWinLeave * ball
-  call assert_fails('n xxx', 'E143:')
+  n xxx
 
-  bwipe %
+  %bwipe
   au! BufNew
   au! BufWinLeave
 endfunc
 
+func Test_autocmd_quit_psearch()
+  sn aa bb
+  augroup aucmd_win_test
+    au!
+    au BufEnter,BufLeave,BufNew,WinEnter,WinLeave,WinNew * if winnr('$') > 1 | q | endif
+  augroup END
+  ps /
+
+  augroup aucmd_win_test
+    au!
+  augroup END
+  new
+  pclose
+endfunc
+
+" Fuzzer found some strange combination that caused a crash.
+func Test_autocmd_normal_mess()
+  " For unknown reason this hangs on MS-Windows
+  CheckNotMSWindows
+
+  augroup aucmd_normal_test
+    au BufLeave,BufWinLeave,BufHidden,BufUnload,BufDelete,BufWipeout * norm 7q/qc
+  augroup END
+  " Nvim has removed :open
+  " call assert_fails('o4', 'E1159')
+  call assert_fails('e4', 'E1159')
+  silent! H
+  call assert_fails('e xx', 'E1159')
+  normal G
+
+  augroup aucmd_normal_test
+    au!
+  augroup END
+endfunc
+
 func Test_autocmd_closing_cmdwin()
+  " For unknown reason this hangs on MS-Windows
+  CheckNotMSWindows
+
   au BufWinLeave * nested q
   call assert_fails("norm 7q?\n", 'E855:')
 
   au! BufWinLeave
   new
   only
+endfunc
+
+func Test_autocmd_vimgrep()
+  augroup aucmd_vimgrep
+    au QuickfixCmdPre,BufNew,BufReadCmd * sb
+    " Nvim makes aucmd_win the last window
+    " au QuickfixCmdPre,BufNew,BufReadCmd * q9
+    au QuickfixCmdPre,BufNew,BufReadCmd * exe 'q' .. (winnr('$') - (win_gettype(winnr('$')) == 'autocmd'))
+  augroup END
+  call assert_fails('lv ?a? foo', 'E926:')
+
+  augroup aucmd_vimgrep
+    au!
+  augroup END
+endfunc
+
+func Test_bufwipeout_changes_window()
+  " This should not crash, but we don't have any expectations about what
+  " happens, changing window in BufWipeout has unpredictable results.
+  tabedit
+  let g:window_id = win_getid()
+  topleft new
+  setlocal bufhidden=wipe
+  autocmd BufWipeout <buffer> call win_gotoid(g:window_id)
+  tabprevious
+  +tabclose
+
+  unlet g:window_id
+  au! BufWipeout
+  %bwipe!
+endfunc
+
+func Test_v_event_readonly()
+  autocmd CompleteChanged * let v:event.width = 0
+  call assert_fails("normal! i\<C-X>\<C-V>", 'E46:')
+  au! CompleteChanged
+
+  autocmd DirChangedPre * let v:event.directory = ''
+  call assert_fails('cd .', 'E46:')
+  au! DirChangedPre
+
+  autocmd ModeChanged * let v:event.new_mode = ''
+  call assert_fails('normal! cc', 'E46:')
+  au! ModeChanged
+
+  autocmd TextYankPost * let v:event.operator = ''
+  call assert_fails('normal! yy', 'E46:')
+  au! TextYankPost
+endfunc
+
+
+func Test_noname_autocmd()
+  augroup test_noname_autocmd_group
+    autocmd!
+    autocmd BufEnter * call add(s:li, ["BufEnter", expand("<afile>")])
+    autocmd BufDelete * call add(s:li, ["BufDelete", expand("<afile>")])
+    autocmd BufLeave * call add(s:li, ["BufLeave", expand("<afile>")])
+    autocmd BufUnload * call add(s:li, ["BufUnload", expand("<afile>")])
+    autocmd BufWipeout * call add(s:li, ["BufWipeout", expand("<afile>")])
+  augroup END
+
+  let s:li = []
+  edit foo
+  call assert_equal([['BufUnload', ''], ['BufDelete', ''], ['BufWipeout', ''], ['BufEnter', 'foo']], s:li)
+
+  au! test_noname_autocmd_group
+  augroup! test_noname_autocmd_group
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

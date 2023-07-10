@@ -5,6 +5,7 @@ local clear = helpers.clear
 local command = helpers.command
 local get_pathsep = helpers.get_pathsep
 local eq = helpers.eq
+local neq = helpers.neq
 local funcs = helpers.funcs
 local matches = helpers.matches
 local pesc = helpers.pesc
@@ -13,6 +14,7 @@ local rmdir = helpers.rmdir
 local file_prefix = 'Xtest-functional-ex_cmds-mksession_spec'
 
 describe(':mksession', function()
+  if helpers.pending_win32(pending) then return end
   local session_file = file_prefix .. '.vim'
   local tab_dir = file_prefix .. '.d'
 
@@ -30,7 +32,8 @@ describe(':mksession', function()
     -- If the same :terminal is displayed in multiple windows, :mksession
     -- should restore it as such.
 
-    -- Create two windows showing the same :terminal buffer.
+    -- Create three windows: first two from top show same terminal, third -
+    -- another one (created earlier).
     command('terminal')
     command('split')
     command('terminal')
@@ -43,8 +46,8 @@ describe(':mksession', function()
     -- Restore session.
     command('source '..session_file)
 
-    eq({3,3,2},
-      {funcs.winbufnr(1), funcs.winbufnr(2), funcs.winbufnr(3)})
+    eq(funcs.winbufnr(1), funcs.winbufnr(2))
+    neq(funcs.winbufnr(1), funcs.winbufnr(3))
   end)
 
   it('restores tab-local working directories', function()

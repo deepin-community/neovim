@@ -23,14 +23,16 @@ centralized reference of the differences.
 ==============================================================================
 2. Defaults					            *nvim-defaults*
 
-- Syntax highlighting is enabled by default
-- ":filetype plugin indent on" is enabled by default
+- Filetype detection is enabled by default. This can be disabled by adding
+  ":filetype off" to |init.vim|.
+- Syntax highlighting is enabled by default. This can be disabled by adding
+  ":syntax off" to |init.vim|.
 
 - 'autoindent' is enabled
 - 'autoread' is enabled
 - 'background' defaults to "dark" (unless set automatically by the terminal/UI)
 - 'backspace' defaults to "indent,eol,start"
-- 'backupdir' defaults to .,~/.local/share/nvim/backup (|xdg|)
+- 'backupdir' defaults to .,~/.local/share/nvim/backup// (|xdg|), auto-created
 - 'belloff' defaults to "all"
 - 'compatible' is always disabled
 - 'complete' excludes "i"
@@ -41,9 +43,11 @@ centralized reference of the differences.
 - 'fillchars' defaults (in effect) to "vert:│,fold:·,sep:│"
 - 'formatoptions' defaults to "tcqj"
 - 'fsync' is disabled
+- 'hidden' is enabled
 - 'history' defaults to 10000 (the maximum)
 - 'hlsearch' is enabled
 - 'incsearch' is enabled
+- 'joinspaces' is disabled
 - 'langnoremap' is enabled
 - 'langremap' is disabled
 - 'laststatus' defaults to 2 (statusline is always shown)
@@ -56,12 +60,13 @@ centralized reference of the differences.
 - 'sidescroll' defaults to 1
 - 'smarttab' is enabled
 - 'startofline' is disabled
+- 'switchbuf' defaults to "uselast"
 - 'tabpagemax' defaults to 50
 - 'tags' defaults to "./tags;,tags"
 - 'ttimeoutlen' defaults to 50
 - 'ttyfast' is always set
-- 'viewoptions' includes "unix,slash"
-- 'undodir' defaults to ~/.local/share/nvim/undo (|xdg|), auto-created
+- 'undodir' defaults to ~/.local/share/nvim/undo// (|xdg|), auto-created
+- 'viewoptions' includes "unix,slash", excludes "options"
 - 'viminfo' includes "!"
 - 'wildmenu' is enabled
 - 'wildoptions' defaults to "pum,tagfile"
@@ -71,6 +76,28 @@ centralized reference of the differences.
     :let loaded_matchit = 1
 
 - |g:vimsyn_embed| defaults to "l" to enable Lua highlighting
+
+
+Default Mappings ~
+							*default-mappings*
+Nvim creates the following default mappings at |startup|. You can disable any
+of these in your config by simply removing the mapping, e.g. ":unmap Y".
+>
+	nnoremap Y y$
+	nnoremap <C-L> <Cmd>nohlsearch<Bar>diffupdate<Bar>normal! <C-L><CR>
+	inoremap <C-U> <C-G>u<C-U>
+	inoremap <C-W> <C-G>u<C-W>
+<
+Default Autocommands ~
+							*default-autocmds*
+Default autocommands exist in the following groups. Use ":autocmd! {group}" to
+remove them and ":autocmd {group}" to see how they're defined.
+
+nvim_terminal:
+- BufReadCmd: Treats "term://" buffers as |terminal| buffers. |terminal-start|
+
+nvim_cmdwin:
+- CmdwinEnter: Limits syntax sync to maxlines=1 in the |cmdwin|.
 
 ==============================================================================
 3. New Features						       *nvim-features*
@@ -152,15 +179,19 @@ Commands:
   |:drop| is always available
   |:Man| is available by default, with many improvements such as completion
   |:sign-define| accepts a `numhl` argument, to highlight the line number
+  |:match| can be invoked before highlight group is defined
+  |:source| works with Lua and anonymous (no file) scripts
 
 Events:
+  |RecordingEnter|
+  |RecordingLeave|
+  |SearchWrapped|
   |Signal|
   |TabNewEntered|
   |TermClose|
   |TermOpen|
   |UIEnter|
   |UILeave|
-  |WinClosed|
 
 Functions:
   |dictwatcheradd()| notifies a callback whenever a |Dict| is modified
@@ -169,6 +200,7 @@ Functions:
   |msgpackdump()|, |msgpackparse()| provide msgpack de/serialization
   |stdpath()|
   |system()|, |systemlist()| can run {cmd} directly (without 'shell')
+  |matchadd()| can be called before highlight group is defined
 
 Highlight groups:
   |highlight-blend| controls blend level for a highlight group
@@ -180,6 +212,7 @@ Highlight groups:
   |hl-Substitute|
   |hl-TermCursor|
   |hl-TermCursorNC|
+  |hl-WinSeparator| highlights window separators
   |hl-Whitespace| highlights 'listchars' whitespace
 
 Input/Mappings:
@@ -196,9 +229,11 @@ Options:
   'cpoptions'   flags: |cpo-_|
   'display'     flags: "msgsep" minimizes scrolling when showing messages
   'guicursor'   works in the terminal
-  'fillchars'   flags: "msgsep" (see 'display')
+  'fillchars'   flags: "msgsep" (see 'display'), "horiz", "horizup",
+                "horizdown", "vertleft", "vertright", "verthoriz"
   'foldcolumn'  supports up to 9 dynamic/fixed columns
   'inccommand'  shows interactive results for |:substitute|-like commands
+  'laststatus'  global statusline support
   'pumblend'    pseudo-transparent popupmenu
   'scrollback'
   'signcolumn'  supports up to 9 dynamic/fixed columns
@@ -220,6 +255,8 @@ Variables:
 
 Nvim always builds with all features, in contrast to Vim which may have
 certain features removed/added at compile-time. |feature-compile|
+
+Some Vim features were changed in Nvim, and vice versa.
 
 If a Python interpreter is available on your `$PATH`, |:python| and |:python3|
 are always available and may be used simultaneously. See |provider-python|.
@@ -289,6 +326,8 @@ coerced to strings. See |id()| for more details, currently it uses
 
 |c_CTRL-R| pasting a non-special register into |cmdline| omits the last <CR>.
 
+|CursorMoved| always triggers when moving between windows.
+
 Lua interface (|lua.txt|):
 
 - `:lua print("a\0b")` will print `a^@b`, like with `:echomsg "a\nb"` . In Vim
@@ -313,6 +352,7 @@ Highlight groups:
   |hl-ColorColumn|, |hl-CursorColumn| are lower priority than most other
   groups
   |hl-CursorLine| is low-priority unless foreground color is set
+  *hl-VertSplit* superseded by |hl-WinSeparator|
 
 Macro/|recording| behavior
   Replay of a macro recorded during :lmap produces the same actions as when it
@@ -327,11 +367,13 @@ Motion:
   The |jumplist| avoids useless/phantom jumps.
 
 Normal commands:
-  |Q| is the same as |gQ|
+  |Q| replays the last recorded macro instead of switching to Ex mode.
+  Instead |gQ| can be used to enter Ex mode.
 
 Options:
   'ttimeout', 'ttimeoutlen' behavior was simplified
   |jumpoptions| "stack" behavior
+  'shortmess' the "F" flag does not affect output from autocommands
 
 Shell:
   Shell output (|:!|, |:make|, …) is always routed through the UI, so it
@@ -360,6 +402,14 @@ Startup:
     - works by default: "-" file is optional
     - works in more cases: |-Es|, file args
 
+Syntax highlighting:
+  syncolor.vim has been removed. Nvim now sets up default highlighting groups
+  automatically for both light and dark backgrounds, regardless of whether or
+  not syntax highlighting is enabled. This means that |:syntax-on| and
+  |:syntax-enable| are now identical. Users who previously used an
+  after/syntax/syncolor.vim file should transition that file into a
+  colorscheme. |:colorscheme|
+
 TUI:
 			*:set-termcap*
   Start Nvim with 'verbose' level 3 to show terminal capabilities: >
@@ -387,6 +437,16 @@ Vimscript compatibility:
   `errmsg` does not alias to |v:errmsg|
   `shell_error` does not alias to |v:shell_error|
   `this_session` does not alias to |v:this_session|
+
+Working directory (Vim implemented some of these later than Nvim):
+- |DirChanged| and |DirChangedPre| can be triggered when switching to another
+  window or tab.
+- |getcwd()| and |haslocaldir()| may throw errors if the tab page or window
+  cannot be found.  *E5000* *E5001* *E5002*
+- |haslocaldir()| checks for tab-local directory if and only if -1 is passed as
+  window number, and its only possible returns values are 0 and 1.
+- `getcwd(-1)` is equivalent to `getcwd(-1, 0)` instead of returning the global
+  working directory. Use `getcwd(-1, -1)` to get the global working directory.
 
 ==============================================================================
 5. Missing legacy features				 *nvim-features-missing*
@@ -425,20 +485,24 @@ Commands:
   :Print
   :promptfind
   :promptrepl
+  :scriptversion (always version 1)
   :shell
   :sleep! (does not hide the cursor; same as :sleep)
   :smile
   :tearoff
 
 Compile-time features:
-  EBCDIC
   Emacs tags support
   X11 integration (see |x11-selection|)
 
 Eval:
+  Vim9script
   *js_encode()*
   *js_decode()*
   *v:none* (used by Vim to represent JavaScript "undefined"); use |v:null| instead.
+  *v:sizeofint*
+  *v:sizeoflong*
+  *v:sizeofpointer*
 
 Events:
   *SigUSR1* Use |Signal| to detect `SIGUSR1` signal instead.
@@ -475,6 +539,7 @@ Options:
   'maxmem' Nvim delegates memory-management to the OS.
   'maxmemtot' Nvim delegates memory-management to the OS.
   'maxcombine' (6 is always used)
+  *'prompt'* *'noprompt'*
   *'restorescreen'* *'rs'* *'norestorescreen'* *'nors'*
   'shelltype'
   *'shortname'* *'sn'* *'noshortname'* *'nosn'*
@@ -520,6 +585,7 @@ Test functions:
   test_scrollbar()
   test_setmouse()
   test_settime()
+  test_srand_seed()
 
 TUI:
 			  *t_xx* *termcap-options* *t_AB* *t_Sb* *t_vb* *t_SI*

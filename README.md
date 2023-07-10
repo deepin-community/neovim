@@ -1,10 +1,12 @@
-[![Neovim](https://raw.githubusercontent.com/neovim/neovim.github.io/master/logos/neovim-logo-300x87.png)](https://neovim.io)
+<h1 align="center">
+  <img src="https://raw.githubusercontent.com/neovim/neovim.github.io/master/logos/neovim-logo-300x87.png" alt="Neovim">
+</h1>
 
 [Documentation](https://neovim.io/doc/general/) |
-[Chat](https://gitter.im/neovim/neovim) |
+[Chat](https://app.element.io/#/room/#neovim:matrix.org) |
 [Twitter](https://twitter.com/Neovim)
 
-[![GitHub CI](https://github.com/neovim/neovim/workflows/CI/badge.svg)](https://github.com/neovim/neovim/actions?query=workflow%3A%22CI%22)
+[![GitHub CI](https://github.com/neovim/neovim/workflows/CI/badge.svg)](https://github.com/neovim/neovim/actions?query=workflow%3ACI+branch%3Amaster+event%3Apush)
 [![Codecov coverage](https://img.shields.io/codecov/c/github/neovim/neovim.svg)](https://codecov.io/gh/neovim/neovim)
 [![Coverity Scan analysis](https://scan.coverity.com/projects/2227/badge.svg)](https://scan.coverity.com/projects/2227)
 [![Clang analysis](https://neovim.io/doc/reports/clang/badge.svg)](https://neovim.io/doc/reports/clang)
@@ -46,8 +48,7 @@ Install from package
 Pre-built packages for Windows, macOS, and Linux are found on the
 [Releases](https://github.com/neovim/neovim/releases/) page.
 
-[Managed packages] are in [Homebrew], [Debian], [Ubuntu], [Fedora], [Arch Linux],
-[Gentoo], and more!
+[Managed packages] are in [Homebrew], [Debian], [Ubuntu], [Fedora], [Arch Linux], [Void Linux], [Gentoo], and more!
 
 Install from source
 -------------------
@@ -65,7 +66,7 @@ To install to a non-default location:
     make CMAKE_INSTALL_PREFIX=/full/path/
     make install
 
-To inspect the build, these CMake features are useful:
+CMake hints for inspecting the build:
 
 - `cmake --build build --target help` lists all build targets.
 - `build/CMakeCache.txt` (or `cmake -LAH build/`) contains the resolved values of all CMake variables.
@@ -120,8 +121,9 @@ Apache 2.0 license, except for contributions copied from Vim (identified by the
 [Managed packages]: https://github.com/neovim/neovim/wiki/Installing-Neovim#install-from-package
 [Debian]: https://packages.debian.org/testing/neovim
 [Ubuntu]: http://packages.ubuntu.com/search?keywords=neovim
-[Fedora]: https://apps.fedoraproject.org/packages/neovim
+[Fedora]: https://packages.fedoraproject.org/pkgs/neovim/neovim/
 [Arch Linux]: https://www.archlinux.org/packages/?q=neovim
+[Void Linux]: https://voidlinux.org/packages/?arch=x86_64&q=neovim
 [Gentoo]: https://packages.gentoo.org/packages/app-editors/neovim
 [Homebrew]: https://formulae.brew.sh/formula/neovim
 

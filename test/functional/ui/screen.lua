@@ -75,7 +75,7 @@ local busted = require('busted')
 local deepcopy = helpers.deepcopy
 local shallowcopy = helpers.shallowcopy
 local concat_tables = helpers.concat_tables
-local request, run_session = helpers.request, helpers.run_session
+local run_session = helpers.run_session
 local eq = helpers.eq
 local dedent = helpers.dedent
 local get_session = helpers.get_session
@@ -89,8 +89,6 @@ end
 
 local Screen = {}
 Screen.__index = Screen
-
-local debug_screen
 
 local default_timeout_factor = 1
 if os.getenv('VALGRIND') then
@@ -121,18 +119,6 @@ do
   session:close()
   Screen.colors = colors
   Screen.colornames = colornames
-end
-
-function Screen.debug(command)
-  if not command then
-    command = 'pynvim -n -c '
-  end
-  command = command .. request('vim_eval', '$NVIM_LISTEN_ADDRESS')
-  if debug_screen then
-    debug_screen:close()
-  end
-  debug_screen = io.popen(command, 'r')
-  debug_screen:read()
 end
 
 function Screen.new(width, height)
@@ -544,7 +530,7 @@ function Screen:_wait(check, flags)
   elseif not checked then
     err = check()
     if not err and flags.unchanged then
-      -- expecting NO screen change: use a shorter timout
+      -- expecting NO screen change: use a shorter timeout
       success_seen = true
     end
   end
@@ -576,16 +562,16 @@ to the test if they make sense.
     print([[
 
 warning: Screen changes were received after the expected state. This indicates
-indeterminism in the test. Try adding screen:expect(...) (or wait()) between
-asynchronous (feed(), nvim_input()) and synchronous API calls.
+indeterminism in the test. Try adding screen:expect(...) (or poke_eventloop())
+between asynchronous (feed(), nvim_input()) and synchronous API calls.
   - Use screen:redraw_debug() to investigate; it may find relevant intermediate
     states that should be added to the test to make it more robust.
   - If the purpose of the test is to assert state after some user input sent
     with feed(), adding screen:expect() before the feed() will help to ensure
     the input is sent when Nvim is in a predictable state. This is preferable
-    to wait(), for being closer to real user interaction.
-  - wait() can trigger redraws and consequently generate more indeterminism.
-    Try removing wait().
+    to poke_eventloop(), for being closer to real user interaction.
+  - poke_eventloop() can trigger redraws and thus generate more indeterminism.
+    Try removing poke_eventloop().
       ]])
     did_warn = true
   end
@@ -773,13 +759,14 @@ function Screen:_handle_win_pos(grid, win, startrow, startcol, width, height)
   self.float_pos[grid] = nil
 end
 
-function Screen:_handle_win_viewport(grid, win, topline, botline, curline, curcol)
+function Screen:_handle_win_viewport(grid, win, topline, botline, curline, curcol, linecount)
   self.win_viewport[grid] = {
     win = win,
     topline = topline,
     botline = botline,
     curline = curline,
-    curcol = curcol
+    curcol = curcol,
+    linecount = linecount
   }
 end
 
@@ -1306,7 +1293,7 @@ local function fmt_ext_state(name, state)
     for k,v in pairs(state) do
       str = (str.."  ["..k.."] = {win = {id = "..v.win.id.."}, topline = "
              ..v.topline..", botline = "..v.botline..", curline = "..v.curline
-             ..", curcol = "..v.curcol.."};\n")
+             ..", curcol = "..v.curcol..", linecount = "..v.linecount.."};\n")
     end
     return str .. "}"
   elseif name == "float_pos" then
@@ -1558,10 +1545,11 @@ end
 
 function Screen:_equal_attrs(a, b)
     return a.bold == b.bold and a.standout == b.standout and
-       a.underline == b.underline and a.undercurl == b.undercurl and
-       a.italic == b.italic and a.reverse == b.reverse and
-       a.foreground == b.foreground and a.background == b.background and
-       a.special == b.special and a.blend == b.blend and
+       a.underline == b.underline and a.underlineline == b.underlineline and
+       a.undercurl == b.undercurl and a.underdot == b.underdot and
+       a.underdash == b.underdash and a.italic == b.italic and
+       a.reverse == b.reverse and a.foreground == b.foreground and
+       a.background == b.background and a.special == b.special and a.blend == b.blend and
        a.strikethrough == b.strikethrough and
        a.fg_indexed == b.fg_indexed and a.bg_indexed == b.bg_indexed
 end

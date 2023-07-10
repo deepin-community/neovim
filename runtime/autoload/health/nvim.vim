@@ -104,8 +104,8 @@ function! s:check_rplugin_manifest() abort
         if !has_key(existing_rplugins, script)
           let msg = printf('"%s" is not registered.', fnamemodify(path, ':t'))
           if python_version ==# 'pythonx'
-            if !has('python2') && !has('python3')
-              let msg .= ' (python2 and python3 not available)'
+            if !has('python3')
+              let msg .= ' (python3 not available)'
             endif
           elseif !has(python_version)
             let msg .= printf(' (%s not available)', python_version)
@@ -148,14 +148,14 @@ endfunction
 
 function! s:get_tmux_option(option) abort
   let cmd = 'tmux show-option -qvg '.a:option  " try global scope
-  let out = system(cmd)
+  let out = system(split(cmd))
   let val = substitute(out, '\v(\s|\r|\n)', '', 'g')
   if v:shell_error
     call health#report_error('command failed: '.cmd."\n".out)
     return 'error'
   elseif empty(val)
     let cmd = 'tmux show-option -qvgs '.a:option  " try session scope
-    let out = system(cmd)
+    let out = system(split(cmd))
     let val = substitute(out, '\v(\s|\r|\n)', '', 'g')
     if v:shell_error
       call health#report_error('command failed: '.cmd."\n".out)
@@ -202,11 +202,11 @@ function! s:check_tmux() abort
   " check default-terminal and $TERM
   call health#report_info('$TERM: '.$TERM)
   let cmd = 'tmux show-option -qvg default-terminal'
-  let out = system(cmd)
+  let out = system(split(cmd))
   let tmux_default_term = substitute(out, '\v(\s|\r|\n)', '', 'g')
   if empty(tmux_default_term)
     let cmd = 'tmux show-option -qvgs default-terminal'
-    let out = system(cmd)
+    let out = system(split(cmd))
     let tmux_default_term = substitute(out, '\v(\s|\r|\n)', '', 'g')
   endif
 
@@ -225,7 +225,7 @@ function! s:check_tmux() abort
   endif
 
   " check for RGB capabilities
-  let info = system('tmux server-info')
+  let info = system(['tmux', 'server-info'])
   let has_tc = stridx(info, " Tc: (flag) true") != -1
   let has_rgb = stridx(info, " RGB: (flag) true") != -1
   if !has_tc && !has_rgb
@@ -242,7 +242,7 @@ function! s:check_terminal() abort
   endif
   call health#report_start('terminal')
   let cmd = 'infocmp -L'
-  let out = system(cmd)
+  let out = system(split(cmd))
   let kbs_entry   = matchstr(out, 'key_backspace=[^,[:space:]]*')
   let kdch1_entry = matchstr(out, 'key_dc=[^,[:space:]]*')
 

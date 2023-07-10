@@ -22,10 +22,25 @@ local _link_default_highlight_once = function(from, to)
   return from
 end
 
--- These are conventions defined by nvim-treesitter, though it
--- needs to be user extensible also.
-TSHighlighter.hl_map = {
+-- If @definition.special does not exist use @definition instead
+local subcapture_fallback = {
+  __index = function(self, capture)
+    local rtn
+    local shortened = capture
+    while not rtn and shortened do
+      shortened = shortened:match('(.*)%.')
+      rtn = shortened and rawget(self, shortened)
+    end
+    rawset(self, capture, rtn or "__notfound")
+    return rtn
+  end
+}
+
+TSHighlighter.hl_map = setmetatable({
     ["error"] = "Error",
+    ["text.underline"] = "Underlined",
+    ["todo"] = "Todo",
+    ["debug"] = "Debug",
 
 -- Miscs
     ["comment"] = "Comment",
@@ -37,10 +52,13 @@ TSHighlighter.hl_map = {
     ["constant"] = "Constant",
     ["constant.builtin"] = "Special",
     ["constant.macro"] = "Define",
+    ["define"] = "Define",
+    ["macro"] = "Macro",
     ["string"] = "String",
     ["string.regex"] = "String",
     ["string.escape"] = "SpecialChar",
     ["character"] = "Character",
+    ["character.special"] = "SpecialChar",
     ["number"] = "Number",
     ["boolean"] = "Boolean",
     ["float"] = "Float",
@@ -66,9 +84,13 @@ TSHighlighter.hl_map = {
 
     ["type"] = "Type",
     ["type.builtin"] = "Type",
+    ["type.qualifier"] = "Type",
+    ["type.definition"] = "Typedef",
+    ["storageclass"] = "StorageClass",
     ["structure"] = "Structure",
     ["include"] = "Include",
-}
+    ["preproc"] = "PreProc",
+}, subcapture_fallback)
 
 ---@private
 local function is_highlight_name(capture_name)
@@ -87,8 +109,10 @@ function TSHighlighterQuery.new(lang, query_string)
         hl = _link_default_highlight_once(lang .. hl, hl)
       end
 
-      rawset(table, capture, hl)
-      return hl
+      local id = a.nvim_get_hl_id_by_name(hl)
+
+      rawset(table, capture, id)
+      return id
     end
   })
 
@@ -116,14 +140,14 @@ function TSHighlighterQuery:_get_hl_from_capture(capture)
     -- From "Normal.left" only keep "Normal"
     return vim.split(name, '.', true)[1], true
   else
-    return TSHighlighter.hl_map[name] or name, false
+    return TSHighlighter.hl_map[name] or 0, false
   end
 end
 
 --- Creates a new highlighter using @param tree
 ---
---- @param tree The language tree to use for highlighting
---- @param opts Table used to configure the highlighter
+---@param tree The language tree to use for highlighting
+---@param opts Table used to configure the highlighter
 ---           - queries: Table to overwrite queries used by the highlighter
 function TSHighlighter.new(tree, opts)
   local self = setmetatable({}, TSHighlighter)
@@ -217,7 +241,7 @@ end
 
 --- Gets the query used for @param lang
 ---
---- @param lang A language used by the highlighter.
+---@param lang A language used by the highlighter.
 function TSHighlighter:get_query(lang)
   if not self._queries[lang] then
     self._queries[lang] = TSHighlighterQuery.new(lang)
@@ -243,12 +267,12 @@ local function on_line_impl(self, buf, line)
     -- Some injected languages may not have highlight queries.
     if not highlighter_query:query() then return end
 
-    if state.iter == nil then
+    if state.iter == nil or state.next_row < line then
       state.iter = highlighter_query:query():iter_captures(root_node, self.bufnr, line, root_end_row + 1)
     end
 
     while line >= state.next_row do
-      local capture, node = state.iter()
+      local capture, node, metadata = state.iter()
 
       if capture == nil then break end
 
@@ -260,7 +284,8 @@ local function on_line_impl(self, buf, line)
                                { end_line = end_row, end_col = end_col,
                                  hl_group = hl,
                                  ephemeral = true,
-                                 priority = 100 -- Low but leaves room below
+                                 priority = tonumber(metadata.priority) or 100, -- Low but leaves room below
+                                 conceal = metadata.conceal,
                                 })
       end
       if start_row > line then

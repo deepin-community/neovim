@@ -8,7 +8,7 @@ include /usr/share/dpkg/architecture.mk
 # length arrays
 CPPFLAGS := $(subst _FORTIFY_SOURCE=2,_FORTIFY_SOURCE=1,$(CPPFLAGS))
 # cmake doesn't honor CPPFLAGS
-CFLAGS += $(CPPFLAGS) -DDISABLE_LOG
+CFLAGS += $(CPPFLAGS) -DDISABLE_LOG -fno-strict-aliasing
 CXXFLAGS += $(CPPFLAGS)
 
 export CFLAGS CXXFLAGS LDFLAGS
@@ -17,6 +17,8 @@ BITOP_DEPENDS = lua-bitop
 PREFER_LUA = ON
 FUNCTIONALTEST =
 UNITTEST =
+COMPILE_LUA = ON
+
 ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' lua-nvim 2>&1)))
   FUNCTIONALTEST = functionaltest
 endif
@@ -25,6 +27,15 @@ ifneq (,$(findstring ok installed,$(shell dpkg-query -W -f '$${Status}' luajit 2
   BITOP_DEPENDS =
   PREFER_LUA = OFF
   UNITTEST = unittest
+  COMPILE_LUA = OFF
+endif
+
+# Default test timeout upstream is 20 minutes.  Extend this to 45 minutes
+TIMEOUT=TEST_TIMEOUT=2700
+
+FUNCTEST_FILTER_OUT=
+ifneq (,$(filter armhf,$(DEB_HOST_ARCH)))
+  FUNCTEST_FILTER_OUT='memory usage releases memory when closing windows when folds exist'
 endif
 
 export USERNAME = team+vim
@@ -49,16 +60,13 @@ endif
 	dh $@ --buildsystem=cmake --builddirectory=build
 
 override_dh_auto_configure:
-	dh_auto_configure -- -G Ninja -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DBUSTED_OUTPUT_TYPE=nvim -DPREFER_LUA=$(PREFER_LUA) -DLIBLUV_LIBRARY:FILEPATH=/usr/lib/$(DEB_HOST_MULTIARCH)/lua/5.1/luv.so -DLIBLUV_INCLUDE_DIR:PATH=/usr/include/lua5.1
+	dh_auto_configure -- -G Ninja -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DBUSTED_OUTPUT_TYPE=nvim -DPREFER_LUA=$(PREFER_LUA) -DLIBLUV_LIBRARY:FILEPATH=/usr/lib/$(DEB_HOST_MULTIARCH)/lua/5.1/luv.so -DLIBLUV_INCLUDE_DIR:PATH=/usr/include/lua5.1 -DCOMPILE_LUA=$(COMPILE_LUA)
 
 override_dh_auto_build:
 	$(BUILD)
 
 override_dh_auto_install:
 	env DESTDIR=$(CURDIR)/debian/tmp $(BUILD) install
-
-override_dh_install:
-	dh_install --fail-missing
 
 override_dh_auto_clean:
 	$(MAKE) clean
@@ -88,7 +96,7 @@ override_dh_auto_test-arch: debian/passwd debian/fakehome debian/fakehome/locale
 	env "LOCPATH=$(CURDIR)/debian/fakehome/locale" "HOME=$(CURDIR)/debian/fakehome" $(MAKE) -C src/nvim/testdir clean
 	env "LOCPATH=$(CURDIR)/debian/fakehome/locale" "HOME=$(CURDIR)/debian/fakehome" TERM=xterm $(MAKE) -C src/nvim/testdir "NVIM_PRG=$(CURDIR)/build/bin/nvim"
 ifneq (,$(FUNCTIONALTEST))
-	env "LOCPATH=$(CURDIR)/debian/fakehome/locale" BUSTED_ARGS="--lua=lua5.1" TEST_SKIP_FRAGILE=1 "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" $(BUILD) $(FUNCTIONALTEST)
+	env "LOCPATH=$(CURDIR)/debian/fakehome/locale" BUSTED_ARGS="--lua=lua5.1" $(TIMEOUT) TEST_FILTER_OUT="$(FUNCTEST_FILTER_OUT)" TEST_SKIP_FRAGILE=1 "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" $(BUILD) $(FUNCTIONALTEST)
 endif
 ifneq (,$(UNITTEST))
 	env "LOCPATH=$(CURDIR)/debian/fakehome/locale" BUSTED_ARGS="--lua=luajit" TEST_SKIP_FRAGILE=1 "HOME=$(CURDIR)/debian/fakehome" LD_PRELOAD=libnss_wrapper.so "NSS_WRAPPER_PASSWD=$(CURDIR)/debian/passwd" "NSS_WRAPPER_GROUP=$(CURDIR)/debian/group" $(BUILD) $(UNITTEST)
