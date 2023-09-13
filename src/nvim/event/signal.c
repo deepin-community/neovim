@@ -1,6 +1,7 @@
 // This is an open source non-commercial project. Dear PVS-Studio, please check
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
+#include <stddef.h>
 #include <uv.h>
 
 #include "nvim/event/loop.h"
@@ -9,7 +10,6 @@
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "event/signal.c.generated.h"
 #endif
-
 
 void signal_watcher_init(Loop *loop, SignalWatcher *watcher, void *data)
   FUNC_ATTR_NONNULL_ARG(1) FUNC_ATTR_NONNULL_ARG(2)

@@ -7,6 +7,7 @@ local clear = helpers.clear
 local meths = helpers.meths
 local funcs = helpers.funcs
 local source = helpers.source
+local exec_capture = helpers.exec_capture
 local dedent = helpers.dedent
 local command = helpers.command
 local curbufmeths = helpers.curbufmeths
@@ -24,7 +25,6 @@ before_each(function()
   clear()
   screen = Screen.new(40, 8)
   screen:attach()
-  command("set display-=msgsep")
   source([[
     highlight RBP1 guibg=Red
     highlight RBP2 guibg=Yellow
@@ -33,7 +33,7 @@ before_each(function()
     let g:NUM_LVLS = 4
     function Redraw()
       mode
-      return ''
+      return "\<Ignore>"
     endfunction
     let g:id = ''
     cnoremap <expr> {REDRAW} Redraw()
@@ -42,7 +42,7 @@ before_each(function()
       let Cb = g:Nvim_color_input{g:id}
       let out = input({'prompt': ':', 'highlight': Cb})
       let g:out{id} = out
-      return (a:do_return ? out : '')
+      return (a:do_return ? out : "\<Ignore>")
     endfunction
     nnoremap <expr> {PROMPT} DoPrompt(0)
     cnoremap <expr> {PROMPT} DoPrompt(1)
@@ -62,7 +62,7 @@ before_each(function()
       endwhile
       return ret
     endfunction
-    function SplittedMultibyteStart(cmdline)
+    function SplitMultibyteStart(cmdline)
       let ret = []
       let i = 0
       while i < len(a:cmdline)
@@ -78,7 +78,7 @@ before_each(function()
       endwhile
       return ret
     endfunction
-    function SplittedMultibyteEnd(cmdline)
+    function SplitMultibyteEnd(cmdline)
       let ret = []
       let i = 0
       while i < len(a:cmdline)
@@ -152,6 +152,7 @@ before_each(function()
     SB={foreground = Screen.colors.Blue4},
     E={foreground = Screen.colors.Red, background = Screen.colors.Blue},
     M={bold = true},
+    MSEP={bold = true, reverse = true};
   })
 end)
 
@@ -296,24 +297,24 @@ describe('Command-line coloring', function()
   end
   it('does the right thing when hl start appears to split multibyte char',
   function()
-    set_color_cb('SplittedMultibyteStart')
+    set_color_cb('SplitMultibyteStart')
     start_prompt('echo "«')
-    screen:expect([[
+    screen:expect{grid=[[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :echo "                                 |
       {ERR:E5405: Chunk 0 start 7 splits multibyte }|
       {ERR:character}                               |
       :echo "«^                                |
-    ]])
+    ]]}
     feed('»')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :echo "                                 |
       {ERR:E5405: Chunk 0 start 7 splits multibyte }|
       {ERR:character}                               |
@@ -322,30 +323,30 @@ describe('Command-line coloring', function()
   end)
   it('does the right thing when hl end appears to split multibyte char',
   function()
-    set_color_cb('SplittedMultibyteEnd')
+    set_color_cb('SplitMultibyteEnd')
     start_prompt('echo "«')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :echo "                                 |
       {ERR:E5406: Chunk 0 end 7 splits multibyte ch}|
       {ERR:aracter}                                 |
       :echo "«^                                |
     ]])
   end)
-  it('does the right thing when errorring', function()
+  it('does the right thing when erroring', function()
     set_color_cb('Echoerring')
     start_prompt('e')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :                                       |
       {ERR:E5407: Callback has thrown an exception:}|
-      {ERR: Vim(echoerr):HERE}                      |
+      {ERR: function DoPrompt[3]..Echoerring, line }|
+      {ERR:1: Vim(echoerr):HERE}                    |
       :e^                                      |
     ]])
   end)
@@ -362,7 +363,7 @@ describe('Command-line coloring', function()
       {EOB:~                                       }|
       :e^                                      |
     ]])
-    eq('', meths.exec('messages', true))
+    eq('', exec_capture('messages'))
   end)
   it('silences :echon', function()
     set_color_cb('Echoning')
@@ -377,7 +378,7 @@ describe('Command-line coloring', function()
       {EOB:~                                       }|
       :e^                                      |
     ]])
-    eq('', meths.exec('messages', true))
+    eq('', exec_capture('messages'))
   end)
   it('silences :echomsg', function()
     set_color_cb('Echomsging')
@@ -392,34 +393,34 @@ describe('Command-line coloring', function()
       {EOB:~                                       }|
       :e^                                      |
     ]])
-    eq('', meths.exec('messages', true))
+    eq('', exec_capture('messages'))
   end)
   it('does the right thing when throwing', function()
     set_color_cb('Throwing')
     start_prompt('e')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :                                       |
       {ERR:E5407: Callback has thrown an exception:}|
+      {ERR: function DoPrompt[3]..Throwing, line 1:}|
       {ERR: ABC}                                    |
       :e^                                      |
     ]])
   end)
   it('stops executing callback after a number of errors', function()
-    set_color_cb('SplittedMultibyteStart')
-    start_prompt('let x = "«»«»«»«»«»"\n')
+    set_color_cb('SplitMultibyteStart')
+    start_prompt('let x = "«»«»«»«»«»"')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :let x = "                              |
       {ERR:E5405: Chunk 0 start 10 splits multibyte}|
       {ERR: character}                              |
-      ^:let x = "«»«»«»«»«»"                   |
+      :let x = "«»«»«»«»«»"^                   |
     ]])
     feed('\n')
     screen:expect([[
@@ -432,6 +433,7 @@ describe('Command-line coloring', function()
       {EOB:~                                       }|
                                               |
     ]])
+    feed('\n')
     eq('let x = "«»«»«»«»«»"', meths.get_var('out'))
     local msg = '\nE5405: Chunk 0 start 10 splits multibyte character'
     eq(msg:rep(1), funcs.execute('messages'))
@@ -452,10 +454,10 @@ describe('Command-line coloring', function()
     screen:sleep(500)
     feed('<C-c>')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :                                       |
       {ERR:E5407: Callback has thrown an exception:}|
       {ERR: Keyboard interrupt}                     |
@@ -474,14 +476,14 @@ describe('Command-line coloring', function()
     ]])
     feed('\n')
     screen:expect([[
-                                              |
+      ^                                        |
       {EOB:~                                       }|
       {EOB:~                                       }|
       {EOB:~                                       }|
       {EOB:~                                       }|
       {EOB:~                                       }|
       {EOB:~                                       }|
-      ^:echo 42                                |
+      :echo 42                                |
     ]])
     feed('\n')
     eq('echo 42', meths.get_var('out'))
@@ -516,11 +518,11 @@ describe('Command-line coloring', function()
     set_color_cb('ReturningGlobal', '')
     start_prompt('#')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :                                       |
       {ERR:E5400: Callback should return list}      |
       :#^                                      |
@@ -530,11 +532,11 @@ describe('Command-line coloring', function()
     set_color_cb('ReturningGlobal', {{0, 1, 'Normal'}, 42})
     start_prompt('#')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :                                       |
       {ERR:E5401: List item 1 is not a List}        |
       :#^                                      |
@@ -544,10 +546,10 @@ describe('Command-line coloring', function()
     set_color_cb('ReturningGlobal2', {{0, 1, 'Normal'}, {1}})
     start_prompt('+')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :+                                      |
       {ERR:E5402: List item 1 has incorrect length:}|
       {ERR: 1 /= 3}                                 |
@@ -558,10 +560,10 @@ describe('Command-line coloring', function()
     set_color_cb('ReturningGlobal2', {{0, 1, 'Normal'}, {2, 3, 'Normal'}})
     start_prompt('+')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :+                                      |
       {ERR:E5403: Chunk 1 start 2 not in range [1, }|
       {ERR:2)}                                      |
@@ -572,10 +574,10 @@ describe('Command-line coloring', function()
     set_color_cb('ReturningGlobal2', {{0, 1, 'Normal'}, {1, 3, 'Normal'}})
     start_prompt('+')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :+                                      |
       {ERR:E5404: Chunk 1 end 3 not in range (1, 2]}|
                                               |
@@ -771,7 +773,7 @@ describe('Ex commands coloring', function()
     ]])
   end)
   it('still executes command-line even if errored out', function()
-    meths.set_var('Nvim_color_cmdline', 'SplittedMultibyteStart')
+    meths.set_var('Nvim_color_cmdline', 'SplitMultibyteStart')
     feed(':let x = "«"\n')
     eq('«', meths.get_var('x'))
     local msg = 'E5405: Chunk 0 start 10 splits multibyte character'
@@ -799,10 +801,10 @@ describe('Ex commands coloring', function()
   it('does not crash when using `n` in debug mode', function()
     feed(':debug execute "echo 1"\n')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       Entering Debug mode.  Type "cont" to con|
       tinue.                                  |
       cmd: execute "echo 1"                   |
@@ -810,8 +812,8 @@ describe('Ex commands coloring', function()
     ]])
     feed('n\n')
     screen:expect([[
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+                                              |
+      {MSEP:                                        }|
       Entering Debug mode.  Type "cont" to con|
       tinue.                                  |
       cmd: execute "echo 1"                   |
@@ -835,10 +837,10 @@ describe('Ex commands coloring', function()
     command("cnoremap <expr> x execute('throw 42')[-1]")
     feed(':#x')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :#                                      |
       {ERR:Error detected while processing :}       |
       {ERR:E605: Exception not caught: 42}          |
@@ -846,9 +848,9 @@ describe('Ex commands coloring', function()
     ]])
     feed('<CR>')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :#                                      |
       {ERR:Error detected while processing :}       |
       {ERR:E605: Exception not caught: 42}          |
@@ -857,15 +859,15 @@ describe('Ex commands coloring', function()
     ]])
     feed('<CR>')
     eq('Error detected while processing :\nE605: Exception not caught: 42\nE749: empty buffer',
-       meths.exec('messages', true))
+       exec_capture('messages'))
   end)
   it('errors out when failing to get callback', function()
     meths.set_var('Nvim_color_cmdline', 42)
     feed(':#')
     screen:expect([[
+                                              |
       {EOB:~                                       }|
-      {EOB:~                                       }|
-      {EOB:~                                       }|
+      {MSEP:                                        }|
       :                                       |
       {ERR:E5408: Unable to get g:Nvim_color_cmdlin}|
       {ERR:e callback: Vim:E6000: Argument is not a}|

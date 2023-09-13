@@ -5,14 +5,14 @@
 // Terminal/console utils
 //
 
-#include "nvim/os/os.h"
+#include "nvim/os/os.h"  // IWYU pragma: keep (Windows)
 #include "nvim/os/tty.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "os/tty.c.generated.h"
+# include "os/tty.c.generated.h"  // IWYU pragma: export
 #endif
 
-#ifdef WIN32
+#ifdef MSWIN
 # if !defined(ENABLE_VIRTUAL_TERMINAL_PROCESSING)
 #  define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
 # endif
@@ -23,15 +23,6 @@
 /// @param out_fd stdout file descriptor
 void os_tty_guess_term(const char **term, int out_fd)
 {
-  bool winpty = (os_getenv("NVIM") != NULL);
-
-  if (winpty) {
-    // Force TERM=win32con when running in winpty.
-    *term = "win32con";
-    uv_tty_set_vterm_state(UV_TTY_UNSUPPORTED);
-    return;
-  }
-
   bool conemu_ansi = strequal(os_getenv("ConEmuANSI"), "ON");
   bool vtp = false;
 

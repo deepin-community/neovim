@@ -1,34 +1,121 @@
 // This is an open source non-commercial project. Dear PVS-Studio, please check
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include "nvim/tui/input.h"
-#include "nvim/vim.h"
-#include "nvim/api/vim.h"
+#include "nvim/api/private/defs.h"
 #include "nvim/api/private/helpers.h"
 #include "nvim/ascii.h"
 #include "nvim/charset.h"
-#include "nvim/main.h"
+#include "nvim/event/defs.h"
+#include "nvim/log.h"
 #include "nvim/macros.h"
-#include "nvim/aucmd.h"
-#include "nvim/ex_docmd.h"
+#include "nvim/main.h"
+#include "nvim/map.h"
+#include "nvim/memory.h"
 #include "nvim/option.h"
-#include "nvim/os/os.h"
 #include "nvim/os/input.h"
-#ifdef WIN32
+#include "nvim/os/os.h"
+#include "nvim/tui/input.h"
+#include "nvim/tui/input_defs.h"
+#include "nvim/tui/tui.h"
+#include "nvim/types.h"
+#include "nvim/ui_client.h"
+#ifdef MSWIN
 # include "nvim/os/os_win_console.h"
 #endif
 #include "nvim/event/rstream.h"
+#include "nvim/msgpack_rpc/channel.h"
 
 #define KEY_BUFFER_SIZE 0xfff
 
-#ifndef UNIT_TESTING
-typedef enum {
-  kIncomplete = -1,
-  kNotApplicable = 0,
-  kComplete = 1,
-} HandleState;
-#endif
+static const struct kitty_key_map_entry {
+  KittyKey key;
+  const char *name;
+} kitty_key_map_entry[] = {
+  { KITTY_KEY_ESCAPE,              "Esc" },
+  { KITTY_KEY_ENTER,               "CR" },
+  { KITTY_KEY_TAB,                 "Tab" },
+  { KITTY_KEY_BACKSPACE,           "BS" },
+  { KITTY_KEY_INSERT,              "Insert" },
+  { KITTY_KEY_DELETE,              "Del" },
+  { KITTY_KEY_LEFT,                "Left" },
+  { KITTY_KEY_RIGHT,               "Right" },
+  { KITTY_KEY_UP,                  "Up" },
+  { KITTY_KEY_DOWN,                "Down" },
+  { KITTY_KEY_PAGE_UP,             "PageUp" },
+  { KITTY_KEY_PAGE_DOWN,           "PageDown" },
+  { KITTY_KEY_HOME,                "Home" },
+  { KITTY_KEY_END,                 "End" },
+  { KITTY_KEY_F1,                  "F1" },
+  { KITTY_KEY_F2,                  "F2" },
+  { KITTY_KEY_F3,                  "F3" },
+  { KITTY_KEY_F4,                  "F4" },
+  { KITTY_KEY_F5,                  "F5" },
+  { KITTY_KEY_F6,                  "F6" },
+  { KITTY_KEY_F7,                  "F7" },
+  { KITTY_KEY_F8,                  "F8" },
+  { KITTY_KEY_F9,                  "F9" },
+  { KITTY_KEY_F10,                 "F10" },
+  { KITTY_KEY_F11,                 "F11" },
+  { KITTY_KEY_F12,                 "F12" },
+  { KITTY_KEY_F13,                 "F13" },
+  { KITTY_KEY_F14,                 "F14" },
+  { KITTY_KEY_F15,                 "F15" },
+  { KITTY_KEY_F16,                 "F16" },
+  { KITTY_KEY_F17,                 "F17" },
+  { KITTY_KEY_F18,                 "F18" },
+  { KITTY_KEY_F19,                 "F19" },
+  { KITTY_KEY_F20,                 "F20" },
+  { KITTY_KEY_F21,                 "F21" },
+  { KITTY_KEY_F22,                 "F22" },
+  { KITTY_KEY_F23,                 "F23" },
+  { KITTY_KEY_F24,                 "F24" },
+  { KITTY_KEY_F25,                 "F25" },
+  { KITTY_KEY_F26,                 "F26" },
+  { KITTY_KEY_F27,                 "F27" },
+  { KITTY_KEY_F28,                 "F28" },
+  { KITTY_KEY_F29,                 "F29" },
+  { KITTY_KEY_F30,                 "F30" },
+  { KITTY_KEY_F31,                 "F31" },
+  { KITTY_KEY_F32,                 "F32" },
+  { KITTY_KEY_F33,                 "F33" },
+  { KITTY_KEY_F34,                 "F34" },
+  { KITTY_KEY_F35,                 "F35" },
+  { KITTY_KEY_KP_0,                "k0" },
+  { KITTY_KEY_KP_1,                "k1" },
+  { KITTY_KEY_KP_2,                "k2" },
+  { KITTY_KEY_KP_3,                "k3" },
+  { KITTY_KEY_KP_4,                "k4" },
+  { KITTY_KEY_KP_5,                "k5" },
+  { KITTY_KEY_KP_6,                "k6" },
+  { KITTY_KEY_KP_7,                "k7" },
+  { KITTY_KEY_KP_8,                "k8" },
+  { KITTY_KEY_KP_9,                "k9" },
+  { KITTY_KEY_KP_DECIMAL,          "kPoint" },
+  { KITTY_KEY_KP_DIVIDE,           "kDivide" },
+  { KITTY_KEY_KP_MULTIPLY,         "kMultiply" },
+  { KITTY_KEY_KP_SUBTRACT,         "kMinus" },
+  { KITTY_KEY_KP_ADD,              "kPlus" },
+  { KITTY_KEY_KP_ENTER,            "kEnter" },
+  { KITTY_KEY_KP_EQUAL,            "kEqual" },
+  { KITTY_KEY_KP_LEFT,             "kLeft" },
+  { KITTY_KEY_KP_RIGHT,            "kRight" },
+  { KITTY_KEY_KP_UP,               "kUp" },
+  { KITTY_KEY_KP_DOWN,             "kDown" },
+  { KITTY_KEY_KP_PAGE_UP,          "kPageUp" },
+  { KITTY_KEY_KP_PAGE_DOWN,        "kPageDown" },
+  { KITTY_KEY_KP_HOME,             "kHome" },
+  { KITTY_KEY_KP_END,              "kEnd" },
+  { KITTY_KEY_KP_INSERT,           "kInsert" },
+  { KITTY_KEY_KP_DELETE,           "kDel" },
+  { KITTY_KEY_KP_BEGIN,            "kOrigin" },
+};
+
+static Map(KittyKey, cstr_t) kitty_key_map = MAP_INIT;
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "tui/input.c.generated.h"
@@ -40,41 +127,29 @@ void tinput_init(TermInput *input, Loop *loop)
   input->paste = 0;
   input->in_fd = STDIN_FILENO;
   input->waiting_for_bg_response = 0;
+  input->extkeys_type = kExtkeysNone;
   // The main thread is waiting for the UI thread to call CONTINUE, so it can
   // safely access global variables.
   input->ttimeout = (bool)p_ttimeout;
   input->ttimeoutlen = p_ttm;
   input->key_buffer = rbuffer_new(KEY_BUFFER_SIZE);
-  uv_mutex_init(&input->key_buffer_mutex);
-  uv_cond_init(&input->key_buffer_cond);
 
-  // If stdin is not a pty, switch to stderr. For cases like:
-  //    echo q | nvim -es
-  //    ls *.md | xargs nvim
-#ifdef WIN32
-  if (!os_isatty(input->in_fd)) {
-      input->in_fd = os_get_conin_fd();
+  for (size_t i = 0; i < ARRAY_SIZE(kitty_key_map_entry); i++) {
+    map_put(KittyKey, cstr_t)(&kitty_key_map, kitty_key_map_entry[i].key,
+                              kitty_key_map_entry[i].name);
   }
-#else
-  if (!os_isatty(input->in_fd) && os_isatty(STDERR_FILENO)) {
-    input->in_fd = STDERR_FILENO;
-  }
-#endif
-  input_global_fd_init(input->in_fd);
+
+  input->in_fd = STDIN_FILENO;
 
   const char *term = os_getenv("TERM");
   if (!term) {
     term = "";  // termkey_new_abstract assumes non-null (#2745)
   }
 
-#if TERMKEY_VERSION_MAJOR > 0 || TERMKEY_VERSION_MINOR > 18
   input->tk = termkey_new_abstract(term,
                                    TERMKEY_FLAG_UTF8 | TERMKEY_FLAG_NOSTART);
-  termkey_hook_terminfo_getstr(input->tk, input->tk_ti_hook_fn, NULL);
+  termkey_hook_terminfo_getstr(input->tk, input->tk_ti_hook_fn, input);
   termkey_start(input->tk);
-#else
-  input->tk = termkey_new_abstract(term, TERMKEY_FLAG_UTF8);
-#endif
 
   int curflags = termkey_get_canonflags(input->tk);
   termkey_set_canonflags(input->tk, curflags | TERMKEY_CANON_DELBS);
@@ -87,9 +162,8 @@ void tinput_init(TermInput *input, Loop *loop)
 
 void tinput_destroy(TermInput *input)
 {
+  map_destroy(KittyKey, cstr_t)(&kitty_key_map);
   rbuffer_free(input->key_buffer);
-  uv_mutex_destroy(&input->key_buffer_mutex);
-  uv_cond_destroy(&input->key_buffer_cond);
   time_watcher_close(&input->timer_handle, NULL);
   stream_close(&input->read_stream, NULL, NULL);
   termkey_destroy(input->tk);
@@ -107,69 +181,41 @@ void tinput_stop(TermInput *input)
 }
 
 static void tinput_done_event(void **argv)
+  FUNC_ATTR_NORETURN
 {
-  input_done();
+  os_exit(1);
 }
 
-static void tinput_wait_enqueue(void **argv)
+/// Send all pending input in key buffer to Nvim server.
+static void tinput_flush(TermInput *input)
 {
-  TermInput *input = argv[0];
-  RBUFFER_UNTIL_EMPTY(input->key_buffer, buf, len) {
-    const String keys = { .data = buf, .size = len };
-    if (input->paste) {
-      String copy = copy_string(keys);
-      multiqueue_put(main_loop.events, tinput_paste_event, 3,
-                     copy.data, copy.size, (intptr_t)input->paste);
-      if (input->paste == 1) {
-        // Paste phase: "continue"
-        input->paste = 2;
-      }
+  if (input->paste) {  // produce exactly one paste event
+    const size_t len = rbuffer_size(input->key_buffer);
+    String keys = { .data = xmallocz(len), .size = len };
+    rbuffer_read(input->key_buffer, keys.data, len);
+    MAXSIZE_TEMP_ARRAY(args, 3);
+    ADD_C(args, STRING_OBJ(keys));  // 'data'
+    ADD_C(args, BOOLEAN_OBJ(true));  // 'crlf'
+    ADD_C(args, INTEGER_OBJ(input->paste));  // 'phase'
+    rpc_send_event(ui_client_channel_id, "nvim_paste", args);
+    api_free_string(keys);
+    if (input->paste == 1) {
+      // Paste phase: "continue"
+      input->paste = 2;
+    }
+    rbuffer_reset(input->key_buffer);
+  } else {  // enqueue input
+    RBUFFER_UNTIL_EMPTY(input->key_buffer, buf, len) {
+      const String keys = { .data = buf, .size = len };
+      MAXSIZE_TEMP_ARRAY(args, 1);
+      ADD_C(args, STRING_OBJ(keys));
+      // NOTE: This is non-blocking and won't check partially processed input,
+      // but should be fine as all big sends are handled with nvim_paste, not nvim_input
+      rpc_send_event(ui_client_channel_id, "nvim_input", args);
       rbuffer_consumed(input->key_buffer, len);
       rbuffer_reset(input->key_buffer);
-    } else {
-      const size_t consumed = input_enqueue(keys);
-      if (consumed) {
-        rbuffer_consumed(input->key_buffer, consumed);
-      }
-      rbuffer_reset(input->key_buffer);
-      if (consumed < len) {
-        break;
-      }
     }
   }
-  uv_mutex_lock(&input->key_buffer_mutex);
-  input->waiting = false;
-  uv_cond_signal(&input->key_buffer_cond);
-  uv_mutex_unlock(&input->key_buffer_mutex);
-}
-
-static void tinput_paste_event(void **argv)
-{
-  String keys = { .data = argv[0], .size = (size_t)argv[1] };
-  intptr_t phase = (intptr_t)argv[2];
-
-  Error err = ERROR_INIT;
-  nvim_paste(keys, true, phase, &err);
-  if (ERROR_SET(&err)) {
-    emsgf("paste: %s", err.msg);
-    api_clear_error(&err);
-  }
-
-  api_free_string(keys);
-}
-
-static void tinput_flush(TermInput *input, bool wait_until_empty)
-{
-  size_t drain_boundary = wait_until_empty ? 0 : 0xff;
-  do {
-    uv_mutex_lock(&input->key_buffer_mutex);
-    loop_schedule_fast(&main_loop, event_create(tinput_wait_enqueue, 1, input));
-    input->waiting = true;
-    while (input->waiting) {
-      uv_cond_wait(&input->key_buffer_cond, &input->key_buffer_mutex);
-    }
-    uv_mutex_unlock(&input->key_buffer_mutex);
-  } while (rbuffer_size(input->key_buffer) > drain_boundary);
 }
 
 static void tinput_enqueue(TermInput *input, char *buf, size_t size)
@@ -178,9 +224,30 @@ static void tinput_enqueue(TermInput *input, char *buf, size_t size)
       rbuffer_capacity(input->key_buffer) - 0xff) {
     // don't ever let the buffer get too full or we risk putting incomplete keys
     // into it
-    tinput_flush(input, false);
+    tinput_flush(input);
   }
   rbuffer_write(input->key_buffer, buf, size);
+}
+
+static void handle_kitty_key_protocol(TermInput *input, TermKeyKey *key)
+{
+  const char *name = map_get(KittyKey, cstr_t)(&kitty_key_map, (KittyKey)key->code.codepoint);
+  if (name) {
+    char buf[64];
+    size_t len = 0;
+    buf[len++] = '<';
+    if (key->modifiers & TERMKEY_KEYMOD_SHIFT) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "S-");
+    }
+    if (key->modifiers & TERMKEY_KEYMOD_ALT) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "A-");
+    }
+    if (key->modifiers & TERMKEY_KEYMOD_CTRL) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "C-");
+    }
+    len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s>", name);
+    tinput_enqueue(input, buf, len);
+  }
 }
 
 static void forward_simple_utf8(TermInput *input, TermKeyKey *key)
@@ -189,6 +256,11 @@ static void forward_simple_utf8(TermInput *input, TermKeyKey *key)
   char buf[64];
   char *ptr = key->utf8;
 
+  if (key->code.codepoint >= 0xE000 && key->code.codepoint <= 0xF8FF
+      && map_has(KittyKey, cstr_t)(&kitty_key_map, (KittyKey)key->code.codepoint)) {
+    handle_kitty_key_protocol(input, key);
+    return;
+  }
   while (*ptr) {
     if (*ptr == '<') {
       len += (size_t)snprintf(buf + len, sizeof(buf) - len, "<lt>");
@@ -213,6 +285,12 @@ static void forward_modified_utf8(TermInput *input, TermKeyKey *key)
     len = termkey_strfkey(input->tk, buf, sizeof(buf), key, TERMKEY_FORMAT_VIM);
   } else {
     assert(key->modifiers);
+    if (key->code.codepoint >= 0xE000 && key->code.codepoint <= 0xF8FF
+        && map_has(KittyKey, cstr_t)(&kitty_key_map,
+                                     (KittyKey)key->code.codepoint)) {
+      handle_kitty_key_protocol(input, key);
+      return;
+    }
     // Termkey doesn't include the S- modifier for ASCII characters (e.g.,
     // ctrl-shift-l is <C-L> instead of <C-S-L>.  Vim, on the other hand,
     // treats <C-L> and <C-l> the same, requiring the S- modifier.
@@ -221,7 +299,7 @@ static void forward_modified_utf8(TermInput *input, TermKeyKey *key)
         && !(key->modifiers & TERMKEY_KEYMOD_SHIFT)
         && ASCII_ISUPPER(key->code.codepoint)) {
       assert(len <= 62);
-      // Make remove for the S-
+      // Make room for the S-
       memmove(buf + 3, buf + 1, len - 1);
       buf[1] = 'S';
       buf[2] = '-';
@@ -250,8 +328,16 @@ static void forward_mouse_event(TermInput *input, TermKeyKey *key)
     button = last_pressed_button;
   }
 
-  if (button == 0 || (ev != TERMKEY_MOUSE_PRESS && ev != TERMKEY_MOUSE_DRAG
-                      && ev != TERMKEY_MOUSE_RELEASE)) {
+  if (ev == TERMKEY_MOUSE_UNKNOWN && !(key->code.mouse[0] & 0x20)) {
+    int code = key->code.mouse[0] & ~0x3c;
+    if (code == 66 || code == 67) {
+      ev = TERMKEY_MOUSE_PRESS;
+      button = code - 60;
+    }
+  }
+
+  if ((button == 0 && ev != TERMKEY_MOUSE_RELEASE)
+      || (ev != TERMKEY_MOUSE_PRESS && ev != TERMKEY_MOUSE_DRAG && ev != TERMKEY_MOUSE_RELEASE)) {
     return;
   }
 
@@ -279,25 +365,29 @@ static void forward_mouse_event(TermInput *input, TermKeyKey *key)
   }
 
   switch (ev) {
-    case TERMKEY_MOUSE_PRESS:
-      if (button == 4) {
-        len += (size_t)snprintf(buf + len, sizeof(buf) - len, "ScrollWheelUp");
-      } else if (button == 5) {
-        len += (size_t)snprintf(buf + len, sizeof(buf) - len,
-                                "ScrollWheelDown");
-      } else {
-        len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Mouse");
-        last_pressed_button = button;
-      }
-      break;
-    case TERMKEY_MOUSE_DRAG:
-      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Drag");
-      break;
-    case TERMKEY_MOUSE_RELEASE:
-      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Release");
-      break;
-    case TERMKEY_MOUSE_UNKNOWN:
-      abort();
+  case TERMKEY_MOUSE_PRESS:
+    if (button == 4) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "ScrollWheelUp");
+    } else if (button == 5) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "ScrollWheelDown");
+    } else if (button == 6) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "ScrollWheelLeft");
+    } else if (button == 7) {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "ScrollWheelRight");
+    } else {
+      len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Mouse");
+      last_pressed_button = button;
+    }
+    break;
+  case TERMKEY_MOUSE_DRAG:
+    len += (size_t)snprintf(buf + len, sizeof(buf) - len, "Drag");
+    break;
+  case TERMKEY_MOUSE_RELEASE:
+    len += (size_t)snprintf(buf + len, sizeof(buf) - len, button ? "Release" : "MouseMove");
+    last_pressed_button = 0;
+    break;
+  case TERMKEY_MOUSE_UNKNOWN:
+    abort();
   }
 
   len += (size_t)snprintf(buf + len, sizeof(buf) - len, "><%d,%d>", col, row);
@@ -308,8 +398,6 @@ static TermKeyResult tk_getkey(TermKey *tk, TermKeyKey *key, bool force)
 {
   return force ? termkey_getkey_force(tk, key) : termkey_getkey(tk, key);
 }
-
-static void tinput_timer_cb(TimeWatcher *watcher, void *data);
 
 static void tk_getkeys(TermInput *input, bool force)
 {
@@ -325,6 +413,39 @@ static void tk_getkeys(TermInput *input, bool force)
       forward_modified_utf8(input, &key);
     } else if (key.type == TERMKEY_TYPE_MOUSE) {
       forward_mouse_event(input, &key);
+    } else if (key.type == TERMKEY_TYPE_UNKNOWN_CSI) {
+      // There is no specified limit on the number of parameters a CSI sequence can contain, so just
+      // allocate enough space for a large upper bound
+      long args[16];
+      size_t nargs = 16;
+      unsigned long cmd;
+      if (termkey_interpret_csi(input->tk, &key, args, &nargs, &cmd) == TERMKEY_RES_KEY) {
+        uint8_t intermediate = (cmd >> 16) & 0xFF;
+        uint8_t initial = (cmd >> 8) & 0xFF;
+        uint8_t command = cmd & 0xFF;
+
+        // Currently unused
+        (void)intermediate;
+
+        if (input->waiting_for_csiu_response > 0) {
+          if (initial == '?' && command == 'u') {
+            // The first (and only) argument contains the current progressive
+            // enhancement flags. Only enable CSI u mode if the first bit
+            // (disambiguate escape codes) is not already set
+            if (nargs > 0 && (args[0] & 0x1) == 0) {
+              input->extkeys_type = kExtkeysCSIu;
+            } else {
+              input->extkeys_type = kExtkeysNone;
+            }
+          } else if (initial == '?' && command == 'c') {
+            // Received Primary Device Attributes response
+            input->waiting_for_csiu_response = 0;
+            tui_enable_extkeys(input->tui_data);
+          } else {
+            input->waiting_for_csiu_response--;
+          }
+        }
+      }
     }
   }
 
@@ -354,7 +475,7 @@ static void tinput_timer_cb(TimeWatcher *watcher, void *data)
     handle_raw_buffer(input, true);
   }
   tk_getkeys(input, true);
-  tinput_flush(input, true);
+  tinput_flush(input);
 }
 
 /// Handle focus events.
@@ -373,7 +494,10 @@ static bool handle_focus_event(TermInput *input)
     bool focus_gained = *rbuffer_get(input->read_stream.buffer, 2) == 'I';
     // Advance past the sequence
     rbuffer_consumed(input->read_stream.buffer, 3);
-    aucmd_schedule_focusgained(focus_gained);
+
+    MAXSIZE_TEMP_ARRAY(args, 1);
+    ADD_C(args, BOOLEAN_OBJ(focus_gained));
+    rpc_send_event(ui_client_channel_id, "nvim_ui_set_focus", args);
     return true;
   }
   return false;
@@ -399,13 +523,13 @@ static HandleState handle_bracketed_paste(TermInput *input)
 
     if (enable) {
       // Flush before starting paste.
-      tinput_flush(input, true);
+      tinput_flush(input);
       // Paste phase: "first-chunk".
       input->paste = 1;
     } else if (input->paste) {
       // Paste phase: "last-chunk".
       input->paste = input->paste == 2 ? 3 : -1;
-      tinput_flush(input, true);
+      tinput_flush(input);
       // Paste phase: "disabled".
       input->paste = 0;
     }
@@ -420,36 +544,13 @@ static HandleState handle_bracketed_paste(TermInput *input)
   return kNotApplicable;
 }
 
-// ESC NUL => <Esc>
-static bool handle_forced_escape(TermInput *input)
+static void set_bg(char *bgvalue)
 {
-  if (rbuffer_size(input->read_stream.buffer) > 1
-      && !rbuffer_cmp(input->read_stream.buffer, "\x1b\x00", 2)) {
-    // skip the ESC and NUL and push one <esc> to the input buffer
-    size_t rcnt;
-    termkey_push_bytes(input->tk, rbuffer_read_ptr(input->read_stream.buffer,
-          &rcnt), 1);
-    rbuffer_consumed(input->read_stream.buffer, 2);
-    tk_getkeys(input, true);
-    return true;
-  }
-  return false;
-}
-
-static void set_bg_deferred(void **argv)
-{
-  char *bgvalue = argv[0];
-  if (!option_was_set("bg") && !strequal((char *)p_bg, bgvalue)) {
-    // Value differs, apply it.
-    if (starting) {
-      // Wait until after startup, so OptionSet is triggered.
-      do_cmdline_cmd((bgvalue[0] == 'l')
-                     ? "autocmd VimEnter * ++once ++nested set bg=light"
-                     : "autocmd VimEnter * ++once ++nested set bg=dark");
-    } else {
-      set_option_value("bg", 0L, bgvalue, 0);
-      reset_option_was_set("bg");
-    }
+  if (ui_client_attached) {
+    MAXSIZE_TEMP_ARRAY(args, 2);
+    ADD_C(args, STRING_OBJ(cstr_as_string("term_background")));
+    ADD_C(args, STRING_OBJ(cstr_as_string(bgvalue)));
+    rpc_send_event(ui_client_channel_id, "nvim_ui_set_option", args);
   }
 }
 
@@ -464,7 +565,7 @@ static void set_bg_deferred(void **argv)
 // ignored in the calculations.
 //
 // [1] https://en.wikipedia.org/wiki/Luma_%28video%29
-static HandleState handle_background_color(TermInput *input)
+HandleState handle_background_color(TermInput *input)
 {
   if (input->waiting_for_bg_response <= 0) {
     return kNotApplicable;
@@ -532,10 +633,11 @@ static HandleState handle_background_color(TermInput *input)
     double g = (double)rgb[1] / (double)rgb_max[1];
     double b = (double)rgb[2] / (double)rgb_max[2];
     double luminance = (0.299 * r) + (0.587 * g) + (0.114 * b);  // CCIR 601
-    char *bgvalue = luminance < 0.5 ? "dark" : "light";
+    bool is_dark = luminance < 0.5;
+    char *bgvalue = is_dark ? "dark" : "light";
     DLOG("bg response: %s", bgvalue);
-    loop_schedule_deferred(&main_loop,
-                           event_create(set_bg_deferred, 1, bgvalue));
+    ui_client_bg_response = is_dark ? kTrue : kFalse;
+    set_bg(bgvalue);
     input->waiting_for_bg_response = 0;
   } else if (!done && !bad) {
     // An incomplete sequence was found, waiting for the next input.
@@ -548,12 +650,6 @@ static HandleState handle_background_color(TermInput *input)
   }
   return kComplete;
 }
-#ifdef UNIT_TESTING
-HandleState ut_handle_background_color(TermInput *input)
-{
-  return handle_background_color(input);
-}
-#endif
 
 static void handle_raw_buffer(TermInput *input, bool force)
 {
@@ -564,7 +660,6 @@ static void handle_raw_buffer(TermInput *input, bool force)
     if (!force
         && (handle_focus_event(input)
             || (is_paste = handle_bracketed_paste(input)) != kNotApplicable
-            || handle_forced_escape(input)
             || (is_bc = handle_background_color(input)) != kNotApplicable)) {
       if (is_paste == kIncomplete || is_bc == kIncomplete) {
         // Wait for the next input, leaving it in the raw buffer due to an
@@ -618,8 +713,7 @@ static void handle_raw_buffer(TermInput *input, bool force)
   } while (rbuffer_size(input->read_stream.buffer));
 }
 
-static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_,
-                           void *data, bool eof)
+static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_, void *data, bool eof)
 {
   TermInput *input = data;
 
@@ -629,7 +723,7 @@ static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_,
   }
 
   handle_raw_buffer(input, false);
-  tinput_flush(input, true);
+  tinput_flush(input);
 
   // An incomplete sequence was found. Leave it in the raw buffer and wait for
   // the next input.
@@ -637,7 +731,7 @@ static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_,
     // If 'ttimeout' is not set, start the timer with a timeout of 0 to process
     // the next input.
     long ms = input->ttimeout ?
-      (input->ttimeoutlen >= 0 ? input->ttimeoutlen : 0) : 0;
+              (input->ttimeoutlen >= 0 ? input->ttimeoutlen : 0) : 0;
     // Stop the current timer if already running
     time_watcher_stop(&input->timer_handle);
     time_watcher_start(&input->timer_handle, tinput_timer_cb, (uint32_t)ms, 0);

@@ -1,13 +1,16 @@
 #ifndef NVIM_VIML_PARSER_EXPRESSIONS_H
 #define NVIM_VIML_PARSER_EXPRESSIONS_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
+#include "nvim/eval/typval.h"
+#include "nvim/eval/typval_defs.h"
 #include "nvim/types.h"
 #include "nvim/viml/parser/parser.h"
-#include "nvim/eval/typval.h"
+
+struct expr_ast_node;
 
 // Defines whether to ignore case:
 //    ==   kCCStrategyUseOption
@@ -57,7 +60,7 @@ typedef enum {
 } LexExprTokenType;
 
 typedef enum {
-  kExprCmpEqual,  ///< Equality, unequality.
+  kExprCmpEqual,  ///< Equality, inequality.
   kExprCmpMatches,  ///< Matches regex, not matches regex.
   kExprCmpGreater,  ///< `>` or `<=`
   kExprCmpGreaterOrEqual,  ///< `>=` or `<`.
@@ -80,7 +83,7 @@ typedef enum {
 } ExprAssignmentType;
 
 #define EXPR_OPT_SCOPE_LIST \
-    ((char[]){ kExprOptScopeGlobal, kExprOptScopeLocal })
+  ((char[]){ kExprOptScopeGlobal, kExprOptScopeLocal })
 
 /// All possible variable scopes
 typedef enum {
@@ -96,11 +99,11 @@ typedef enum {
 } ExprVarScope;
 
 #define EXPR_VAR_SCOPE_LIST \
-    ((char[]) { \
-        kExprVarScopeScript, kExprVarScopeGlobal, kExprVarScopeVim, \
-        kExprVarScopeBuffer, kExprVarScopeWindow, kExprVarScopeTabpage, \
-        kExprVarScopeLocal, kExprVarScopeBuffer, kExprVarScopeArguments, \
-    })
+  ((char[]) { \
+    kExprVarScopeScript, kExprVarScopeGlobal, kExprVarScopeVim, \
+    kExprVarScopeBuffer, kExprVarScopeWindow, kExprVarScopeTabpage, \
+    kExprVarScopeLocal, kExprVarScopeBuffer, kExprVarScopeArguments, \
+  })
 
 /// Lexer token
 typedef struct {
@@ -357,11 +360,11 @@ typedef struct {
   int arg_len;
 } ExprASTError;
 
-/// Structure representing complety AST for one expression
+/// Structure representing complete AST for one expression
 typedef struct {
   /// When AST is not correct this message will be printed.
   ///
-  /// Uses `emsgf(msg, arg_len, arg);`, `msg` is assumed to contain only `%.*s`.
+  /// Uses `semsg(msg, arg_len, arg);`, `msg` is assumed to contain only `%.*s`.
   ExprASTError err;
   /// Root node of the AST.
   ExprASTNode *root;

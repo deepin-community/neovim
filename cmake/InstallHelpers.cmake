@@ -45,7 +45,7 @@ function(create_install_dir_with_perms)
     while(NOT EXISTS \$ENV{DESTDIR}\${_current_dir} AND NOT \${_prev_dir} STREQUAL \${_current_dir})
       list(APPEND _parent_dirs \${_current_dir})
       set(_prev_dir \${_current_dir})
-      get_filename_component(_current_dir \${_current_dir} PATH)
+      get_filename_component(_current_dir \${_current_dir} DIRECTORY)
     endwhile()
 
     if(_parent_dirs)
@@ -153,4 +153,17 @@ function(install_helper)
       PERMISSIONS ${_install_helper_PROGRAM_PERMISSIONS}
       ${RENAME})
   endif()
+endfunction()
+
+# Without CONFIGURE_DEPENDS globbing reuses cached file tree on rebuild.
+# For example it will ignore new files.
+# CONFIGURE_DEPENDS was introduced in 3.12
+
+function(glob_wrapper outvar)
+  if(${CMAKE_VERSION} VERSION_LESS 3.12)
+    file(GLOB ${outvar} ${ARGN})
+  else()
+    file(GLOB ${outvar} CONFIGURE_DEPENDS ${ARGN})
+  endif()
+  set(${outvar} ${${outvar}} PARENT_SCOPE)
 endfunction()

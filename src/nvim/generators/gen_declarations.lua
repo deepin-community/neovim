@@ -60,7 +60,7 @@ local right_word = concat(
 )
 local word = branch(
   concat(
-    branch(lit('ArrayOf('), lit('DictionaryOf(')), -- typed container macro
+    branch(lit('ArrayOf('), lit('DictionaryOf('), lit('Dict(')), -- typed container macro
     one_or_more(any_character - lit(')')),
     lit(')')
   ),
@@ -182,8 +182,7 @@ Additionally uses the following environment variables:
         If set to 1 then all generated declarations receive a comment with file
         name and line number after the declaration. This may be useful for
         debugging gen_declarations script, but not much beyond that with
-        configured development environment (i.e. with ctags/cscope/finding
-        definitions with clang/etc).
+        configured development environment (i.e. with with clang/etc).
 
         WARNING: setting this to 1 will cause extensive rebuilds: declarations
                  generator script will not regenerate non-static.h file if its
@@ -216,7 +215,16 @@ local footer = [[
 #include "nvim/func_attr.h"
 ]]
 
-local non_static = header
+local non_static = header .. [[
+#ifndef DLLEXPORT
+#  ifdef MSWIN
+#    define DLLEXPORT __declspec(dllexport)
+#  else
+#    define DLLEXPORT
+#  endif
+#endif
+]]
+
 local static = header
 
 local filepattern = '^#%a* (%d+) "([^"]-)/?([^"/]+)"'
@@ -269,6 +277,7 @@ while init ~= nil do
       declaration = declaration:gsub(' $', '')
       declaration = declaration:gsub('^ ', '')
       declaration = declaration .. ';'
+
       if os.getenv('NVIM_GEN_DECLARATIONS_LINE_NUMBERS') == '1' then
         declaration = declaration .. ('  // %s/%s:%u'):format(
             curdir, curfile, declline)
@@ -277,6 +286,7 @@ while init ~= nil do
       if declaration:sub(1, 6) == 'static' then
         static = static .. declaration
       else
+        declaration = 'DLLEXPORT ' .. declaration
         non_static = non_static .. declaration
       end
       declendpos = e

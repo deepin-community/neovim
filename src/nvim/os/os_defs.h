@@ -7,16 +7,26 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#ifdef WIN32
+#ifdef MSWIN
 # include "nvim/os/win_defs.h"
 #else
 # include "nvim/os/unix_defs.h"
 #endif
 
+#ifdef BACKSLASH_IN_FILENAME
+# define BACKSLASH_IN_FILENAME_BOOL true
+#else
+# define BACKSLASH_IN_FILENAME_BOOL false
+#endif
+
+#if !defined(NAME_MAX) && defined(_XOPEN_NAME_MAX)
+# define NAME_MAX _XOPEN_NAME_MAX
+#endif
+
 #define BASENAMELEN (NAME_MAX - 5)
 
 // Use the system path length if it makes sense.
-# define DEFAULT_MAXPATHL 4096
+#define DEFAULT_MAXPATHL 4096
 #if defined(PATH_MAX) && (PATH_MAX > DEFAULT_MAXPATHL)
 # define MAXPATHL PATH_MAX
 #else
@@ -26,10 +36,9 @@
 // Command-processing buffer. Use large buffers for all platforms.
 #define CMDBUFFSIZE 1024
 
-// Note: Some systems need both string.h and strings.h (Savage).  However,
-// some systems can't handle both, only use string.h in that case.
+// Note: Some systems need both string.h and strings.h (Savage).
 #include <string.h>
-#if defined(HAVE_STRINGS_H) && !defined(NO_STRINGS_WITH_STRING_H)
+#ifdef HAVE_STRINGS_H
 # include <strings.h>
 #endif
 
@@ -39,7 +48,7 @@
 /// Converts system error code to libuv error code.
 #define os_translate_sys_error uv_translate_sys_error
 
-#ifdef WIN32
+#ifdef MSWIN
 # define os_strtok strtok_s
 #else
 # define os_strtok strtok_r

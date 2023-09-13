@@ -116,7 +116,7 @@ Overview >
 	VIM::SetOption("ai")			# sets a vim option
 	$nbuf = VIM::Buffers()			# returns the number of buffers
 	@buflist = VIM::Buffers()		# returns array of all buffers
-	$mybuf = (VIM::Buffers('a.c'))[0] 	# returns buffer object for 'a.c'
+	$mybuf = (VIM::Buffers('a.c'))[0]	# returns buffer object for 'a.c'
 	@winlist = VIM::Windows()		# returns array of all windows
 	$nwin = VIM::Windows()			# returns the number of windows
 	($success, $v) = VIM::Eval('&path')	# $v: option 'path', $success: 1
@@ -188,6 +188,9 @@ VIM::Eval({expr})	Evaluates {expr} and returns (success, value) in list
 			the command-line are valid for {expr}.
 			A |List| is turned into a string by joining the items
 			and inserting line breaks.
+
+							*perl-Blob*
+VIM::Blob({expr})	Return Blob literal string 0zXXXX from scalar value.
 
 ==============================================================================
 3. VIM::Buffer objects					*perl-buffer*

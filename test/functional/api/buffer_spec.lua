@@ -3,10 +3,12 @@ local Screen = require('test.functional.ui.screen')
 local clear, nvim, buffer = helpers.clear, helpers.nvim, helpers.buffer
 local curbuf, curwin, eq = helpers.curbuf, helpers.curwin, helpers.eq
 local curbufmeths, ok = helpers.curbufmeths, helpers.ok
+local describe_lua_and_rpc = helpers.describe_lua_and_rpc(describe)
 local meths = helpers.meths
 local funcs = helpers.funcs
 local request = helpers.request
 local exc_exec = helpers.exc_exec
+local exec_lua = helpers.exec_lua
 local feed_command = helpers.feed_command
 local insert = helpers.insert
 local NIL = helpers.NIL
@@ -184,20 +186,21 @@ describe('api/buf', function()
     end)
   end)
 
-  describe('nvim_buf_get_lines, nvim_buf_set_lines', function()
-    local get_lines, set_lines = curbufmeths.get_lines, curbufmeths.set_lines
-    local line_count = curbufmeths.line_count
+  describe_lua_and_rpc('nvim_buf_get_lines, nvim_buf_set_lines', function(api)
+    local get_lines = api.curbufmeths.get_lines
+    local set_lines = api.curbufmeths.set_lines
+    local line_count = api.curbufmeths.line_count
 
     it('fails correctly when input is not valid', function()
-      eq(1, curbufmeths.get_number())
-      eq([[String cannot contain newlines]],
+      eq(1, api.curbufmeths.get_number())
+      eq([['replacement string' item contains newlines]],
         pcall_err(bufmeths.set_lines, 1, 1, 2, false, {'b\na'}))
     end)
 
     it("fails if 'nomodifiable'", function()
       command('set nomodifiable')
       eq([[Buffer is not 'modifiable']],
-        pcall_err(bufmeths.set_lines, 1, 1, 2, false, {'a','b'}))
+        pcall_err(api.bufmeths.set_lines, 1, 1, 2, false, {'a','b'}))
     end)
 
     it('has correct line_count when inserting and deleting', function()
@@ -227,8 +230,8 @@ describe('api/buf', function()
     it('can get a single line with strict indexing', function()
       set_lines(0, 1, true, {'line1.a'})
       eq(1, line_count()) -- sanity
-      eq(false, pcall(get_lines, 1, 2, true))
-      eq(false, pcall(get_lines, -3, -2, true))
+      eq('Index out of bounds', pcall_err(get_lines, 1, 2, true))
+      eq('Index out of bounds', pcall_err(get_lines, -3, -2, true))
     end)
 
     it('can get a single line with non-strict indexing', function()
@@ -240,11 +243,11 @@ describe('api/buf', function()
 
     it('can set and delete a single line with strict indexing', function()
       set_lines(0, 1, true, {'line1.a'})
-      eq(false, pcall(set_lines, 1, 2, true, {'line1.b'}))
-      eq(false, pcall(set_lines, -3, -2, true, {'line1.c'}))
+      eq('Index out of bounds', pcall_err(set_lines, 1, 2, true, {'line1.b'}))
+      eq('Index out of bounds', pcall_err(set_lines, -3, -2, true, {'line1.c'}))
       eq({'line1.a'}, get_lines(0, -1, true))
-      eq(false, pcall(set_lines, 1, 2, true, {}))
-      eq(false, pcall(set_lines, -3, -2, true, {}))
+      eq('Index out of bounds', pcall_err(set_lines, 1, 2, true, {}))
+      eq('Index out of bounds', pcall_err(set_lines, -3, -2, true, {}))
       eq({'line1.a'}, get_lines(0, -1, true))
     end)
 
@@ -302,9 +305,9 @@ describe('api/buf', function()
       set_lines(0, -1, true, {'a', 'b', 'c'})
       eq({'a', 'b', 'c'}, get_lines(0, -1, true)) --sanity
 
-      eq(false, pcall(get_lines, 3, 4, true))
-      eq(false, pcall(get_lines, 3, 10, true))
-      eq(false, pcall(get_lines, -5, -5, true))
+      eq('Index out of bounds', pcall_err(get_lines, 3, 4, true))
+      eq('Index out of bounds', pcall_err(get_lines, 3, 10, true))
+      eq('Index out of bounds', pcall_err(get_lines, -5, -5, true))
       -- empty or inverted ranges are not errors
       eq({}, get_lines(3, -1, true))
       eq({}, get_lines(-3, -4, true))
@@ -316,10 +319,10 @@ describe('api/buf', function()
 
       eq({'c'}, get_lines(-2, 5, false))
       eq({'a', 'b', 'c'}, get_lines(0, 6, false))
-      eq(false, pcall(set_lines, 4, 6, true, {'d'}))
+      eq('Index out of bounds', pcall_err(set_lines, 4, 6, true, {'d'}))
       set_lines(4, 6, false, {'d'})
       eq({'a', 'b', 'c', 'd'}, get_lines(0, -1, true))
-      eq(false, pcall(set_lines, -6, -6, true, {'e'}))
+      eq('Index out of bounds', pcall_err(set_lines, -6, -6, true, {'e'}))
       set_lines(-6, -6, false, {'e'})
       eq({'e', 'a', 'b', 'c', 'd'}, get_lines(0, -1, true))
     end)
@@ -353,7 +356,7 @@ describe('api/buf', function()
         Who would win?
         A real window
         with proper text]])
-      local buf = meths.create_buf(false,true)
+      local buf = api.meths.create_buf(false,true)
       screen:expect([[
         Who would win?      |
         A real window       |
@@ -362,7 +365,7 @@ describe('api/buf', function()
                             |
       ]])
 
-      meths.buf_set_lines(buf, 0, -1, true, {'or some', 'scratchy text'})
+      api.meths.buf_set_lines(buf, 0, -1, true, {'or some', 'scratchy text'})
       feed('i') -- provoke redraw
       screen:expect([[
         Who would win?      |
@@ -378,21 +381,21 @@ describe('api/buf', function()
         visible buffer line 1
         line 2
       ]])
-      local hiddenbuf = meths.create_buf(false,true)
+      local hiddenbuf = api.meths.create_buf(false,true)
       command('vsplit')
       command('vsplit')
       feed('<c-w>l<c-w>l<c-w>l')
       eq(3, funcs.winnr())
       feed('<c-w>h')
       eq(2, funcs.winnr())
-      meths.buf_set_lines(hiddenbuf, 0, -1, true,
-                          {'hidden buffer line 1', 'line 2'})
+      api.meths.buf_set_lines(hiddenbuf, 0, -1, true,
+                              {'hidden buffer line 1', 'line 2'})
       feed('<c-w>p')
       eq(3, funcs.winnr())
     end)
   end)
 
-  describe('nvim_buf_get_lines, nvim_buf_set_text', function()
+  describe('nvim_buf_set_text', function()
     local get_lines, set_text = curbufmeths.get_lines, curbufmeths.set_text
 
     it('works', function()
@@ -423,6 +426,17 @@ describe('api/buf', function()
       -- will join multiple lines if needed
       set_text(0, 6, 3, 4, {'bar'})
       eq({'hello bar'}, get_lines(0,  1, true))
+
+      -- can use negative line numbers
+      set_text(-2, 0, -2, 5, {'goodbye'})
+      eq({'goodbye bar', ''}, get_lines(0, -1, true))
+
+      set_text(-1, 0, -1, 0, {'text'})
+      eq({'goodbye bar', 'text'}, get_lines(0, 2, true))
+
+      -- can append to a line
+      set_text(1, 4, -1, 4, {' and', 'more'})
+      eq({'goodbye bar', 'text and', 'more'}, get_lines(0, 3, true))
     end)
 
     it('works with undo', function()
@@ -506,12 +520,12 @@ describe('api/buf', function()
       eq({0, 6}, curbufmeths.get_extmark_by_id(ns, id2, {}))
       eq({0, 6}, curbufmeths.get_extmark_by_id(ns, id3, {}))
 
-	  -- marks should be shifted over by the correct number of bytes for multibyte
-	  -- chars
-	  set_text(0, 0, 0, 0, {'Ø'})
-	  eq({0, 3}, curbufmeths.get_extmark_by_id(ns, id1, {}))
-	  eq({0, 8}, curbufmeths.get_extmark_by_id(ns, id2, {}))
-	  eq({0, 8}, curbufmeths.get_extmark_by_id(ns, id3, {}))
+      -- marks should be shifted over by the correct number of bytes for multibyte
+      -- chars
+      set_text(0, 0, 0, 0, {'Ø'})
+      eq({0, 3}, curbufmeths.get_extmark_by_id(ns, id1, {}))
+      eq({0, 8}, curbufmeths.get_extmark_by_id(ns, id2, {}))
+      eq({0, 8}, curbufmeths.get_extmark_by_id(ns, id3, {}))
     end)
 
     it("correctly marks changed region for redraw #13890", function()
@@ -533,7 +547,72 @@ describe('api/buf', function()
                       |
 
       ]])
+    end)
 
+    it('errors on out-of-range', function()
+      insert([[
+      hello foo!
+      text]])
+      eq("Invalid 'start_row': out of range", pcall_err(set_text, 2, 0, 3, 0, {}))
+      eq("Invalid 'start_row': out of range", pcall_err(set_text, -3, 0, 0, 0, {}))
+      eq("Invalid 'end_row': out of range", pcall_err(set_text, 0, 0, 2, 0, {}))
+      eq("Invalid 'end_row': out of range", pcall_err(set_text, 0, 0, -3, 0, {}))
+      eq("Invalid 'start_col': out of range", pcall_err(set_text, 1, 5, 1, 5, {}))
+      eq("Invalid 'end_col': out of range", pcall_err(set_text, 1, 0, 1, 5, {}))
+    end)
+
+    it('errors when start is greater than end', function()
+      insert([[
+      hello foo!
+      text]])
+      eq("'start' is higher than 'end'", pcall_err(set_text, 1, 0, 0, 0, {}))
+      eq("'start' is higher than 'end'", pcall_err(set_text, 0, 1, 0, 0, {}))
+    end)
+
+    it('no heap-use-after-free when called consecutively #19643', function()
+      set_text(0, 0, 0, 0, {'one', '', '', 'two'})
+      eq({'one', '', '', 'two'}, get_lines(0, 4, true))
+      meths.win_set_cursor(0, {1, 0})
+      exec_lua([[
+        vim.api.nvim_buf_set_text(0, 0, 3, 1, 0, {''})
+        vim.api.nvim_buf_set_text(0, 0, 3, 1, 0, {''})
+      ]])
+      eq({'one', 'two'}, get_lines(0, 2, true))
+    end)
+  end)
+
+  describe_lua_and_rpc('nvim_buf_get_text', function(api)
+    local get_text = api.curbufmeths.get_text
+    before_each(function()
+      insert([[
+      hello foo!
+      text
+      more]])
+    end)
+
+    it('works', function()
+      eq({'hello'}, get_text(0, 0, 0, 5, {}))
+      eq({'hello foo!'}, get_text(0, 0, 0, 42, {}))
+      eq({'foo!'}, get_text(0, 6, 0, 10, {}))
+      eq({'foo!', 'tex'}, get_text(0, 6, 1, 3, {}))
+      eq({'foo!', 'tex'}, get_text(-3, 6, -2, 3, {}))
+      eq({''}, get_text(0, 18, 0, 20, {}))
+      eq({'ext'}, get_text(-2, 1, -2, 4, {}))
+      eq({'hello foo!', 'text', 'm'}, get_text(0, 0, 2, 1, {}))
+    end)
+
+    it('errors on out-of-range', function()
+      eq('Index out of bounds', pcall_err(get_text, 2, 0, 4, 0, {}))
+      eq('Index out of bounds', pcall_err(get_text, -4, 0, 0, 0, {}))
+      eq('Index out of bounds', pcall_err(get_text, 0, 0, 3, 0, {}))
+      eq('Index out of bounds', pcall_err(get_text, 0, 0, -4, 0, {}))
+      -- no ml_get errors should happen #19017
+      eq('', meths.get_vvar('errmsg'))
+    end)
+
+    it('errors when start is greater than end', function()
+      eq("'start' is higher than 'end'", pcall_err(get_text, 1, 0, 0, 0, {}))
+      eq('start_col must be less than end_col', pcall_err(get_text, 0, 1, 0, 0, {}))
     end)
   end)
 
@@ -629,6 +708,13 @@ describe('api/buf', function()
       -- Doesn't change the global value
       eq([[^\s*#\s*define]], nvim('get_option', 'define'))
     end)
+
+    it('returns values for unset local options', function()
+      -- 'undolevels' is only set to its "unset" value when a new buffer is
+      -- created
+      command('enew')
+      eq(-123456, curbuf('get_option', 'undolevels'))
+    end)
   end)
 
   describe('nvim_buf_get_name, nvim_buf_set_name', function()
@@ -705,6 +791,61 @@ describe('api/buf', function()
       curwin('set_cursor', {3, 4})
       nvim('command', 'mark v')
       eq({3, 0}, curbuf('get_mark', 'v'))
+    end)
+  end)
+
+  describe('nvim_buf_set_mark', function()
+    it('works with buffer local marks', function()
+      curbufmeths.set_lines(-1, -1, true, {'a', 'bit of', 'text'})
+      eq(true, curbufmeths.set_mark('z', 1, 1, {}))
+      eq({1, 1}, curbufmeths.get_mark('z'))
+    end)
+    it('works with file/uppercase marks', function()
+      curbufmeths.set_lines(-1, -1, true, {'a', 'bit of', 'text'})
+      eq(true, curbufmeths.set_mark('Z', 3, 1, {}))
+      eq({3, 1}, curbufmeths.get_mark('Z'))
+    end)
+    it('fails when invalid marks names are used', function()
+      eq(false, pcall(curbufmeths.set_mark, '!', 1, 0, {}))
+      eq(false, pcall(curbufmeths.set_mark, 'fail', 1, 0, {}))
+    end)
+    it('fails when invalid buffer number is used', function()
+      eq(false, pcall(meths.buf_set_mark, 99, 'a', 1, 1, {}))
+    end)
+  end)
+
+  describe('nvim_buf_del_mark', function()
+    it('works with buffer local marks', function()
+      curbufmeths.set_lines(-1, -1, true, {'a', 'bit of', 'text'})
+      curbufmeths.set_mark('z', 3, 1, {})
+      eq(true, curbufmeths.del_mark('z'))
+      eq({0, 0}, curbufmeths.get_mark('z'))
+    end)
+    it('works with file/uppercase marks', function()
+      curbufmeths.set_lines(-1, -1, true, {'a', 'bit of', 'text'})
+      curbufmeths.set_mark('Z', 3, 3, {})
+      eq(true, curbufmeths.del_mark('Z'))
+      eq({0, 0}, curbufmeths.get_mark('Z'))
+    end)
+    it('returns false in marks not set in this buffer', function()
+      local abuf = meths.create_buf(false,true)
+      bufmeths.set_lines(abuf, -1, -1, true, {'a', 'bit of', 'text'})
+      bufmeths.set_mark(abuf, 'A', 2, 2, {})
+      eq(false, curbufmeths.del_mark('A'))
+      eq({2, 2}, bufmeths.get_mark(abuf, 'A'))
+    end)
+    it('returns false if mark was not deleted', function()
+      curbufmeths.set_lines(-1, -1, true, {'a', 'bit of', 'text'})
+      curbufmeths.set_mark('z', 3, 1, {})
+      eq(true, curbufmeths.del_mark('z'))
+      eq(false, curbufmeths.del_mark('z'))  -- Mark was already deleted
+    end)
+    it('fails when invalid marks names are used', function()
+      eq(false, pcall(curbufmeths.del_mark, '!'))
+      eq(false, pcall(curbufmeths.del_mark, 'fail'))
+    end)
+    it('fails when invalid buffer number is used', function()
+      eq(false, pcall(meths.buf_del_mark, 99, 'a'))
     end)
   end)
 end)

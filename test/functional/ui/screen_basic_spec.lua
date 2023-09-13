@@ -5,7 +5,7 @@ local feed, command = helpers.feed, helpers.command
 local insert = helpers.insert
 local eq = helpers.eq
 local eval = helpers.eval
-local iswin = helpers.iswin
+local funcs, meths = helpers.funcs, helpers.meths
 
 describe('screen', function()
   local screen
@@ -60,6 +60,7 @@ local function screen_tests(linegrid)
       [5] = {background = Screen.colors.LightGrey, underline = true, bold = true, foreground = Screen.colors.Fuchsia},
       [6] = {bold = true, foreground = Screen.colors.Fuchsia},
       [7] = {bold = true, foreground = Screen.colors.SeaGreen},
+      [8] = {foreground = Screen.colors.White, background = Screen.colors.Red},
     } )
   end)
 
@@ -116,21 +117,9 @@ local function screen_tests(linegrid)
       screen:expect(function()
         eq(expected, screen.title)
       end)
-    end)
-
-    it('has correct default title with unnamed file', function()
-      local expected = '[No Name] - NVIM'
-      command('set title')
-      screen:expect(function()
-        eq(expected, screen.title)
-      end)
-    end)
-
-    it('has correct default title with named file', function()
-      local expected = (iswin() and 'myfile (C:\\mydir) - NVIM'
-                                 or 'myfile (/mydir) - NVIM')
-      command('set title')
-      command(iswin() and 'file C:\\mydir\\myfile' or 'file /mydir/myfile')
+      screen:detach()
+      screen.title = nil
+      screen:attach()
       screen:expect(function()
         eq(expected, screen.title)
       end)
@@ -142,6 +131,12 @@ local function screen_tests(linegrid)
       local expected = 'test-icon'
       command('set iconstring='..expected)
       command('set icon')
+      screen:expect(function()
+        eq(expected, screen.icon)
+      end)
+      screen:detach()
+      screen.icon = nil
+      screen:attach()
       screen:expect(function()
         eq(expected, screen.icon)
       end)
@@ -272,12 +267,12 @@ local function screen_tests(linegrid)
         command('vsp')
         command('vsp')
         screen:expect([[
-          ^                    {3:│}                {3:│}               |
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
+          ^                    │                │               |
+          {0:~                   }│{0:~               }│{0:~              }|
+          {0:~                   }│{0:~               }│{0:~              }|
+          {0:~                   }│{0:~               }│{0:~              }|
+          {0:~                   }│{0:~               }│{0:~              }|
+          {0:~                   }│{0:~               }│{0:~              }|
           {1:[No Name]            }{3:[No Name]        [No Name]      }|
                                                                |
           {0:~                                                    }|
@@ -289,12 +284,12 @@ local function screen_tests(linegrid)
         ]])
         insert('hello')
         screen:expect([[
-          hell^o               {3:│}hello           {3:│}hello          |
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-          {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
+          hell^o               │hello           │hello          |
+          {0:~                   }│{0:~               }│{0:~              }|
+          {0:~                   }│{0:~               }│{0:~              }|
+          {0:~                   }│{0:~               }│{0:~              }|
+          {0:~                   }│{0:~               }│{0:~              }|
+          {0:~                   }│{0:~               }│{0:~              }|
           {1:[No Name] [+]        }{3:[No Name] [+]    [No Name] [+]  }|
           hello                                                |
           {0:~                                                    }|
@@ -315,12 +310,12 @@ local function screen_tests(linegrid)
       command('vsp')
       insert('hello')
       screen:expect([[
-        hell^o               {3:│}hello           {3:│}hello          |
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
+        hell^o               │hello           │hello          |
+        {0:~                   }│{0:~               }│{0:~              }|
+        {0:~                   }│{0:~               }│{0:~              }|
+        {0:~                   }│{0:~               }│{0:~              }|
+        {0:~                   }│{0:~               }│{0:~              }|
+        {0:~                   }│{0:~               }│{0:~              }|
         {1:[No Name] [+]        }{3:[No Name] [+]    [No Name] [+]  }|
         hello                                                |
         {0:~                                                    }|
@@ -352,12 +347,12 @@ local function screen_tests(linegrid)
       command('tabprevious')
       screen:expect([[
         {2: }{6:4}{2:+ [No Name] }{4: + [No Name] }{3:                         }{4:X}|
-        hell^o               {3:│}hello           {3:│}hello          |
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
-        {0:~                   }{3:│}{0:~               }{3:│}{0:~              }|
+        hell^o               │hello           │hello          |
+        {0:~                   }│{0:~               }│{0:~              }|
+        {0:~                   }│{0:~               }│{0:~              }|
+        {0:~                   }│{0:~               }│{0:~              }|
+        {0:~                   }│{0:~               }│{0:~              }|
+        {0:~                   }│{0:~               }│{0:~              }|
         {1:[No Name] [+]        }{3:[No Name] [+]    [No Name] [+]  }|
         hello                                                |
         {0:~                                                    }|
@@ -466,36 +461,36 @@ local function screen_tests(linegrid)
 
       command('vsplit')
       screen:expect([[
-        ^foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
+        ^foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
         {1:[No Name] [+]              }{3:[No Name] [+]             }|
                                                              |
       ]])
 
       feed('<PageDown>')
       screen:expect([[
-        ^foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        foo                       {3:│}foo                       |
-        bar                       {3:│}foo                       |
-        bar                       {3:│}foo                       |
-        bar                       {3:│}foo                       |
-        bar                       {3:│}foo                       |
-        bar                       {3:│}foo                       |
-        bar                       {3:│}foo                       |
-        bar                       {3:│}foo                       |
-        bar                       {3:│}foo                       |
+        ^foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        foo                       │foo                       |
+        bar                       │foo                       |
+        bar                       │foo                       |
+        bar                       │foo                       |
+        bar                       │foo                       |
+        bar                       │foo                       |
+        bar                       │foo                       |
+        bar                       │foo                       |
+        bar                       │foo                       |
         {1:[No Name] [+]              }{3:[No Name] [+]             }|
                                                              |
       ]])
@@ -628,30 +623,7 @@ local function screen_tests(linegrid)
       ]])
     end)
 
-    it('execute command with multi-line output without msgsep', function()
-      command("set display-=msgsep")
-      feed(':ls<cr>')
-      screen:expect([[
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        {0:~                                                    }|
-        :ls                                                  |
-          1 %a   "[No Name]"                    line 1       |
-        {7:Press ENTER or type command to continue}^              |
-      ]])
-      feed('<cr>') --  skip the "Press ENTER..." state or tests will hang
-    end)
-
-    it('execute command with multi-line output and with msgsep', function()
-      command("set display+=msgsep")
+    it('execute command with multi-line output', function()
       feed(':ls<cr>')
       screen:expect([[
                                                              |
@@ -694,12 +666,12 @@ local function screen_tests(linegrid)
       command('vsp')
       command('vsp')
       screen:expect([[
-        and                 {3:│}and             {3:│}and            |
-        clearing            {3:│}clearing        {3:│}clearing       |
-        in                  {3:│}in              {3:│}in             |
-        split               {3:│}split           {3:│}split          |
-        windows             {3:│}windows         {3:│}windows        |
-        ^                    {3:│}                {3:│}               |
+        and                 │and             │and            |
+        clearing            │clearing        │clearing       |
+        in                  │in              │in             |
+        split               │split           │split          |
+        windows             │windows         │windows        |
+        ^                    │                │               |
         {1:[No Name] [+]        }{3:[No Name] [+]    [No Name] [+]  }|
         clearing                                             |
         in                                                   |
@@ -714,12 +686,12 @@ local function screen_tests(linegrid)
     it('only affects the current scroll region', function()
       feed('6k')
       screen:expect([[
-        ^scrolling           {3:│}and             {3:│}and            |
-        and                 {3:│}clearing        {3:│}clearing       |
-        clearing            {3:│}in              {3:│}in             |
-        in                  {3:│}split           {3:│}split          |
-        split               {3:│}windows         {3:│}windows        |
-        windows             {3:│}                {3:│}               |
+        ^scrolling           │and             │and            |
+        and                 │clearing        │clearing       |
+        clearing            │in              │in             |
+        in                  │split           │split          |
+        split               │windows         │windows        |
+        windows             │                │               |
         {1:[No Name] [+]        }{3:[No Name] [+]    [No Name] [+]  }|
         clearing                                             |
         in                                                   |
@@ -731,12 +703,12 @@ local function screen_tests(linegrid)
       ]])
       feed('<c-w>l')
       screen:expect([[
-        scrolling           {3:│}and                 {3:│}and        |
-        and                 {3:│}clearing            {3:│}clearing   |
-        clearing            {3:│}in                  {3:│}in         |
-        in                  {3:│}split               {3:│}split      |
-        split               {3:│}windows             {3:│}windows    |
-        windows             {3:│}^                    {3:│}           |
+        scrolling           │and                 │and        |
+        and                 │clearing            │clearing   |
+        clearing            │in                  │in         |
+        in                  │split               │split      |
+        split               │windows             │windows    |
+        windows             │^                    │           |
         {3:[No Name] [+]        }{1:[No Name] [+]        }{3:<Name] [+] }|
         clearing                                             |
         in                                                   |
@@ -748,12 +720,12 @@ local function screen_tests(linegrid)
       ]])
       feed('gg')
       screen:expect([[
-        scrolling           {3:│}^Inserting           {3:│}and        |
-        and                 {3:│}text                {3:│}clearing   |
-        clearing            {3:│}with                {3:│}in         |
-        in                  {3:│}many                {3:│}split      |
-        split               {3:│}lines               {3:│}windows    |
-        windows             {3:│}to                  {3:│}           |
+        scrolling           │^Inserting           │and        |
+        and                 │text                │clearing   |
+        clearing            │with                │in         |
+        in                  │many                │split      |
+        split               │lines               │windows    |
+        windows             │to                  │           |
         {3:[No Name] [+]        }{1:[No Name] [+]        }{3:<Name] [+] }|
         clearing                                             |
         in                                                   |
@@ -765,12 +737,12 @@ local function screen_tests(linegrid)
       ]])
       feed('7j')
       screen:expect([[
-        scrolling           {3:│}with                {3:│}and        |
-        and                 {3:│}many                {3:│}clearing   |
-        clearing            {3:│}lines               {3:│}in         |
-        in                  {3:│}to                  {3:│}split      |
-        split               {3:│}test                {3:│}windows    |
-        windows             {3:│}^scrolling           {3:│}           |
+        scrolling           │with                │and        |
+        and                 │many                │clearing   |
+        clearing            │lines               │in         |
+        in                  │to                  │split      |
+        split               │test                │windows    |
+        windows             │^scrolling           │           |
         {3:[No Name] [+]        }{1:[No Name] [+]        }{3:<Name] [+] }|
         clearing                                             |
         in                                                   |
@@ -782,12 +754,12 @@ local function screen_tests(linegrid)
       ]])
       feed('2j')
       screen:expect([[
-        scrolling           {3:│}lines               {3:│}and        |
-        and                 {3:│}to                  {3:│}clearing   |
-        clearing            {3:│}test                {3:│}in         |
-        in                  {3:│}scrolling           {3:│}split      |
-        split               {3:│}and                 {3:│}windows    |
-        windows             {3:│}^clearing            {3:│}           |
+        scrolling           │lines               │and        |
+        and                 │to                  │clearing   |
+        clearing            │test                │in         |
+        in                  │scrolling           │split      |
+        split               │and                 │windows    |
+        windows             │^clearing            │           |
         {3:[No Name] [+]        }{1:[No Name] [+]        }{3:<Name] [+] }|
         clearing                                             |
         in                                                   |
@@ -799,12 +771,12 @@ local function screen_tests(linegrid)
       ]])
       feed('5k')
       screen:expect([[
-        scrolling           {3:│}^lines               {3:│}and        |
-        and                 {3:│}to                  {3:│}clearing   |
-        clearing            {3:│}test                {3:│}in         |
-        in                  {3:│}scrolling           {3:│}split      |
-        split               {3:│}and                 {3:│}windows    |
-        windows             {3:│}clearing            {3:│}           |
+        scrolling           │^lines               │and        |
+        and                 │to                  │clearing   |
+        clearing            │test                │in         |
+        in                  │scrolling           │split      |
+        split               │and                 │windows    |
+        windows             │clearing            │           |
         {3:[No Name] [+]        }{1:[No Name] [+]        }{3:<Name] [+] }|
         clearing                                             |
         in                                                   |
@@ -816,12 +788,12 @@ local function screen_tests(linegrid)
       ]])
       feed('k')
       screen:expect([[
-        scrolling           {3:│}^many                {3:│}and        |
-        and                 {3:│}lines               {3:│}clearing   |
-        clearing            {3:│}to                  {3:│}in         |
-        in                  {3:│}test                {3:│}split      |
-        split               {3:│}scrolling           {3:│}windows    |
-        windows             {3:│}and                 {3:│}           |
+        scrolling           │^many                │and        |
+        and                 │lines               │clearing   |
+        clearing            │to                  │in         |
+        in                  │test                │split      |
+        split               │scrolling           │windows    |
+        windows             │and                 │           |
         {3:[No Name] [+]        }{1:[No Name] [+]        }{3:<Name] [+] }|
         clearing                                             |
         in                                                   |
@@ -835,12 +807,9 @@ local function screen_tests(linegrid)
   end)
 
   describe('resize', function()
-    before_each(function()
+    it('rebuilds the whole screen', function()
       screen:try_resize(25, 5)
       feed('iresize')
-    end)
-
-    it('rebuilds the whole screen', function()
       screen:expect([[
         resize^                   |
         {0:~                        }|
@@ -851,6 +820,7 @@ local function screen_tests(linegrid)
     end)
 
     it('has minimum width/height values', function()
+      feed('iresize')
       screen:try_resize(1, 1)
       screen:expect([[
         resize^      |
@@ -861,6 +831,103 @@ local function screen_tests(linegrid)
       screen:expect([[
         resize      |
         :ls^         |
+      ]])
+    end)
+
+    it('VimResized autocommand does not cause invalid UI events #20692 #20759', function()
+      screen:try_resize(25, 5)
+      feed('iresize<Esc>')
+      command([[autocmd VimResized * redrawtabline]])
+      command([[autocmd VimResized * lua vim.api.nvim_echo({ { 'Hello' } }, false, {})]])
+      command([[autocmd VimResized * let g:echospace = v:echospace]])
+      meths.set_option('showtabline', 2)
+      screen:expect([[
+        {2: + [No Name] }{3:            }|
+        resiz^e                   |
+        {0:~                        }|
+        {0:~                        }|
+                                 |
+      ]])
+      screen:try_resize(30, 6)
+      screen:expect([[
+        {2: + [No Name] }{3:                 }|
+        resiz^e                        |
+        {0:~                             }|
+        {0:~                             }|
+        {0:~                             }|
+                                      |
+      ]])
+      eq(29, meths.get_var('echospace'))
+    end)
+
+    it('messages from the same Ex command as resize are visible #22225', function()
+      feed(':set columns=20 | call<CR>')
+      screen:expect([[
+                            |
+                            |
+                            |
+                            |
+                            |
+                            |
+                            |
+                            |
+                            |
+        {1:                    }|
+        {8:E471: Argument requi}|
+        {8:red}                 |
+        {7:Press ENTER or type }|
+        {7:command to continue}^ |
+      ]])
+      feed('<CR>')
+      screen:expect([[
+        ^                    |
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+        {0:~                   }|
+                            |
+      ]])
+      feed(':set columns=0<CR>')
+      screen:expect([[
+                    |
+                    |
+                    |
+                    |
+                    |
+        {1:            }|
+        {8:E594: Need a}|
+        {8:t least 12 c}|
+        {8:olumns: colu}|
+        {8:mns=0}       |
+        {7:Press ENTER }|
+        {7:or type comm}|
+        {7:and to conti}|
+        {7:nue}^         |
+      ]])
+      feed('<CR>')
+      screen:expect([[
+        ^            |
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+        {0:~           }|
+                    |
       ]])
     end)
   end)
@@ -997,38 +1064,35 @@ describe('Screen default colors', function()
   end)
 end)
 
-
-describe('screen with msgsep deactivated on startup', function()
-  local screen
-
-  before_each(function()
-    clear('--cmd', 'set display-=msgsep')
-    screen = Screen.new()
-    screen:attach()
-    screen:set_default_attr_ids {
-      [0] = {bold=true, foreground=255};
-      [7] = {bold = true, foreground = Screen.colors.SeaGreen};
-    }
-  end)
-
-  it('execute command with multi-line output', function()
-    feed ':ls<cr>'
-    screen:expect([[
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      {0:~                                                    }|
-      :ls                                                  |
-        1 %a   "[No Name]"                    line 1       |
-      {7:Press ENTER or type command to continue}^              |
-    ]])
-    feed '<cr>'  -- skip the "Press ENTER..." state or tests will hang
-  end)
+it('CTRL-F or CTRL-B scrolls a page after UI attach/resize #20605', function()
+  clear()
+  local screen = Screen.new(100, 100)
+  screen:attach()
+  eq(100, meths.get_option('lines'))
+  eq(99, meths.get_option('window'))
+  eq(99, meths.win_get_height(0))
+  feed('1000o<Esc>')
+  eq(903, funcs.line('w0'))
+  feed('<C-B>')
+  eq(806, funcs.line('w0'))
+  feed('<C-B>')
+  eq(709, funcs.line('w0'))
+  feed('<C-F>')
+  eq(806, funcs.line('w0'))
+  feed('<C-F>')
+  eq(903, funcs.line('w0'))
+  feed('G')
+  screen:try_resize(50, 50)
+  eq(50, meths.get_option('lines'))
+  eq(49, meths.get_option('window'))
+  eq(49, meths.win_get_height(0))
+  eq(953, funcs.line('w0'))
+  feed('<C-B>')
+  eq(906, funcs.line('w0'))
+  feed('<C-B>')
+  eq(859, funcs.line('w0'))
+  feed('<C-F>')
+  eq(906, funcs.line('w0'))
+  feed('<C-F>')
+  eq(953, funcs.line('w0'))
 end)

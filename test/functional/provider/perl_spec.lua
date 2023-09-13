@@ -24,8 +24,6 @@ before_each(function()
 end)
 
 describe('legacy perl provider', function()
-  if helpers.pending_win32(pending) then return end
-
   it('feature test', function()
     eq(1, eval('has("perl")'))
   end)
@@ -68,7 +66,6 @@ describe('legacy perl provider', function()
 end)
 
 describe('perl provider', function()
-  if helpers.pending_win32(pending) then return end
   teardown(function ()
     os.remove('Xtest-perl-hello.pl')
     os.remove('Xtest-perl-hello-plugin.pl')
@@ -83,7 +80,7 @@ describe('perl provider', function()
       use Neovim::Ext;
       use Neovim::Ext::MsgPack::RPC;
 
-      my $session = Neovim::Ext::MsgPack::RPC::socket_session($ENV{NVIM_LISTEN_ADDRESS});
+      my $session = Neovim::Ext::MsgPack::RPC::socket_session($ENV{NVIM});
       my $nvim = Neovim::Ext::from_session($session);
       $nvim->command('let g:job_out = "hello"');
       1;
@@ -116,7 +113,7 @@ describe('perl provider', function()
       use Neovim::Ext;
       use Neovim::Ext::MsgPack::RPC;
 
-      my $session = Neovim::Ext::MsgPack::RPC::socket_session($ENV{NVIM_LISTEN_ADDRESS});
+      my $session = Neovim::Ext::MsgPack::RPC::socket_session($ENV{NVIM});
       my $nvim = Neovim::Ext::from_session($session);
       my $plugin = TestPlugin->new($nvim);
       $plugin->test_command();

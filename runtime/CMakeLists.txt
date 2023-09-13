@@ -21,12 +21,12 @@ add_custom_command(OUTPUT ${GENERATED_SYN_VIM}
     ${FUNCS_DATA}
 )
 
-file(GLOB PACKAGES ${PROJECT_SOURCE_DIR}/runtime/pack/dist/opt/*)
+glob_wrapper(PACKAGES ${PROJECT_SOURCE_DIR}/runtime/pack/dist/opt/*)
 
 set(GENERATED_PACKAGE_TAGS)
 foreach(PACKAGE ${PACKAGES})
   get_filename_component(PACKNAME ${PACKAGE} NAME)
-  file(GLOB "${PACKNAME}_DOC_FILES" ${PACKAGE}/doc/*.txt)
+  glob_wrapper("${PACKNAME}_DOC_FILES" ${PACKAGE}/doc/*.txt)
   if(${PACKNAME}_DOC_FILES)
     file(MAKE_DIRECTORY ${GENERATED_PACKAGE_DIR}/${PACKNAME})
     add_custom_command(OUTPUT "${GENERATED_PACKAGE_DIR}/${PACKNAME}/doc/tags"
@@ -54,7 +54,7 @@ foreach(PACKAGE ${PACKAGES})
   endif()
 endforeach()
 
-file(GLOB DOCFILES ${PROJECT_SOURCE_DIR}/runtime/doc/*.txt)
+glob_wrapper(DOCFILES ${PROJECT_SOURCE_DIR}/runtime/doc/*.txt)
 
 set(BUILDDOCFILES)
 foreach(DF ${DOCFILES})
@@ -63,7 +63,7 @@ foreach(DF ${DOCFILES})
 endforeach()
 
 add_custom_command(OUTPUT ${GENERATED_HELP_TAGS}
-  COMMAND ${CMAKE_COMMAND} -E remove doc/*
+  COMMAND ${CMAKE_COMMAND} -E remove_directory doc
   COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${PROJECT_SOURCE_DIR}/runtime/doc doc
   COMMAND "${PROJECT_BINARY_DIR}/bin/nvim"
@@ -75,8 +75,10 @@ add_custom_command(OUTPUT ${GENERATED_HELP_TAGS}
 )
 
 
+# TODO: This doesn't work. wait for "nvim -l" to land?
 add_custom_target(doc_html
-  COMMAND make html
+  COMMAND "${PROJECT_BINARY_DIR}/bin/nvim"
+    -V1 -es --clean -c "lua require('scripts.gen_help_html').gen('./build/runtime/doc', './build/doc_html', nil, 'todo_commit_id')" -c "0cq"
   DEPENDS
     ${GENERATED_HELP_TAGS}
   WORKING_DIRECTORY "${GENERATED_RUNTIME_DIR}/doc"
@@ -108,29 +110,23 @@ if(NOT APPLE)
   install_helper(
     FILES ${CMAKE_CURRENT_SOURCE_DIR}/nvim.desktop
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications)
-
-  install_helper(
-    FILES ${CMAKE_CURRENT_SOURCE_DIR}/nvim.png
-    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/128x128/apps)
 endif()
 
-file(GLOB_RECURSE RUNTIME_PROGRAMS
-  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-  *.awk *.sh *.bat)
+install_helper(
+  FILES ${CMAKE_CURRENT_SOURCE_DIR}/nvim.png
+  DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/128x128/apps)
 
-foreach(PROG ${RUNTIME_PROGRAMS})
-  get_filename_component(BASEDIR ${PROG} PATH)
-  install_helper(PROGRAMS ${PROG}
-                 DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/nvim/runtime/${BASEDIR})
+glob_wrapper(RUNTIME_ROOT_FILES *.vim *.lua *.ico)
+install_helper(FILES ${RUNTIME_ROOT_FILES}
+               DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/nvim/runtime/)
+
+glob_wrapper(RUNTIME_DIRS */)
+foreach(D ${RUNTIME_DIRS})
+  if(IS_DIRECTORY ${D})
+    install_helper(DIRECTORY ${D}
+                   DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/nvim/runtime/)
+  endif()
 endforeach()
 
-file(GLOB_RECURSE RUNTIME_FILES
-  RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-  rgb.txt
-  *.vim *.lua *.dict *.py *.rb *.ps *.spl *.tutor *.tutor.json)
-
-foreach(F ${RUNTIME_FILES})
-  get_filename_component(BASEDIR ${F} PATH)
-  install_helper(FILES ${F}
-                 DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/nvim/runtime/${BASEDIR})
-endforeach()
+# only foo.sh script in runtime/
+install_helper(PROGRAMS ${CMAKE_CURRENT_SOURCE_DIR}/macros/less.sh DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/nvim/runtime/macros/)

@@ -42,8 +42,6 @@ For inserting text see |insert.txt|.
 			of the line and [count]-1 more lines [into register
 			x]; synonym for "d$".
 			(not |linewise|)
-			When the '#' flag is in 'cpoptions' the count is
-			ignored.
 
 {Visual}["x]x	or					*v_x* *v_d* *v_<Del>*
 {Visual}["x]d   or
@@ -206,7 +204,6 @@ gR			Enter Virtual Replace mode: Each character you type
 							*v_S*
 {Visual}["x]S		Delete the highlighted lines [into register x] and
 			start insert (for {Visual} see |Visual-mode|).
-
 							*v_R*
 {Visual}["x]R		Currently just like {Visual}["x]S.  In a next version
 			it might work differently.
@@ -279,7 +276,9 @@ gr{char}		Replace the virtual characters under the cursor with
 			{char}.  This replaces in screen space, not file
 			space.  See |gR| and |Virtual-Replace-mode| for more
 			details.  As with |r| a count may be given.
-			{char} can be entered like with |r|.
+			{char} can be entered like with |r|, but characters
+			that have a special meaning in Insert mode, such as
+			most CTRL-keys, cannot be used.
 
 						*digraph-arg*
 The argument for Normal mode commands like |r| and |t| is a single character.
@@ -355,14 +354,14 @@ CTRL-A			Add [count] to the number or alphabetic character at
 
                                                        *v_CTRL-A*
 {Visual}CTRL-A		Add [count] to the number or alphabetic character in
-			the highlighted text.  {not in Vi}
+			the highlighted text.
 
 							*v_g_CTRL-A*
 {Visual}g CTRL-A	Add [count] to the number or alphabetic character in
 			the highlighted text. If several lines are
 		        highlighted, each one will be incremented by an
 			additional [count] (so effectively creating a
-			[count] incrementing sequence).  {not in Vi}
+			[count] incrementing sequence).
 			For Example, if you have this list of numbers:
 				1. ~
 				1. ~
@@ -381,14 +380,14 @@ CTRL-X			Subtract [count] from the number or alphabetic
 
 							*v_CTRL-X*
 {Visual}CTRL-X		Subtract [count] from the number or alphabetic
-			character in the highlighted text.  {not in Vi}
+			character in the highlighted text.
 
 							*v_g_CTRL-X*
 {Visual}g CTRL-X	Subtract [count] from the number or alphabetic
 			character in the highlighted text. If several lines
 			are highlighted, each value will be decremented by an
 			additional [count] (so effectively creating a [count]
-			decrementing sequence).  {not in Vi}
+			decrementing sequence).
 
 The CTRL-A and CTRL-X commands work for (signed) decimal numbers, unsigned
 binary/octal/hexadecimal numbers and alphabetic characters.
@@ -443,13 +442,13 @@ steps to make a numbered list.
 SHIFTING LINES LEFT OR RIGHT				*shift-left-right*
 
 							*<*
-<{motion}		Shift {motion} lines one 'shiftwidth' leftwards.
+ <{motion}		Shift {motion} lines one 'shiftwidth' leftwards.
 
 			If the 'shiftwidth' option is set to zero, the amount
 			of indent is calculated at the first non-blank
 			character in the line.
 							*<<*
-<<			Shift [count] lines one 'shiftwidth' leftwards.
+ <<			Shift [count] lines one 'shiftwidth' leftwards.
 
 							*v_<*
 {Visual}[count]<	Shift the highlighted lines [count] 'shiftwidth'
@@ -568,9 +567,7 @@ with ".".  Vim does not recognize a comment (starting with '"') after the
 			option is empty (this is the default), use the
 			internal formatting function |C-indenting| and
 			|'lisp'|.  But when 'indentexpr' is not empty, it will
-			be used instead |indent-expression|.  When Vim was
-			compiled without internal formatting then the "indent"
-			program is used as a last resort.
+			be used instead |indent-expression|.
 
 							*==*
 ==			Filter [count] lines like with ={motion}.
@@ -579,18 +576,29 @@ with ".".  Vim does not recognize a comment (starting with '"') after the
 {Visual}=		Filter the highlighted lines like with ={motion}.
 
 
-						*tempfile* *setuid*
-Vim uses temporary files for filtering, generating diffs and also for
-tempname().  For Unix, the file will be in a private directory (only
-accessible by the current user) to avoid security problems (e.g., a symlink
-attack or other people reading your file).  When Vim exits the directory and
-all files in it are deleted.  When Vim has the setuid bit set this may cause
-problems, the temp file is owned by the setuid user but the filter command
-probably runs as the original user.
-Directory for temporary files is created in the first suitable directory of:
+						*tempdir* *tempfile* *setuid*
+Nvim uses temporary files for filtering and generating diffs. Plugins also
+commonly use |tempname()| for their own purposes. On the first request for
+a temporary file, Nvim creates a common directory (the "Nvim tempdir"), to
+serve as storage for all temporary files (including `stdpath("run")` files
+|$XDG_RUNTIME_DIR|) in the current session.
+
+The Nvim tempdir is created in the first available system tempdir:
 	Unix:    $TMPDIR, /tmp, current-dir, $HOME.
 	Windows: $TMPDIR, $TMP, $TEMP, $USERPROFILE, current-dir.
 
+On unix the tempdir is created with permissions 0700 (only accessible by the
+current user) to avoid security problems (e.g. symlink attacks).  On exit,
+Nvim deletes the tempdir and its contents.
+							*E5431*
+If you see an error or |log| message like: >
+	E5431: tempdir disappeared (2 times)
+this means an external process on your system deleted the Nvim tempdir.
+Typically this is caused by "antivirus" or a misconfigured cleanup service.
+
+If Nvim has the setuid bit set this may cause problems: the temp file
+is owned by the setuid user but the filter command probably runs as the
+original user.
 
 
 4.2 Substitute						*:substitute*
@@ -636,6 +644,9 @@ Directory for temporary files is created in the first suitable directory of:
 			that the flags are not remembered, thus it might
 			actually work differently.  You can use `:&&` to keep
 			the flags.
+
+								*&-default*
+			Mapped to ":&&<CR>" by default. |default-mappings|
 
 								*g&*
 g&			Synonym for `:%s//~/&` (repeat last substitute with
@@ -749,11 +760,13 @@ For compatibility with Vi these two exceptions are allowed:
 "\/{string}/" and "\?{string}?" do the same as "//{string}/r".
 "\&{string}&" does the same as "//{string}/".
 						*pattern-delimiter* *E146*
-Instead of the '/' which surrounds the pattern and replacement string, you
-can use any other single-byte character, but not an alphanumeric character,
-'\', '"' or '|'.  This is useful if you want to include a '/' in the search
-pattern or replacement string.  Example: >
+Instead of the '/' which surrounds the pattern and replacement string, you can
+use another single-byte character.  This is useful if you want to include a
+'/' in the search pattern or replacement string.  Example: >
 	:s+/+//+
+
+You can use most characters, but not an alphanumeric character, '\', '"' or
+'|'.
 
 For the definition of a pattern, see |pattern|.  In Visual block mode, use
 |/\%V| in the pattern to have the substitute work in the block only.
@@ -763,6 +776,8 @@ Otherwise it works on whole lines anyway.
 When the {string} starts with "\=" it is evaluated as an expression, see
 |sub-replace-expression|.  You can use that for complex replacement or special
 characters.
+
+The substitution is limited in recursion to 4 levels. *E1290*
 
 Otherwise these characters in {string} have a special meaning:
 
@@ -906,7 +921,7 @@ Consider using a character like "@" or ":".  There is no problem if the result
 of the expression contains the separation character.
 
 Examples: >
-	:s@\n@\="\r" . expand("$HOME") . "\r"@
+	:s@\n@\="\r" .. expand("$HOME") .. "\r"@
 This replaces an end-of-line with a new line containing the value of $HOME. >
 
 	s/E/\="\<Char-0x20ac>"/g
@@ -974,7 +989,7 @@ inside of strings can change!  Also see 'softtabstop' option. >
 <			to display registers '1' and 'a'.  Spaces are allowed
 			in {arg}.
 
-							*:di* *:display*
+							*:di* *:dis* *:display*
 :di[splay] [arg]	Same as :registers.
 
 							*y* *yank*
@@ -988,9 +1003,9 @@ inside of strings can change!  Also see 'softtabstop' option. >
 
 							*Y*
 ["x]Y			yank [count] lines [into register x] (synonym for
-			yy, |linewise|).  If you like "Y" to work from the
-			cursor to the end of line (which is more logical,
-			but not Vi-compatible) use ":map Y y$".
+			yy, |linewise|).
+							*Y-default*
+			Mapped to "y$" by default. |default-mappings|
 
 							*zy*
 ["x]zy{motion}		Yank {motion} text [into register x].  Only differs
@@ -1011,16 +1026,14 @@ inside of strings can change!  Also see 'softtabstop' option. >
 			with `zp`.  (for {Visual} see |Visual-mode|)
 
 							*:y* *:yank* *E850*
-:[range]y[ank] [x]	Yank [range] lines [into register x]. Yanking to the
-			"* or "+ registers is possible only when the
-			|+clipboard| feature is included.
+:[range]y[ank] [x]	Yank [range] lines [into register x].
 
 :[range]y[ank] [x] {count}
 			Yank {count} lines, starting with last line number
 			in [range] (default: current line |cmdline-ranges|),
 			[into register x].
 
-							*p* *put* *E353*
+						*p* *put* *E353* *E1240*
 ["x]p			Put the text [from register x] after the cursor
 			[count] times.
 
@@ -1067,7 +1080,7 @@ inside of strings can change!  Also see 'softtabstop' option. >
 			the command.  You need to escape the '|' and '"'
 			characters to prevent them from terminating the
 			command.  Example: >
-				:put ='path' . \",/test\"
+				:put ='path' .. \",/test\"
 <			If there is no expression after '=', Vim uses the
 			previous expression.  You can see it with ":dis =".
 
@@ -1120,19 +1133,29 @@ register.  With blockwise selection it also depends on the size of the block
 and whether the corners are on an existing character.  (Implementation detail:
 it actually works by first putting the register after the selection and then
 deleting the selection.)
-The previously selected text is put in the unnamed register.  If you want to
-put the same text into a Visual selection several times you need to use
-another register.  E.g., yank the text to copy, Visually select the text to
-replace and use "0p .  You can repeat this as many times as you like, the
-unnamed register will be changed each time.
-
-When you use a blockwise Visual mode command and yank only a single line into
-a register, a paste on a visual selected area will paste that single line on
-each of the selected lines (thus replacing the blockwise selected region by a
-block of the pasted line).
-
-Use |zP|/|zp| to paste a blockwise yanked register without appending trailing
-spaces.
+With |p| the previously selected text is put in the unnamed register (and
+possibly the selection and/or clipboard).  This is useful if you want to put
+that text somewhere else.  But you cannot repeat the same change.
+With |P| the unnamed register is not changed (and neither the selection or
+clipboard), you can repeat the same change. But the deleted text cannot be
+used.  If you do need it you can use |p| with another register.  E.g., yank
+the text to copy, Visually select the text to replace and use "0p .  You can
+repeat this as many times as you like, and the unnamed register will be
+changed each time.
+							*blockwise-put*
+When a register contains text from one line (characterwise), using a
+blockwise Visual selection, putting that register will paste that text
+repeatedly in each of the selected lines, thus replacing the blockwise
+selected region by multiple copies of the register text.  For example:
+	- yank the word "TEXT" into a register with `yw`
+	- select a visual block, marked with "v" in this text:
+	    aaavvaaa
+	    bbbvvbbb
+	    cccvvccc
+	- press `p`, results in:
+	    aaaTEXTaaa
+	    bbbTEXTbbb
+	    cccTEXTccc
 
 							*blockwise-register*
 If you use a blockwise Visual mode command to get the text into the register,
@@ -1143,6 +1166,9 @@ yanked or deleted.  Vim may replace some <Tab> characters with spaces to make
 this happen.  However, if the width of the block is not a multiple of a <Tab>
 width and the text after the inserted block contains <Tab>s, that text may be
 misaligned.
+
+Use |zP|/|zp| to paste a blockwise yanked register without appending trailing
+spaces.
 
 Note that after a charwise yank command, Vim leaves the cursor on the first
 yanked character that is closest to the start of the buffer.  This means that
@@ -1207,7 +1233,7 @@ to their previous contents.  When the '>' flag is present in 'cpoptions' then
 a line break is inserted before the appended text.
 
 5. Read-only registers ":, ". and "%
-These are '%', '#', ':' and '.'.  You can use them only with the "p", "P",
+These are '%', ':' and '.'.  You can use them only with the "p", "P",
 and ":put" commands and with CTRL-R.
 						*quote_.* *quote.* *E29*
 	".	Contains the last inserted text (the same as what is inserted
@@ -1586,18 +1612,21 @@ You can use the 'formatoptions' option  to influence how Vim formats text.
 can separate the option letters with commas for readability.
 
 letter	 meaning when present in 'formatoptions'    ~
-
 							*fo-t*
-t	Auto-wrap text using textwidth
+t	Auto-wrap text using 'textwidth'
 							*fo-c*
-c	Auto-wrap comments using textwidth, inserting the current comment
+c	Auto-wrap comments using 'textwidth', inserting the current comment
 	leader automatically.
 							*fo-r*
 r	Automatically insert the current comment leader after hitting
 	<Enter> in Insert mode.
 							*fo-o*
 o	Automatically insert the current comment leader after hitting 'o' or
-	'O' in Normal mode.
+	'O' in Normal mode.  In case comment is unwanted in a specific place
+	use CTRL-U to quickly delete it. |i_CTRL-U|
+							*fo-/*
+/	When 'o' is included: do not insert the comment leader for a //
+	comment after a statement, only when // is at the start of the line.
 							*fo-q*
 q	Allow formatting of comments with "gq".
 	Note that formatting will not change blank lines or lines containing
@@ -1660,8 +1689,8 @@ B	When joining lines, don't insert a space between two multibyte
 1	Don't break a line after a one-letter word.  It's broken before it
 	instead (if possible).
 							*fo-]*
-]	Respect textwidth rigorously. With this flag set, no line can be
-	longer than textwidth, unless line-break-prohibition rules make this
+]	Respect 'textwidth' rigorously. With this flag set, no line can be
+	longer than 'textwidth', unless line-break-prohibition rules make this
 	impossible.  Mainly for CJK scripts and works only if 'encoding' is
 	"utf-8".
 							*fo-j*
@@ -1695,8 +1724,6 @@ value	action	~
 Note that when 'textwidth' is 0, Vim does no automatic formatting anyway (but
 does insert comment leaders according to the 'comments' option).  An exception
 is when the 'a' flag is present. |auto-format|
-
-Note that when 'paste' is on, Vim does no formatting at all.
 
 Note that 'textwidth' can be non-zero even if Vim never performs auto-wrapping;
 'textwidth' is still useful for formatting with "gq".
@@ -1802,8 +1829,7 @@ found here: |sort()|, |uniq()|.
 			With [f] sorting is done on the Float in the line.
 			The value of Float is determined similar to passing
 			the text (after or inside a {pattern} match) to
-			str2float() function. This option is available only
-			if Vim was compiled with Floating point support.
+			str2float() function.
 
 			With [x] sorting is done on the first hexadecimal
 			number in the line (after or inside a {pattern}

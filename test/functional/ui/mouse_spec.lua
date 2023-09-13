@@ -4,6 +4,7 @@ local clear, feed, meths = helpers.clear, helpers.feed, helpers.meths
 local insert, feed_command = helpers.insert, helpers.feed_command
 local eq, funcs = helpers.eq, helpers.funcs
 local command = helpers.command
+local exec = helpers.exec
 
 describe('ui/mouse/input', function()
   local screen
@@ -32,7 +33,7 @@ describe('ui/mouse/input', function()
       [6] = {foreground = Screen.colors.Grey100, background = Screen.colors.Red},
       [7] = {bold = true, foreground = Screen.colors.SeaGreen4},
     })
-    command("set display-=msgsep")
+    command("set mousemodel=extend")
     feed('itesting<cr>mouse<cr>support and selection<esc>')
     screen:expect([[
       testing                  |
@@ -585,8 +586,73 @@ describe('ui/mouse/input', function()
     ]])
   end)
 
-  it('two clicks will select the word and enter VISUAL', function()
-    feed('<LeftMouse><2,2><LeftMouse><2,2>')
+  it('left drag changes visual selection in split layout', function()
+    screen:try_resize(53,14)
+    command('set mouse=a')
+    command('vsplit')
+    command('wincmd l')
+    command('below split')
+    command('enew')
+    feed('ifoo\nbar<esc>')
+
+    screen:expect{grid=[[
+      testing                   │testing                   |
+      mouse                     │mouse                     |
+      support and selection     │support and selection     |
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{4:[No Name] [+]             }|
+      {0:~                         }│foo{0:$}                      |
+      {0:~                         }│ba^r{0:$}                      |
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {4:[No Name] [+]              }{5:[No Name] [+]             }|
+                                                           |
+    ]]}
+
+    meths.input_mouse('left', 'press', '', 0, 6, 27)
+    screen:expect{grid=[[
+      testing                   │testing                   |
+      mouse                     │mouse                     |
+      support and selection     │support and selection     |
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{4:[No Name] [+]             }|
+      {0:~                         }│^foo{0:$}                      |
+      {0:~                         }│bar{0:$}                      |
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {4:[No Name] [+]              }{5:[No Name] [+]             }|
+                                                           |
+    ]]}
+    meths.input_mouse('left', 'drag', '', 0, 7, 30)
+
+    screen:expect{grid=[[
+      testing                   │testing                   |
+      mouse                     │mouse                     |
+      support and selection     │support and selection     |
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{4:[No Name] [+]             }|
+      {0:~                         }│{1:foo}{3:$}                      |
+      {0:~                         }│{1:bar}{0:^$}                      |
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {0:~                         }│{0:~                         }|
+      {4:[No Name] [+]              }{5:[No Name] [+]             }|
+      {2:-- VISUAL --}                                         |
+    ]]}
+  end)
+
+  it('two clicks will enter VISUAL and dragging selects words', function()
+    feed('<LeftMouse><2,2>')
+    feed('<LeftRelease><2,2>')
+    feed('<LeftMouse><2,2>')
     screen:expect([[
       testing                  |
       mouse                    |
@@ -594,10 +660,38 @@ describe('ui/mouse/input', function()
       {0:~                        }|
       {2:-- VISUAL --}             |
     ]])
+    feed('<LeftDrag><0,1>')
+    screen:expect([[
+      testing                  |
+      ^m{1:ouse}                    |
+      {1:support} and selection    |
+      {0:~                        }|
+      {2:-- VISUAL --}             |
+    ]])
+    feed('<LeftDrag><4,0>')
+    screen:expect([[
+      ^t{1:esting}                  |
+      {1:mouse}                    |
+      {1:support} and selection    |
+      {0:~                        }|
+      {2:-- VISUAL --}             |
+    ]])
+    feed('<LeftDrag><14,2>')
+    screen:expect([[
+      testing                  |
+      mouse                    |
+      {1:support and selectio}^n    |
+      {0:~                        }|
+      {2:-- VISUAL --}             |
+    ]])
   end)
 
-  it('three clicks will select the line and enter VISUAL LINE', function()
-    feed('<LeftMouse><2,2><LeftMouse><2,2><LeftMouse><2,2>')
+  it('three clicks will enter VISUAL LINE and dragging selects lines', function()
+    feed('<LeftMouse><2,2>')
+    feed('<LeftRelease><2,2>')
+    feed('<LeftMouse><2,2>')
+    feed('<LeftRelease><2,2>')
+    feed('<LeftMouse><2,2>')
     screen:expect([[
       testing                  |
       mouse                    |
@@ -605,14 +699,68 @@ describe('ui/mouse/input', function()
       {0:~                        }|
       {2:-- VISUAL LINE --}        |
     ]])
+    feed('<LeftDrag><0,1>')
+    screen:expect([[
+      testing                  |
+      ^m{1:ouse}                    |
+      {1:support and selection}    |
+      {0:~                        }|
+      {2:-- VISUAL LINE --}        |
+    ]])
+    feed('<LeftDrag><4,0>')
+    screen:expect([[
+      {1:test}^i{1:ng}                  |
+      {1:mouse}                    |
+      {1:support and selection}    |
+      {0:~                        }|
+      {2:-- VISUAL LINE --}        |
+    ]])
+    feed('<LeftDrag><14,2>')
+    screen:expect([[
+      testing                  |
+      mouse                    |
+      {1:support and se}^l{1:ection}    |
+      {0:~                        }|
+      {2:-- VISUAL LINE --}        |
+    ]])
   end)
 
-  it('four clicks will enter VISUAL BLOCK', function()
-    feed('<LeftMouse><2,2><LeftMouse><2,2><LeftMouse><2,2><LeftMouse><2,2>')
+  it('four clicks will enter VISUAL BLOCK and dragging selects blockwise', function()
+    feed('<LeftMouse><2,2>')
+    feed('<LeftRelease><2,2>')
+    feed('<LeftMouse><2,2>')
+    feed('<LeftRelease><2,2>')
+    feed('<LeftMouse><2,2>')
+    feed('<LeftRelease><2,2>')
+    feed('<LeftMouse><2,2>')
     screen:expect([[
       testing                  |
       mouse                    |
       su^pport and selection    |
+      {0:~                        }|
+      {2:-- VISUAL BLOCK --}       |
+    ]])
+    feed('<LeftDrag><0,1>')
+    screen:expect([[
+      testing                  |
+      ^m{1:ou}se                    |
+      {1:sup}port and selection    |
+      {0:~                        }|
+      {2:-- VISUAL BLOCK --}       |
+    ]])
+    feed('<LeftDrag><4,0>')
+    screen:expect([[
+      te{1:st}^ing                  |
+      mo{1:use}                    |
+      su{1:ppo}rt and selection    |
+      {0:~                        }|
+      {2:-- VISUAL BLOCK --}       |
+    ]])
+    feed('<LeftDrag><14,2>')
+    screen:expect([[
+      testing                  |
+      mouse                    |
+      su{1:pport and se}^lection    |
       {0:~                        }|
       {2:-- VISUAL BLOCK --}       |
     ]])
@@ -666,12 +814,12 @@ describe('ui/mouse/input', function()
     feed('k')
     feed_command('sp', 'vsp')
     screen:expect([[
-      lines                     {4:│}lines                     |
-      to                        {4:│}to                        |
-      test                      {4:│}test                      |
-      ^mouse scrolling           {4:│}mouse scrolling           |
-                                {4:│}                          |
-      {0:~                         }{4:│}{0:~                         }|
+      lines                     │lines                     |
+      to                        │to                        |
+      test                      │test                      |
+      ^mouse scrolling           │mouse scrolling           |
+                                │                          |
+      {0:~                         }│{0:~                         }|
       {5:[No Name] [+]              }{4:[No Name] [+]             }|
       to                                                   |
       test                                                 |
@@ -687,12 +835,12 @@ describe('ui/mouse/input', function()
       feed('<ScrollWheelDown><0,0>')
     end
     screen:expect([[
-      ^mouse scrolling           {4:│}lines                     |
-                                {4:│}to                        |
-      {0:~                         }{4:│}test                      |
-      {0:~                         }{4:│}mouse scrolling           |
-      {0:~                         }{4:│}                          |
-      {0:~                         }{4:│}{0:~                         }|
+      ^mouse scrolling           │lines                     |
+                                │to                        |
+      {0:~                         }│test                      |
+      {0:~                         }│mouse scrolling           |
+      {0:~                         }│                          |
+      {0:~                         }│{0:~                         }|
       {5:[No Name] [+]              }{4:[No Name] [+]             }|
       to                                                   |
       test                                                 |
@@ -708,12 +856,12 @@ describe('ui/mouse/input', function()
       feed('<ScrollWheelUp><27,0>')
     end
     screen:expect([[
-      ^mouse scrolling           {4:│}text                      |
-                                {4:│}with                      |
-      {0:~                         }{4:│}many                      |
-      {0:~                         }{4:│}lines                     |
-      {0:~                         }{4:│}to                        |
-      {0:~                         }{4:│}test                      |
+      ^mouse scrolling           │text                      |
+                                │with                      |
+      {0:~                         }│many                      |
+      {0:~                         }│lines                     |
+      {0:~                         }│to                        |
+      {0:~                         }│test                      |
       {5:[No Name] [+]              }{4:[No Name] [+]             }|
       to                                                   |
       test                                                 |
@@ -730,12 +878,12 @@ describe('ui/mouse/input', function()
       feed('<ScrollWheelUp><27,7><ScrollWheelUp>')
     end
     screen:expect([[
-      ^mouse scrolling           {4:│}text                      |
-                                {4:│}with                      |
-      {0:~                         }{4:│}many                      |
-      {0:~                         }{4:│}lines                     |
-      {0:~                         }{4:│}to                        |
-      {0:~                         }{4:│}test                      |
+      ^mouse scrolling           │text                      |
+                                │with                      |
+      {0:~                         }│many                      |
+      {0:~                         }│lines                     |
+      {0:~                         }│to                        |
+      {0:~                         }│test                      |
       {5:[No Name] [+]              }{4:[No Name] [+]             }|
       Inserting                                            |
       text                                                 |
@@ -815,6 +963,49 @@ describe('ui/mouse/input', function()
       g                        |
                                |
       ^t and selection bbbbbbbbb|
+      {0:~                        }|
+                               |
+    ]])
+  end)
+
+  it("'sidescrolloff' applies to horizontal scrolling", function()
+    command('set nowrap')
+    command('set sidescrolloff=4')
+
+    feed("I <esc>020ib<esc>0")
+    screen:expect([[
+      testing                  |
+      mouse                    |
+      ^bbbbbbbbbbbbbbbbbbbb supp|
+      {0:~                        }|
+                               |
+    ]])
+
+    meths.input_mouse('wheel', 'right', '', 0, 0, 27)
+    screen:expect([[
+      g                        |
+                               |
+      bbbb^bbbbbbbbbb support an|
+      {0:~                        }|
+                               |
+    ]])
+
+    -- window-local 'sidescrolloff' should override global value. #21162
+    command('setlocal sidescrolloff=2')
+    feed('0')
+    screen:expect([[
+      testing                  |
+      mouse                    |
+      ^bbbbbbbbbbbbbbbbbbbb supp|
+      {0:~                        }|
+                               |
+    ]])
+
+    meths.input_mouse('wheel', 'right', '', 0, 0, 27)
+    screen:expect([[
+      g                        |
+                               |
+      bb^bbbbbbbbbbbb support an|
       {0:~                        }|
                                |
     ]])
@@ -1383,5 +1574,303 @@ describe('ui/mouse/input', function()
       ]])
 
     end) -- level 3 - wrapped
+  end)
+
+  it('getmousepos works correctly', function()
+    local winwidth = meths.get_option('winwidth')
+    -- Set winwidth=1 so that window sizes don't change.
+    meths.set_option('winwidth', 1)
+    command('tabedit')
+    local tabpage = meths.get_current_tabpage()
+    insert('hello')
+    command('vsplit')
+    local opts = {
+      relative='editor',
+      width=12,
+      height=1,
+      col=8,
+      row=1,
+      anchor='NW',
+      style='minimal',
+      border='single',
+      focusable=1
+    }
+    local float = meths.open_win(meths.get_current_buf(), false, opts)
+    command('redraw')
+    local lines = meths.get_option('lines')
+    local columns = meths.get_option('columns')
+
+    -- Test that screenrow and screencol are set properly for all positions.
+    for row = 0, lines - 1 do
+      for col = 0, columns - 1 do
+        -- Skip the X button that would close the tab.
+        if row ~= 0 or col ~= columns - 1 then
+          meths.input_mouse('left', 'press', '', 0, row, col)
+          meths.set_current_tabpage(tabpage)
+          local mousepos = funcs.getmousepos()
+          eq(row + 1, mousepos.screenrow)
+          eq(col + 1, mousepos.screencol)
+          -- All other values should be 0 when clicking on the command line.
+          if row == lines - 1 then
+            eq(0, mousepos.winid)
+            eq(0, mousepos.winrow)
+            eq(0, mousepos.wincol)
+            eq(0, mousepos.line)
+            eq(0, mousepos.column)
+          end
+        end
+      end
+    end
+
+    -- Test that mouse position values are properly set for the floating window
+    -- with a border. 1 is added to the height and width to account for the
+    -- border.
+    for win_row = 0, opts.height + 1 do
+      for win_col = 0, opts.width + 1 do
+        local row = win_row + opts.row
+        local col = win_col + opts.col
+        meths.input_mouse('left', 'press', '', 0, row, col)
+        local mousepos = funcs.getmousepos()
+        eq(float.id, mousepos.winid)
+        eq(win_row + 1, mousepos.winrow)
+        eq(win_col + 1, mousepos.wincol)
+        local line = 0
+        local column = 0
+        if win_row > 0 and win_row < opts.height + 1
+            and win_col > 0 and win_col < opts.width + 1 then
+          -- Because of border, win_row and win_col don't need to be
+          -- incremented by 1.
+          line = math.min(win_row, funcs.line('$'))
+          column = math.min(win_col, #funcs.getline(line) + 1)
+        end
+        eq(line, mousepos.line)
+        eq(column, mousepos.column)
+      end
+    end
+
+    -- Test that mouse position values are properly set for the floating
+    -- window, after removing the border.
+    opts.border = 'none'
+    meths.win_set_config(float, opts)
+    command('redraw')
+    for win_row = 0, opts.height - 1 do
+      for win_col = 0, opts.width - 1 do
+        local row = win_row + opts.row
+        local col = win_col + opts.col
+        meths.input_mouse('left', 'press', '', 0, row, col)
+        local mousepos = funcs.getmousepos()
+        eq(float.id, mousepos.winid)
+        eq(win_row + 1, mousepos.winrow)
+        eq(win_col + 1, mousepos.wincol)
+        local line = math.min(win_row + 1, funcs.line('$'))
+        local column = math.min(win_col + 1, #funcs.getline(line) + 1)
+        eq(line, mousepos.line)
+        eq(column, mousepos.column)
+      end
+    end
+
+    -- Test that mouse position values are properly set for ordinary windows.
+    -- Set the float to be unfocusable instead of closing, to additionally test
+    -- that getmousepos does not consider unfocusable floats. (see discussion
+    -- in PR #14937 for details).
+    opts.focusable = false
+    meths.win_set_config(float, opts)
+    command('redraw')
+    for nr = 1, 2 do
+      for win_row = 0, funcs.winheight(nr) - 1 do
+        for win_col = 0, funcs.winwidth(nr) - 1 do
+          local row = win_row + funcs.win_screenpos(nr)[1] - 1
+          local col = win_col + funcs.win_screenpos(nr)[2] - 1
+          meths.input_mouse('left', 'press', '', 0, row, col)
+          local mousepos = funcs.getmousepos()
+          eq(funcs.win_getid(nr), mousepos.winid)
+          eq(win_row + 1, mousepos.winrow)
+          eq(win_col + 1, mousepos.wincol)
+          local line = math.min(win_row + 1, funcs.line('$'))
+          local column = math.min(win_col + 1, #funcs.getline(line) + 1)
+          eq(line, mousepos.line)
+          eq(column, mousepos.column)
+        end
+      end
+    end
+
+    -- Restore state and release mouse.
+    command('tabclose!')
+    meths.set_option('winwidth', winwidth)
+    meths.input_mouse('left', 'release', '', 0, 0, 0)
+  end)
+
+  it('scroll keys are not translated into multiclicks and can be mapped #6211 #6989', function()
+    meths.set_var('mouse_up', 0)
+    meths.set_var('mouse_up2', 0)
+    command('nnoremap <ScrollWheelUp> <Cmd>let g:mouse_up += 1<CR>')
+    command('nnoremap <2-ScrollWheelUp> <Cmd>let g:mouse_up2 += 1<CR>')
+    feed('<ScrollWheelUp><0,0>')
+    feed('<ScrollWheelUp><0,0>')
+    meths.input_mouse('wheel', 'up', '', 0, 0, 0)
+    meths.input_mouse('wheel', 'up', '', 0, 0, 0)
+    eq(4, meths.get_var('mouse_up'))
+    eq(0, meths.get_var('mouse_up2'))
+  end)
+
+  it('<MouseMove> is not translated into multiclicks and can be mapped', function()
+    meths.set_var('mouse_move', 0)
+    meths.set_var('mouse_move2', 0)
+    command('nnoremap <MouseMove> <Cmd>let g:mouse_move += 1<CR>')
+    command('nnoremap <2-MouseMove> <Cmd>let g:mouse_move2 += 1<CR>')
+    feed('<MouseMove><0,0>')
+    feed('<MouseMove><0,0>')
+    meths.input_mouse('move', '', '', 0, 0, 0)
+    meths.input_mouse('move', '', '', 0, 0, 0)
+    eq(4, meths.get_var('mouse_move'))
+    eq(0, meths.get_var('mouse_move2'))
+  end)
+
+  it('feeding <MouseMove> in Normal mode does not use uninitialized memory #19480', function()
+    feed('<MouseMove>')
+    helpers.poke_eventloop()
+    helpers.assert_alive()
+  end)
+
+  it('mousemodel=popup_setpos', function()
+    screen:try_resize(80, 24)
+    exec([[
+      5new
+      call setline(1, ['the dish ran away with the spoon',
+            \ 'the cow jumped over the moon' ])
+
+      set mouse=a mousemodel=popup_setpos
+
+      aunmenu PopUp
+      nmenu PopUp.foo :let g:menustr = 'foo'<CR>
+      nmenu PopUp.bar :let g:menustr = 'bar'<CR>
+      nmenu PopUp.baz :let g:menustr = 'baz'<CR>
+      vmenu PopUp.foo y:<C-U>let g:menustr = 'foo'<CR>
+      vmenu PopUp.bar y:<C-U>let g:menustr = 'bar'<CR>
+      vmenu PopUp.baz y:<C-U>let g:menustr = 'baz'<CR>
+    ]])
+
+    meths.win_set_cursor(0, {1, 0})
+    meths.input_mouse('right', 'press', '', 0, 0, 4)
+    meths.input_mouse('right', 'release', '', 0, 0, 4)
+    feed('<Down><Down><CR>')
+    eq('bar', meths.get_var('menustr'))
+    eq({1, 4}, meths.win_get_cursor(0))
+
+    -- Test for right click in visual mode inside the selection
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 9})
+    feed('vee')
+    meths.input_mouse('right', 'press', '', 0, 0, 11)
+    meths.input_mouse('right', 'release', '', 0, 0, 11)
+    feed('<Down><CR>')
+    eq({1, 9}, meths.win_get_cursor(0))
+    eq('ran away', funcs.getreg('"'))
+
+    -- Test for right click in visual mode right before the selection
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 9})
+    feed('vee')
+    meths.input_mouse('right', 'press', '', 0, 0, 8)
+    meths.input_mouse('right', 'release', '', 0, 0, 8)
+    feed('<Down><CR>')
+    eq({1, 8}, meths.win_get_cursor(0))
+    eq('', funcs.getreg('"'))
+
+    -- Test for right click in visual mode right after the selection
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 9})
+    feed('vee')
+    meths.input_mouse('right', 'press', '', 0, 0, 17)
+    meths.input_mouse('right', 'release', '', 0, 0, 17)
+    feed('<Down><CR>')
+    eq({1, 17}, meths.win_get_cursor(0))
+    eq('', funcs.getreg('"'))
+
+    -- Test for right click in block-wise visual mode inside the selection
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 15})
+    feed('<C-V>j3l')
+    meths.input_mouse('right', 'press', '', 0, 1, 16)
+    meths.input_mouse('right', 'release', '', 0, 1, 16)
+    feed('<Down><CR>')
+    eq({1, 15}, meths.win_get_cursor(0))
+    eq('\0224', funcs.getregtype('"'))
+
+    -- Test for right click in block-wise visual mode outside the selection
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 15})
+    feed('<C-V>j3l')
+    meths.input_mouse('right', 'press', '', 0, 1, 1)
+    meths.input_mouse('right', 'release', '', 0, 1, 1)
+    feed('<Down><CR>')
+    eq({2, 1}, meths.win_get_cursor(0))
+    eq('v', funcs.getregtype('"'))
+    eq('', funcs.getreg('"'))
+
+    -- Test for right click in line-wise visual mode inside the selection
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 15})
+    feed('V')
+    meths.input_mouse('right', 'press', '', 0, 0, 9)
+    meths.input_mouse('right', 'release', '', 0, 0, 9)
+    feed('<Down><CR>')
+    eq({1, 0}, meths.win_get_cursor(0)) -- After yanking, the cursor goes to 1,1
+    eq('V', funcs.getregtype('"'))
+    eq(1, #funcs.getreg('"', 1, true))
+
+    -- Test for right click in multi-line line-wise visual mode inside the selection
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 15})
+    feed('Vj')
+    meths.input_mouse('right', 'press', '', 0, 1, 19)
+    meths.input_mouse('right', 'release', '', 0, 1, 19)
+    feed('<Down><CR>')
+    eq({1, 0}, meths.win_get_cursor(0)) -- After yanking, the cursor goes to 1,1
+    eq('V', funcs.getregtype('"'))
+    eq(2, #funcs.getreg('"', 1, true))
+
+    -- Test for right click in line-wise visual mode outside the selection
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 15})
+    feed('V')
+    meths.input_mouse('right', 'press', '', 0, 1, 9)
+    meths.input_mouse('right', 'release', '', 0, 1, 9)
+    feed('<Down><CR>')
+    eq({2, 9}, meths.win_get_cursor(0))
+    eq('', funcs.getreg('"'))
+
+    -- Try clicking outside the window
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {2, 1})
+    feed('vee')
+    meths.input_mouse('right', 'press', '', 0, 6, 1)
+    meths.input_mouse('right', 'release', '', 0, 6, 1)
+    feed('<Down><CR>')
+    eq(2, funcs.winnr())
+    eq('', funcs.getreg('"'))
+
+    -- Test for right click in visual mode inside the selection with vertical splits
+    command('wincmd t')
+    command('rightbelow vsplit')
+    funcs.setreg('"', '')
+    meths.win_set_cursor(0, {1, 9})
+    feed('vee')
+    meths.input_mouse('right', 'press', '', 0, 0, 52)
+    meths.input_mouse('right', 'release', '', 0, 0, 52)
+    feed('<Down><CR>')
+    eq({1, 9}, meths.win_get_cursor(0))
+    eq('ran away', funcs.getreg('"'))
+
+    -- Test for right click inside visual selection at bottom of window with winbar
+    command('setlocal winbar=WINBAR')
+    feed('2yyP')
+    funcs.setreg('"', '')
+    feed('G$vbb')
+    meths.input_mouse('right', 'press', '', 0, 4, 61)
+    meths.input_mouse('right', 'release', '', 0, 4, 61)
+    feed('<Down><CR>')
+    eq({4, 20}, meths.win_get_cursor(0))
+    eq('the moon', funcs.getreg('"'))
   end)
 end)

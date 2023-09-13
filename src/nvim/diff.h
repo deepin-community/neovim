@@ -1,8 +1,11 @@
 #ifndef NVIM_DIFF_H
 #define NVIM_DIFF_H
 
-#include "nvim/pos.h"
+#include <stdbool.h>
+
 #include "nvim/ex_cmds_defs.h"
+#include "nvim/macros.h"
+#include "nvim/pos.h"
 
 // Value set from 'diffopt'.
 EXTERN int diff_context INIT(= 6);  // context for folds

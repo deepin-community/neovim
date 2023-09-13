@@ -1,6 +1,9 @@
 #ifndef NVIM_OS_PTY_CONPTY_WIN_H
 #define NVIM_OS_PTY_CONPTY_WIN_H
 
+#include "klib/kvec.h"
+#include "nvim/os/input.h"
+
 #ifndef HPCON
 # define HPCON VOID *
 #endif

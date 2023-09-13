@@ -86,9 +86,8 @@ You can also set 'guifont' alone, the Nvim GUI will try to find a matching
 INPUT
 
 There are several ways to enter multibyte characters:
-- For X11 XIM can be used.  See |XIM|.
-- For MS-Windows IME can be used.  See |IME|.
-- For all systems keymaps can be used.  See |mbyte-keymap|.
+- Your system IME can be used.
+- Keymaps can be used.  See |mbyte-keymap|.
 
 The options 'iminsert', 'imsearch' and 'imcmdline' can be used to choose
 the different input methods or disable them temporarily.
@@ -335,41 +334,14 @@ Vim will automatically convert from one to another encoding in several places:
   "utf-8" (requires a gettext version that supports this).
 - When reading a Vim script where |:scriptencoding| is different from
   "utf-8".
-Most of these require the |+iconv| feature.  Conversion for reading and
-writing files may also be specified with the 'charconvert' option.
+Most of these require iconv.  Conversion for reading and writing files may
+also be specified with the 'charconvert' option.
 
 Useful utilities for converting the charset:
     All:	    iconv
 	GNU iconv can convert most encodings.  Unicode is used as the
 	intermediate encoding, which allows conversion from and to all other
-	encodings.  See http://www.gnu.org/directory/libiconv.html.
-
-    Japanese:	    nkf
-	Nkf is "Network Kanji code conversion Filter".  One of the most unique
-	facility of nkf is the guess of the input Kanji code.  So, you don't
-	need to know what the inputting file's |charset| is.  When convert to
-	EUC-JP from ISO-2022-JP or Shift_JIS, simply do the following command
-	in Vim:
-	    :%!nkf -e
-	Nkf can be found at:
-	http://www.sfc.wide.ad.jp/~max/FreeBSD/ports/distfiles/nkf-1.62.tar.gz
-
-    Chinese:	    hc
-	Hc is "Hanzi Converter".  Hc convert a GB file to a Big5 file, or Big5
-	file to GB file.  Hc can be found at:
-	ftp://ftp.cuhk.hk/pub/chinese/ifcss/software/unix/convert/hc-30.tar.gz
-
-    Korean:	    hmconv
-	Hmconv is Korean code conversion utility especially for E-mail.  It can
-	convert between EUC-KR and ISO-2022-KR.  Hmconv can be found at:
-	ftp://ftp.kaist.ac.kr/pub/hangul/code/hmconv/
-
-    Multilingual:   lv
-	Lv is a Powerful Multilingual File Viewer.  And it can be worked as
-	|charset| converter.  Supported |charset|: ISO-2022-CN, ISO-2022-JP,
-	ISO-2022-KR, EUC-CN, EUC-JP, EUC-KR, EUC-TW, UTF-7, UTF-8, ISO-8859
-	series, Shift_JIS, Big5 and HZ.  Lv can be found at:
-	http://www.ff.iij4u.or.jp/~nrt/lv/index.html
+	encodings.  See https://directory.fsf.org/wiki/Libiconv.
 
 
 							*mbyte-conversion*
@@ -404,17 +376,6 @@ is suitable for complex input, such as CJK.
   |IM-server|s adopt FrontEnd system.  The demerit of BackEnd system is the
   large overhead in communication, but it provides safe synchronization with
   no restrictions on applications.
-
-  For example, there are xwnmo and kinput2 Japanese |IM-server|, both are
-  FrontEnd system.  Xwnmo is distributed with Wnn (see below), kinput2 can be
-  found at: ftp://ftp.sra.co.jp/pub/x11/kinput2/
-
-  For Chinese, there's a great XIM server named "xcin", you can input both
-  Traditional and Simplified Chinese characters.  And it can accept other
-  locale if you make a correct input table.  Xcin can be found at:
-  http://cle.linux.org.tw/xcin/
-  Others are scim: http://scim.freedesktop.org/ and fcitx:
-  http://www.fcitx.org/
 
 - Conversion Server
 							*conversion-server*
@@ -489,8 +450,8 @@ Use the RPM or port for your system.
     window specific to the input method.
 
 
-USING XIM			*multibyte-input* *E284* *E286* *E287* *E288*
-				*E285* *E289*
+USING XIM			*multibyte-input* *E284* *E285* *E286* *E287*
+					*E288* *E289*
 
 Note that Display and Input are independent.  It is possible to see your
 language even though you have no input method for it.  But when your Display
@@ -663,8 +624,8 @@ This file explains what characters are available in UTF-8 and CP1255 encodings,
 and what the keymaps are to get those characters:
 
 glyph   encoding	   keymap ~
-Char   utf-8 cp1255  hebrew  hebrewp  name ~
-א    0x5d0  0xe0     t	      a     'alef
+Char UTF-8 cp1255  hebrew  hebrewp  name ~
+א    0x5d0  0xe0     t	      a     ´alef
 ב    0x5d1  0xe1     c	      b     bet
 ג    0x5d2  0xe2     d	      g     gimel
 ד    0x5d3  0xe3     s	      d     dalet
@@ -716,11 +677,11 @@ Vowel marks and special punctuation:
 ױ    0x5f1  0xd5     VY      VY   vav-yod
 ײ    0x5f2  0xd6     YY      YY   yod-yod
 
-The following are only available in utf-8
+The following are only available in UTF-8
 
 Cantillation marks:
 glyph
-Char utf-8 hebrew name
+Char UTF-8 hebrew name
 ב֑    0x591   C:   etnahta
 ב֒    0x592   Cs   segol
 ב֓    0x593   CS   shalshelet
@@ -745,7 +706,7 @@ Char utf-8 hebrew name
 
 Combining forms:
 ﬠ    0xfb20  X`   Alternative `ayin
-ﬡ    0xfb21  X'   Alternative 'alef
+ﬡ    0xfb21  X'   Alternative ´alef
 ﬢ    0xfb22  X-d  Alternative dalet
 ﬣ    0xfb23  X-h  Alternative he
 ﬤ    0xfb24  X-k  Alternative kaf
@@ -803,7 +764,7 @@ ASCII.   On MS-Windows UTF-16 is also used (previously UCS-2), which uses
 internally.
 
 Vim has comprehensive UTF-8 support.  It works well in:
-- xterm with utf-8 support enabled
+- xterm with UTF-8 support enabled
 - MS-Windows GUI
 - several other platforms
 
@@ -814,14 +775,14 @@ a space to fill the gap.
 							*bom-bytes*
 When reading a file a BOM (Byte Order Mark) can be used to recognize the
 Unicode encoding:
-	EF BB BF     utf-8
-	FE FF        utf-16 big endian
-	FF FE        utf-16 little endian
-	00 00 FE FF  utf-32 big endian
-	FF FE 00 00  utf-32 little endian
+	EF BB BF     UTF-8
+	FE FF        UTF-16 big endian
+	FF FE        UTF-16 little endian
+	00 00 FE FF  UTF-32 big endian
+	FF FE 00 00  UTF-32 little endian
 
-Utf-8 is the recommended encoding.  Note that it's difficult to tell utf-16
-and utf-32 apart.  Utf-16 is often used on MS-Windows, utf-32 is not
+UTF-8 is the recommended encoding.  Note that it's difficult to tell UTF-16
+and UTF-32 apart.  UTF-16 is often used on MS-Windows, UTF-32 is not
 widespread as file format.
 
 
@@ -888,10 +849,10 @@ Motif.  Use the ":hi Menu font={fontname}" command for this. |:highlight|
 TYPING UTF-8						*utf-8-typing*
 
 If you are using X-Windows, you should find an input method that supports
-utf-8.
+UTF-8.
 
-If your system does not provide support for typing utf-8, you can use the
-'keymap' feature.  This allows writing a keymap file, which defines a utf-8
+If your system does not provide support for typing UTF-8, you can use the
+'keymap' feature.  This allows writing a keymap file, which defines a UTF-8
 character as a sequence of ASCII characters.  See |mbyte-keymap|.
 
 If everything else fails, you can type any character as four hex bytes: >

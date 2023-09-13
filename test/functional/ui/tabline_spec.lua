@@ -69,6 +69,7 @@ describe('ui/ext_tabline', function()
     command("bnext")
 
     local expected_buffers = {
+      {buffer = { id = 1 }, name = '[No Name]'},
       {buffer = { id = 2 }, name = 'another-buffer'},
     }
     screen:expect{grid=[[
@@ -81,5 +82,47 @@ describe('ui/ext_tabline', function()
       eq({ id = 2 }, event_curbuf)
       eq(expected_buffers, event_buffers)
     end}
+  end)
+end)
+
+describe("tabline", function()
+  local screen
+
+  before_each(function()
+    clear()
+    screen = Screen.new(42, 5)
+    screen:attach()
+  end)
+
+  it('redraws when tabline option is set', function()
+    command('set tabline=asdf')
+    command('set showtabline=2')
+    screen:expect{grid=[[
+      {1:asdf                                      }|
+      ^                                          |
+      {2:~                                         }|
+      {2:~                                         }|
+                                                |
+    ]], attr_ids={
+      [1] = {reverse = true};
+      [2] = {bold = true, foreground = Screen.colors.Blue1};
+    }}
+    command('set tabline=jkl')
+    screen:expect{grid=[[
+      {1:jkl                                       }|
+      ^                                          |
+      {2:~                                         }|
+      {2:~                                         }|
+                                                |
+    ]], attr_ids={
+      [1] = {reverse = true};
+      [2] = {bold = true, foreground = Screen.colors.Blue};
+    }}
+  end)
+
+  it('click definitions do not leak memory #21765', function()
+    command('set tabline=%@MyClickFunc@MyClickText%T')
+    command('set showtabline=2')
+    command('redrawtabline')
   end)
 end)

@@ -5,11 +5,10 @@ local command = helpers.command
 local eq = helpers.eq
 local funcs = helpers.funcs
 local next_msg = helpers.next_msg
+local is_os = helpers.is_os
+local skip = helpers.skip
 
-if helpers.pending_win32(pending) then
-  -- Only applies to POSIX systems.
-  return
-end
+if skip(is_os('win'), 'Only applies to POSIX systems') then return end
 
 local function posix_kill(signame, pid)
   os.execute('kill -s '..signame..' -- '..pid..' >/dev/null')
@@ -27,6 +26,12 @@ describe('autocmd Signal', function()
   it('matches SIGUSR1', function()
     command('autocmd Signal SIGUSR1 call rpcnotify(1, "foo")')
     posix_kill('USR1', funcs.getpid())
+    eq({'notification', 'foo', {}}, next_msg())
+  end)
+
+  it('matches SIGWINCH', function()
+    command('autocmd Signal SIGWINCH call rpcnotify(1, "foo")')
+    posix_kill('WINCH', funcs.getpid())
     eq({'notification', 'foo', {}}, next_msg())
   end)
 

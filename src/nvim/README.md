@@ -18,27 +18,33 @@ The source files use extensions to hint about their purpose.
 - `*.h.generated.h` - exported functions’ declarations.
 - `*.c.generated.h` - static functions’ declarations.
 
+Common structures
+-----------------
+
+- StringBuilder
+- kvec or garray.c for dynamic lists / vectors (use StringBuilder for strings)
+
 Logs
 ----
 
 Low-level log messages sink to `$NVIM_LOG_FILE`.
 
-UI events are logged at DEBUG level (`DEBUG_LOG_LEVEL`).
+UI events are logged at DEBUG level.
 
     rm -rf build/
-    make CMAKE_EXTRA_FLAGS="-DMIN_LOG_LEVEL=0"
+    make CMAKE_EXTRA_FLAGS="-DLOG_DEBUG"
 
 Use `LOG_CALLSTACK()` (Linux only) to log the current stacktrace. To log to an
 alternate file (e.g. stderr) use `LOG_CALLSTACK_TO_FILE(FILE*)`. Requires
 `-no-pie` ([ref](https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=860394#15)):
 
     rm -rf build/
-    make CMAKE_EXTRA_FLAGS="-DMIN_LOG_LEVEL=0 -DCMAKE_C_FLAGS=-no-pie"
+    make CMAKE_EXTRA_FLAGS="-DLOG_DEBUG -DCMAKE_C_FLAGS=-no-pie"
 
 Many log messages have a shared prefix, such as "UI" or "RPC". Use the shell to
 filter the log, e.g. at DEBUG level you might want to exclude UI messages:
 
-    tail -F ~/.cache/nvim/log | cat -v | stdbuf -o0 grep -v UI | stdbuf -o0 tee -a log
+    tail -F ~/.local/state/nvim/log | cat -v | stdbuf -o0 grep -v UI | stdbuf -o0 tee -a log
 
 Build with ASAN
 ---------------
@@ -54,9 +60,9 @@ Requires clang 3.4 or later, and `llvm-symbolizer` must be in `$PATH`:
 
 Build Nvim with sanitizer instrumentation (choose one):
 
-    CC=clang make CMAKE_EXTRA_FLAGS="-DCLANG_ASAN_UBSAN=ON"
-    CC=clang make CMAKE_EXTRA_FLAGS="-DCLANG_MSAN=ON"
-    CC=clang make CMAKE_EXTRA_FLAGS="-DCLANG_TSAN=ON"
+    CC=clang make CMAKE_EXTRA_FLAGS="-DENABLE_ASAN_UBSAN=ON"
+    CC=clang make CMAKE_EXTRA_FLAGS="-DENABLE_MSAN=ON"
+    CC=clang make CMAKE_EXTRA_FLAGS="-DENABLE_TSAN=ON"
 
 Create a directory to store logs:
 
@@ -64,19 +70,126 @@ Create a directory to store logs:
 
 Configure the sanitizer(s) via these environment variables:
 
-    # Change to detect_leaks=1 to detect memory leaks (slower).
-    export ASAN_OPTIONS="detect_leaks=0:log_path=$HOME/logs/asan"
+    # Change to detect_leaks=1 to detect memory leaks (slower, noisier).
+    export ASAN_OPTIONS="detect_leaks=0:log_path=$HOME/logs/asan,handle_abort=1,handle_sigill=1"
     # Show backtraces in the logs.
     export UBSAN_OPTIONS=print_stacktrace=1
-    export MSAN_OPTIONS="log_path=${HOME}/logs/tsan"
+    export MSAN_OPTIONS="log_path=${HOME}/logs/msan"
     export TSAN_OPTIONS="log_path=${HOME}/logs/tsan"
 
 Logs will be written to `${HOME}/logs/*san.PID` then.
 
 For more information: https://github.com/google/sanitizers/wiki/SanitizerCommonFlags
 
-TUI debugging
--------------
+Reproducible build
+------------------
+
+To make a reproducible build of Nvim, set cmake variable `LUA_GEN_PRG` to
+a LuaJIT binary built with `LUAJIT_SECURITY_PRN=0`. See commit
+cb757f2663e6950e655c6306d713338dfa66b18d.
+
+Debug: Performance
+------------------
+
+### Profiling (easy)
+
+For debugging performance bottlenecks in any code, there is a simple (and very
+effective) approach:
+
+1. Run the slow code in a loop.
+2. Break execution ~5 times and save the stacktrace.
+3. The cause of the bottleneck will (almost always) appear in most of the stacktraces.
+
+### Profiling (fancy)
+
+For more advanced profiling, consider `perf` + `flamegraph`.
+
+### USDT profiling (powerful)
+
+Or you can use USDT probes via `NVIM_PROBE` ([#12036](https://github.com/neovim/neovim/pull/12036)).
+
+> USDT is basically a way to define stable probe points in userland binaries.
+> The benefit of bcc is the ability to define logic to go along with the probe
+> points.
+
+Tools:
+- bpftrace provides an awk-like language to the kernel bytecode, BPF.
+- BCC provides a subset of C. Provides more complex logic than bpftrace, but takes a bit more effort.
+
+Example using bpftrace to track slow vim functions, and print out any files
+that were opened during the trace. At the end, it prints a histogram of
+function timing:
+
+    #!/usr/bin/env bpftrace
+
+    BEGIN {
+      @depth = -1;
+    }
+
+    tracepoint:sched:sched_process_fork /@pidmap[args->parent_pid]/ {
+      @pidmap[args->child_pid] = 1;
+    }
+
+    tracepoint:sched:sched_process_exit /@pidmap[args->pid]/ {
+      delete(@pidmap[args->pid]);
+    }
+
+    usdt:build/bin/nvim:neovim:eval__call_func__entry {
+        @pidmap[pid] = 1;
+        @depth++;
+        @funcentry[@depth] = nsecs;
+    }
+
+    usdt:build/bin/nvim:neovim:eval__call_func__return {
+        $func = str(arg0);
+        $msecs = (nsecs - @funcentry[@depth]) / 1000000;
+
+        @time_histo = hist($msecs);
+
+        if ($msecs >= 1000) {
+          printf("%u ms for %s\n", $msecs, $func);
+          print(@files);
+        }
+
+        clear(@files);
+        delete(@funcentry[@depth]);
+        @depth--;
+    }
+
+    tracepoint:syscalls:sys_enter_open,
+    tracepoint:syscalls:sys_enter_openat {
+      if (@pidmap[pid] == 1 && @depth >= 0) {
+        @files[str(args->filename)] = count();
+      }
+    }
+
+    END {
+      clear(@depth);
+    }
+
+    $ sudo bpftrace funcslower.bt
+    1527 ms for Slower
+    @files[/usr/lib/libstdc++.so.6]: 2
+    @files[/etc/fish/config.fish]: 2
+    <snip>
+
+    ^C
+    @time_histo:
+    [0]                71430 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@|
+    [1]                  346 |                                                    |
+    [2, 4)               208 |                                                    |
+    [4, 8)                91 |                                                    |
+    [8, 16)               22 |                                                    |
+    [16, 32)              85 |                                                    |
+    [32, 64)               7 |                                                    |
+    [64, 128)              0 |                                                    |
+    [128, 256)             0 |                                                    |
+    [256, 512)             6 |                                                    |
+    [512, 1K)              1 |                                                    |
+    [1K, 2K)               5 |                                                    |
+
+Debug: TUI
+----------
 
 ### TUI troubleshoot
 
@@ -84,6 +197,34 @@ Nvim logs its internal terminfo state at 'verbose' level 3.  This makes it
 possible to see exactly what terminfo values Nvim is using on any system.
 
     nvim -V3log
+
+### TUI Debugging with gdb/lldb
+
+Launching the nvim TUI involves two processes, one for main editor state and one
+for rendering the TUI. Both of these processes use the nvim binary, so somewhat
+confusingly setting a breakpoint in either will generally succeed but may not be
+hit depending on which process the breakpoints were set in.
+
+To debug the main process, you can debug the nvim binary with the `--headless`
+flag which does not launch the TUI and will allow you to set breakpoints in code
+not related to TUI rendering like so:
+
+```
+lldb -- ./build/bin/nvim --headless --listen ~/.cache/nvim/debug-server.pipe
+```
+
+You can then attach to the headless process to interact with the editor like so:
+
+```
+./build/bin/nvim --remote-ui --server ~/.cache/nvim/debug-server.pipe
+```
+
+Conversely for debugging TUI rendering, you can start a headless process and
+debug the remote-ui process multiple times without losing editor state.
+
+For details on using nvim-dap and automatically debugging the child (main)
+process, see
+[here](https://zignar.net/2023/02/17/debugging-neovim-with-neovim-and-nvim-dap/)
 
 ### TUI trace
 
@@ -104,9 +245,14 @@ Then you can compare `bar` with another session, to debug TUI behavior.
 
 ### TUI redraw
 
-Set the 'writedelay' option to see where and when the UI is painted.
+Set the 'writedelay' and 'redrawdebug' options to see where and when the UI is painted.
 
-    :set writedelay=1
+    :set writedelay=50 rdb=compositor
+
+Note: neovim uses an internal screenbuffer to only send minimal updates even if a large
+region is repainted internally. To also highlight excess internal redraws, use
+
+    :set writedelay=50 rdb=compositor,nodelta
 
 ### Terminal reference
 
@@ -286,8 +432,8 @@ implemented by libuv, the platform layer used by Nvim.
 
 Since Nvim inherited its code from Vim, the states are not prepared to receive
 "arbitrary events", so we use a special key to represent those (When a state
-receives an "arbitrary event", it normally doesn't do anything other update the
-screen).
+receives an "arbitrary event", it normally doesn't do anything other than
+update the screen).
 
 Main loop
 ---------

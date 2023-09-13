@@ -2,6 +2,8 @@ local Screen = require('test.functional.ui.screen')
 local helpers = require('test.functional.helpers')(after_each)
 
 local clear = helpers.clear
+local command = helpers.command
+local expect_exit = helpers.expect_exit
 local buf, eq, feed_command = helpers.curbufmeths, helpers.eq, helpers.feed_command
 local feed, poke_eventloop = helpers.feed, helpers.poke_eventloop
 local ok = helpers.ok
@@ -19,6 +21,7 @@ describe(':oldfiles', function()
   before_each(_clear)
 
   after_each(function()
+    expect_exit(command, 'qall!')
     os.remove(shada_file)
   end)
 
@@ -29,7 +32,6 @@ describe(':oldfiles', function()
   it('shows most recently used files', function()
     local screen = Screen.new(100, 5)
     screen:attach()
-    feed_command("set display-=msgsep")
     feed_command('edit testfile1')
     feed_command('edit testfile2')
     feed_command('wshada')
@@ -37,12 +39,13 @@ describe(':oldfiles', function()
     local oldfiles = helpers.meths.get_vvar('oldfiles')
     feed_command('oldfiles')
     screen:expect([[
-      testfile2                                                                                           |
+                                                                                                          |
       1: ]].. add_padding(oldfiles[1]) ..[[ |
       2: ]].. add_padding(oldfiles[2]) ..[[ |
                                                                                                           |
       Press ENTER or type command to continue^                                                             |
     ]])
+    feed('<CR>')
   end)
 
   it('can be filtered with :filter', function()
@@ -108,6 +111,7 @@ describe(':browse oldfiles', function()
   end)
 
   after_each(function()
+    expect_exit(command, 'qall!')
     os.remove(shada_file)
   end)
 

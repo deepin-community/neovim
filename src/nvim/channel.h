@@ -1,13 +1,26 @@
 #ifndef NVIM_CHANNEL_H
 #define NVIM_CHANNEL_H
 
-#include "nvim/main.h"
-#include "nvim/event/socket.h"
-#include "nvim/event/process.h"
-#include "nvim/os/pty_process.h"
-#include "nvim/event/libuv_process.h"
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
+
 #include "nvim/eval/typval.h"
+#include "nvim/eval/typval_defs.h"
+#include "nvim/event/libuv_process.h"
+#include "nvim/event/multiqueue.h"
+#include "nvim/event/process.h"
+#include "nvim/event/socket.h"
+#include "nvim/event/stream.h"
+#include "nvim/garray.h"
+#include "nvim/macros.h"
+#include "nvim/main.h"
+#include "nvim/map.h"
+#include "nvim/map_defs.h"
 #include "nvim/msgpack_rpc/channel_defs.h"
+#include "nvim/os/pty_process.h"
+#include "nvim/terminal.h"
+#include "nvim/types.h"
 
 #define CHAN_STDIO 1
 #define CHAN_STDERR 2
@@ -17,7 +30,7 @@ typedef enum {
   kChannelStreamSocket,
   kChannelStreamStdio,
   kChannelStreamStderr,
-  kChannelStreamInternal
+  kChannelStreamInternal,
 } ChannelStreamType;
 
 typedef enum {
@@ -25,7 +38,7 @@ typedef enum {
   kChannelPartStdout,
   kChannelPartStderr,
   kChannelPartRpc,
-  kChannelPartAll
+  kChannelPartAll,
 } ChannelPart;
 
 typedef enum {
@@ -43,11 +56,17 @@ typedef struct {
 } StderrState;
 
 typedef struct {
+  LuaRef cb;
+  bool closed;
+} InternalState;
+
+typedef struct {
   Callback cb;
   dict_T *self;
   garray_T buffer;
   bool eof;
   bool buffered;
+  bool fwd_err;
   const char *type;
 } CallbackReader;
 
@@ -55,6 +74,7 @@ typedef struct {
                                                 .self = NULL, \
                                                 .buffer = GA_EMPTY_INIT_VALUE, \
                                                 .buffered = false, \
+                                                .fwd_err = false, \
                                                 .type = NULL })
 static inline bool callback_reader_set(CallbackReader reader)
 {
@@ -74,6 +94,7 @@ struct Channel {
     Stream socket;
     StdioPair stdio;
     StderrState err;
+    InternalState internal;
   } stream;
 
   bool is_rpc;
@@ -89,7 +110,9 @@ struct Channel {
   bool callback_scheduled;
 };
 
-EXTERN PMap(uint64_t) *channels INIT(= NULL);
+EXTERN PMap(uint64_t) channels INIT(= MAP_INIT);
+
+EXTERN Callback on_print INIT(= CALLBACK_INIT);
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "channel.h.generated.h"
@@ -98,25 +121,25 @@ EXTERN PMap(uint64_t) *channels INIT(= NULL);
 /// @returns Channel with the id or NULL if not found
 static inline Channel *find_channel(uint64_t id)
 {
-  return pmap_get(uint64_t)(channels, id);
+  return (Channel *)pmap_get(uint64_t)(&channels, id);
 }
 
 static inline Stream *channel_instream(Channel *chan)
   FUNC_ATTR_NONNULL_ALL
 {
   switch (chan->streamtype) {
-    case kChannelStreamProc:
-      return &chan->stream.proc.in;
+  case kChannelStreamProc:
+    return &chan->stream.proc.in;
 
-    case kChannelStreamSocket:
-      return &chan->stream.socket;
+  case kChannelStreamSocket:
+    return &chan->stream.socket;
 
-    case kChannelStreamStdio:
-      return &chan->stream.stdio.out;
+  case kChannelStreamStdio:
+    return &chan->stream.stdio.out;
 
-    case kChannelStreamInternal:
-    case kChannelStreamStderr:
-      abort();
+  case kChannelStreamInternal:
+  case kChannelStreamStderr:
+    abort();
   }
   abort();
 }
@@ -125,21 +148,20 @@ static inline Stream *channel_outstream(Channel *chan)
   FUNC_ATTR_NONNULL_ALL
 {
   switch (chan->streamtype) {
-    case kChannelStreamProc:
-      return &chan->stream.proc.out;
+  case kChannelStreamProc:
+    return &chan->stream.proc.out;
 
-    case kChannelStreamSocket:
-      return &chan->stream.socket;
+  case kChannelStreamSocket:
+    return &chan->stream.socket;
 
-    case kChannelStreamStdio:
-      return &chan->stream.stdio.in;
+  case kChannelStreamStdio:
+    return &chan->stream.stdio.in;
 
-    case kChannelStreamInternal:
-    case kChannelStreamStderr:
-      abort();
+  case kChannelStreamInternal:
+  case kChannelStreamStderr:
+    abort();
   }
   abort();
 }
-
 
 #endif  // NVIM_CHANNEL_H

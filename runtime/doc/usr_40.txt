@@ -226,7 +226,7 @@ When using a space inside a mapping, use <Space> (seven characters): >
 This makes the spacebar move a blank-separated word forward.
 
 It is not possible to put a comment directly after a mapping, because the "
-character is considered to be part of the mapping.  You can use |", this
+character is considered to be part of the mapping.  You can use `|"`, this
 starts a new, empty command with a comment.  Example: >
 
 	:map <Space> W|     " Use spacebar to move forward a word
@@ -463,6 +463,17 @@ separated) that trigger the command.
 The optional [++nested] flag allows for nesting of autocommands (see below),
 and finally, {command} is the command to be executed.
 
+When adding an autocommand the already existing ones remain.  To avoid adding
+the autocommand several times you should use this form: >
+
+	:augroup updateDate
+	:  autocmd!
+	:  autocmd BufWritePre *  call DateInsert()
+	:augroup END
+
+This will delete any previously defined autocommand with `:autocmd!` before
+defining the new one.  Groups are explained later.
+
 
 EVENTS
 
@@ -646,10 +657,10 @@ To ignore all events, use the following command: >
 
 	:set eventignore=all
 
-To set it back to the normal behavior, make 'eventignore' empty: >
-
+To set it back to the normal behavior, make 'eventignore' empty:
+>
 	:set eventignore=
-
+<
 ==============================================================================
 
 Next chapter: |usr_41.txt|  Write a Vim script

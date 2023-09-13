@@ -1,16 +1,21 @@
 // This is an open source non-commercial project. Dear PVS-Studio, please check
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
-#include "nvim/vim.h"
 #include "nvim/os/input.h"
+#include "nvim/os/os.h"
 #include "nvim/os/os_win_console.h"
+#include "nvim/vim.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "os/os_win_console.c.generated.h"
 #endif
 
+static char origTitle[256] = { 0 };
+static HWND hWnd = NULL;
+static HICON hOrigIconSmall = NULL;
+static HICON hOrigIcon = NULL;
 
-int os_get_conin_fd(void)
+int os_open_conin_fd(void)
 {
   const HANDLE conin_handle = CreateFile("CONIN$",
                                          GENERIC_READ | GENERIC_WRITE,
@@ -26,7 +31,7 @@ int os_get_conin_fd(void)
 void os_replace_stdin_to_conin(void)
 {
   close(STDIN_FILENO);
-  const int conin_fd = os_get_conin_fd();
+  const int conin_fd = os_open_conin_fd();
   assert(conin_fd == STDIN_FILENO);
 }
 
@@ -47,28 +52,56 @@ void os_replace_stdout_and_stderr_to_conout(void)
   assert(conerr_fd == STDERR_FILENO);
 }
 
-void os_set_vtp(bool enable)
+/// Sets Windows console icon, or pass NULL to restore original icon.
+void os_icon_set(HICON hIconSmall, HICON hIcon)
 {
-  static TriState is_legacy = kNone;
-  if (is_legacy == kNone) {
-    uv_tty_vtermstate_t state;
-    uv_tty_get_vterm_state(&state);
-    is_legacy = (state == UV_TTY_UNSUPPORTED) ? kTrue : kFalse;
+  if (hWnd == NULL) {
+    return;
   }
-  if (!is_legacy && !os_has_vti()) {
-    uv_tty_set_vterm_state(enable ? UV_TTY_SUPPORTED : UV_TTY_UNSUPPORTED);
+  hIconSmall = hIconSmall ? hIconSmall : hOrigIconSmall;
+  hIcon = hIcon ? hIcon : hOrigIcon;
+
+  if (hIconSmall != NULL) {
+    SendMessage(hWnd, WM_SETICON, (WPARAM)ICON_SMALL, (LPARAM)hIconSmall);
+  }
+  if (hIcon != NULL) {
+    SendMessage(hWnd, WM_SETICON, (WPARAM)ICON_BIG, (LPARAM)hIcon);
   }
 }
 
-static bool os_has_vti(void)
+/// Sets Nvim logo as Windows console icon.
+///
+/// Saves the original icon so it can be restored at exit.
+void os_icon_init(void)
 {
-  static TriState has_vti = kNone;
-  if (has_vti == kNone) {
-    HANDLE handle = (HANDLE)_get_osfhandle(input_global_fd());
-    DWORD dwMode;
-    if (handle != INVALID_HANDLE_VALUE && GetConsoleMode(handle, &dwMode)) {
-      has_vti = !!(dwMode & ENABLE_VIRTUAL_TERMINAL_INPUT) ? kTrue : kFalse;
+  if ((hWnd = GetConsoleWindow()) == NULL) {
+    return;
+  }
+  // Save Windows console icon to be restored later.
+  hOrigIconSmall = (HICON)SendMessage(hWnd, WM_GETICON, (WPARAM)ICON_SMALL, (LPARAM)0);
+  hOrigIcon = (HICON)SendMessage(hWnd, WM_GETICON, (WPARAM)ICON_BIG, (LPARAM)0);
+
+  const char *vimruntime = os_getenv("VIMRUNTIME");
+  if (vimruntime != NULL) {
+    snprintf(NameBuff, MAXPATHL, "%s" _PATHSEPSTR "neovim.ico", vimruntime);
+    if (!os_path_exists(NameBuff)) {
+      WLOG("neovim.ico not found: %s", NameBuff);
+    } else {
+      HICON hVimIcon = LoadImage(NULL, NameBuff, IMAGE_ICON, 64, 64,
+                                 LR_LOADFROMFILE | LR_LOADMAP3DCOLORS);
+      os_icon_set(hVimIcon, hVimIcon);
     }
   }
-  return has_vti == kTrue;
+}
+
+/// Saves the original Windows console title.
+void os_title_save(void)
+{
+  GetConsoleTitle(origTitle, sizeof(origTitle));
+}
+
+/// Resets the original Windows console title.
+void os_title_reset(void)
+{
+  SetConsoleTitle(origTitle);
 }

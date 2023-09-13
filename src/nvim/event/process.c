@@ -2,21 +2,25 @@
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
 #include <assert.h>
+#include <inttypes.h>
+#include <signal.h>
 #include <stdlib.h>
-
 #include <uv.h>
 
-#include "nvim/os/shell.h"
-#include "nvim/event/loop.h"
-#include "nvim/event/rstream.h"
-#include "nvim/event/wstream.h"
-#include "nvim/event/process.h"
+#include "klib/klist.h"
 #include "nvim/event/libuv_process.h"
+#include "nvim/event/loop.h"
+#include "nvim/event/process.h"
+#include "nvim/globals.h"
+#include "nvim/log.h"
+#include "nvim/macros.h"
+#include "nvim/main.h"
 #include "nvim/os/process.h"
 #include "nvim/os/pty_process.h"
-#include "nvim/globals.h"
-#include "nvim/macros.h"
-#include "nvim/log.h"
+#include "nvim/os/shell.h"
+#include "nvim/os/time.h"
+#include "nvim/rbuffer.h"
+#include "nvim/ui_client.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "event/process.c.generated.h"
@@ -33,10 +37,16 @@ void __gcov_flush(void);
 
 static bool process_is_tearing_down = false;
 
+// Delay exit until handles are closed, to avoid deadlocks
+static int exit_need_delay = 0;
+
 /// @returns zero on success, or negative error code
 int process_spawn(Process *proc, bool in, bool out, bool err)
   FUNC_ATTR_NONNULL_ALL
 {
+  // forwarding stderr contradicts with processing it internally
+  assert(!(err && proc->fwd_err));
+
   if (in) {
     uv_pipe_init(&proc->loop->uv, &proc->in.uv.pipe, 0);
   } else {
@@ -62,14 +72,14 @@ int process_spawn(Process *proc, bool in, bool out, bool err)
 
   int status;
   switch (proc->type) {
-    case kProcessTypeUv:
-      status = libuv_process_spawn((LibuvProcess *)proc);
-      break;
-    case kProcessTypePty:
-      status = pty_process_spawn((PtyProcess *)proc);
-      break;
-    default:
-      abort();
+  case kProcessTypeUv:
+    status = libuv_process_spawn((LibuvProcess *)proc);
+    break;
+  case kProcessTypePty:
+    status = pty_process_spawn((PtyProcess *)proc);
+    break;
+  default:
+    abort();
   }
 
   if (status) {
@@ -88,7 +98,7 @@ int process_spawn(Process *proc, bool in, bool out, bool err)
     } else {
       process_close(proc);
     }
-    shell_free_argv(proc->argv);
+    process_free(proc);
     proc->status = -1;
     return status;
   }
@@ -121,7 +131,7 @@ int process_spawn(Process *proc, bool in, bool out, bool err)
   proc->internal_close_cb = decref;
   proc->refcount++;
   kl_push(WatcherPtr, proc->loop->children, proc);
-  DLOG("new: pid=%d argv=[%s]", proc->pid, *proc->argv);
+  DLOG("new: pid=%d argv=[%s]", proc->pid, proc->argv[0]);
   return 0;
 }
 
@@ -139,9 +149,8 @@ void process_teardown(Loop *loop) FUNC_ATTR_NONNULL_ALL
   }
 
   // Wait until all children exit and all close events are processed.
-  LOOP_PROCESS_EVENTS_UNTIL(
-      loop, loop->events, -1,
-      kl_empty(loop->children) && multiqueue_empty(loop->events));
+  LOOP_PROCESS_EVENTS_UNTIL(loop, loop->events, -1,
+                            kl_empty(loop->children) && multiqueue_empty(loop->events));
   pty_process_teardown(loop);
 }
 
@@ -189,7 +198,7 @@ int process_wait(Process *proc, int ms, MultiQueue *events)
       // We can only return if all streams/handles are closed and the job
       // exited.
       LOOP_PROCESS_EVENTS_UNTIL(proc->loop, events, -1,
-          proc->refcount == 1);
+                                proc->refcount == 1);
     } else {
       LOOP_PROCESS_EVENTS(proc->loop, events, 0);
     }
@@ -200,9 +209,9 @@ int process_wait(Process *proc, int ms, MultiQueue *events)
   if (proc->refcount == 1) {
     // Job exited, free its resources.
     decref(proc);
-    if (events) {
-      // the decref call created an exit event, process it now
-      multiqueue_process_events(events);
+    if (proc->events) {
+      // decref() created an exit event, process it now.
+      multiqueue_process_events(proc->events);
     }
   } else {
     proc->refcount--;
@@ -222,21 +231,30 @@ void process_stop(Process *proc) FUNC_ATTR_NONNULL_ALL
   proc->exit_signal = SIGTERM;
 
   switch (proc->type) {
-    case kProcessTypeUv:
-      os_proc_tree_kill(proc->pid, SIGTERM);
-      break;
-    case kProcessTypePty:
-      // close all streams for pty processes to send SIGHUP to the process
-      process_close_streams(proc);
-      pty_process_close_master((PtyProcess *)proc);
-      break;
-    default:
-      abort();
+  case kProcessTypeUv:
+    os_proc_tree_kill(proc->pid, SIGTERM);
+    break;
+  case kProcessTypePty:
+    // close all streams for pty processes to send SIGHUP to the process
+    process_close_streams(proc);
+    pty_process_close_master((PtyProcess *)proc);
+    break;
+  default:
+    abort();
   }
 
   // (Re)start timer to verify that stopped process(es) died.
   uv_timer_start(&proc->loop->children_kill_timer, children_kill_cb,
                  KILL_TIMEOUT_MS, 0);
+}
+
+/// Frees process-owned resources.
+void process_free(Process *proc) FUNC_ATTR_NONNULL_ALL
+{
+  if (proc->argv != NULL) {
+    shell_free_argv(proc->argv);
+    proc->argv = NULL;
+  }
 }
 
 /// Sends SIGKILL (or SIGTERM..SIGKILL for PTY jobs) to processes that did
@@ -269,9 +287,12 @@ static void children_kill_cb(uv_timer_t *handle)
 static void process_close_event(void **argv)
 {
   Process *proc = argv[0];
-  shell_free_argv(proc->argv);
-  if (proc->cb) {  // "on_exit" for jobstart(). See channel_job_start().
+  if (proc->cb) {
+    // User (hint: channel_job_start) is responsible for calling
+    // process_free().
     proc->cb(proc, proc->status, proc->data);
+  } else {
+    process_free(proc);
   }
 }
 
@@ -313,14 +334,14 @@ static void process_close(Process *proc)
   }
 
   switch (proc->type) {
-    case kProcessTypeUv:
-      libuv_process_close((LibuvProcess *)proc);
-      break;
-    case kProcessTypePty:
-      pty_process_close((PtyProcess *)proc);
-      break;
-    default:
-      abort();
+  case kProcessTypeUv:
+    libuv_process_close((LibuvProcess *)proc);
+    break;
+  case kProcessTypePty:
+    pty_process_close((PtyProcess *)proc);
+    break;
+  default:
+    abort();
   }
 }
 
@@ -357,7 +378,7 @@ static void flush_stream(Process *proc, Stream *stream)
     // Poll for data and process the generated events.
     loop_poll_events(proc->loop, 0);
     if (stream->events) {
-        multiqueue_process_events(stream->events);
+      multiqueue_process_events(stream->events);
     }
 
     // Stream can be closed if it is empty.
@@ -376,11 +397,43 @@ static void process_close_handles(void **argv)
 {
   Process *proc = argv[0];
 
+  exit_need_delay++;
   flush_stream(proc, &proc->out);
   flush_stream(proc, &proc->err);
 
   process_close_streams(proc);
   process_close(proc);
+  exit_need_delay--;
+}
+
+static void exit_delay_cb(uv_timer_t *handle)
+{
+  uv_timer_stop(&main_loop.exit_delay_timer);
+  multiqueue_put(main_loop.fast_events, exit_event, 1, main_loop.exit_delay_timer.data);
+}
+
+static void exit_event(void **argv)
+{
+  int status = (int)(intptr_t)argv[0];
+  if (exit_need_delay) {
+    main_loop.exit_delay_timer.data = argv[0];
+    uv_timer_start(&main_loop.exit_delay_timer, exit_delay_cb, 0, 0);
+    return;
+  }
+
+  if (!exiting) {
+    if (ui_client_channel_id) {
+      os_exit(status);
+    } else {
+      assert(status == 0);  // Called from rpc_close(), which passes 0 as status.
+      preserve_exit(NULL);
+    }
+  }
+}
+
+void exit_from_channel(int status)
+{
+  multiqueue_put(main_loop.fast_events, exit_event, 1, status);
 }
 
 static void on_process_exit(Process *proc)
@@ -388,6 +441,10 @@ static void on_process_exit(Process *proc)
   Loop *loop = proc->loop;
   ILOG("exited: pid=%d status=%d stoptime=%" PRIu64, proc->pid, proc->status,
        proc->stopped_time);
+
+  if (ui_client_channel_id) {
+    exit_from_channel(proc->status);
+  }
 
   // Process has terminated, but there could still be data to be read from the
   // OS. We are still in the libuv loop, so we cannot call code that polls for

@@ -1,17 +1,19 @@
 local Screen = require('test.functional.ui.screen')
 local helpers = require('test.functional.helpers')(after_each)
 local child_session = require('test.functional.terminal.helpers')
+local assert_alive = helpers.assert_alive
 local mkdir, write_file, rmdir = helpers.mkdir, helpers.write_file, helpers.rmdir
 local eq = helpers.eq
-local eval = helpers.eval
 local feed = helpers.feed
 local feed_command = helpers.feed_command
-local iswin = helpers.iswin
 local clear = helpers.clear
 local command = helpers.command
+local testprg = helpers.testprg
 local nvim_dir = helpers.nvim_dir
 local has_powershell = helpers.has_powershell
 local set_shell_powershell = helpers.set_shell_powershell
+local skip = helpers.skip
+local is_os = helpers.is_os
 
 describe("shell command :!", function()
   local screen
@@ -35,7 +37,7 @@ describe("shell command :!", function()
   end)
 
   it("displays output without LF/EOF. #4646 #4569 #3772", function()
-    if helpers.pending_win32(pending) then return end
+    skip(is_os('win'))
     -- NOTE: We use a child nvim (within a :term buffer)
     --       to avoid triggering a UI flush.
     child_session.feed_data(":!printf foo; sleep 200\n")
@@ -51,10 +53,9 @@ describe("shell command :!", function()
   end)
 
   it("throttles shell-command output greater than ~10KB", function()
-    if 'openbsd' == helpers.uname() then
-      pending('FIXME #10804')
-    end
-    child_session.feed_data(":!"..nvim_dir.."/shell-test REP 30001 foo\n")
+    skip(is_os('openbsd'), 'FIXME #10804')
+    skip(is_os('win'))
+    child_session.feed_data((":!%s REP 30001 foo\n"):format(testprg('shell-test')))
 
     -- If we observe any line starting with a dot, then throttling occurred.
     -- Avoid false failure on slow systems.
@@ -86,58 +87,63 @@ describe("shell command :!", function()
 
   it("cat a binary file #4142", function()
     feed(":exe 'silent !cat '.shellescape(v:progpath)<CR>")
-    eq(2, eval('1+1'))  -- Still alive?
+    assert_alive()
   end)
 
   it([[display \x08 char #4142]], function()
     feed(":silent !echo \08<CR>")
-    eq(2, eval('1+1'))  -- Still alive?
+    assert_alive()
   end)
 
   it('handles control codes', function()
-    if iswin() then
-      pending('missing printf')
-    end
+    skip(is_os('win'), 'missing printf')
     local screen = Screen.new(50, 4)
+    screen:set_default_attr_ids {
+      [1] = {bold = true, reverse = true};
+      [2] = {bold = true, foreground = Screen.colors.SeaGreen};
+      [3] = {foreground = Screen.colors.Blue};
+    }
     screen:attach()
-    command("set display-=msgsep")
     -- Print TAB chars. #2958
     feed([[:!printf '1\t2\t3'<CR>]])
-    screen:expect([[
-      ~                                                 |
+    screen:expect{grid=[[
+      {1:                                                  }|
       :!printf '1\t2\t3'                                |
       1       2       3                                 |
-      Press ENTER or type command to continue^           |
-    ]])
+      {2:Press ENTER or type command to continue}^           |
+    ]]}
     feed([[<CR>]])
+
     -- Print BELL control code. #4338
     screen.bell = false
     feed([[:!printf '\007\007\007\007text'<CR>]])
     screen:expect{grid=[[
-      ~                                                 |
+      {1:                                                  }|
       :!printf '\007\007\007\007text'                   |
       text                                              |
-      Press ENTER or type command to continue^           |
+      {2:Press ENTER or type command to continue}^           |
     ]], condition=function()
       eq(true, screen.bell)
     end}
     feed([[<CR>]])
+
     -- Print BS control code.
     feed([[:echo system('printf ''\010\n''')<CR>]])
     screen:expect([[
-      ~                                                 |
-      ^H                                                |
+      {1:                                                  }|
+      {3:^H}                                                |
                                                         |
-      Press ENTER or type command to continue^           |
+      {2:Press ENTER or type command to continue}^           |
     ]])
     feed([[<CR>]])
+
     -- Print LF control code.
     feed([[:!printf '\n'<CR>]])
     screen:expect([[
       :!printf '\n'                                     |
                                                         |
                                                         |
-      Press ENTER or type command to continue^           |
+      {2:Press ENTER or type command to continue}^           |
     ]])
     feed([[<CR>]])
   end)
@@ -165,10 +171,10 @@ describe("shell command :!", function()
     end)
 
     it("doesn't truncate Last line of shell output #3269", function()
-      command(helpers.iswin()
+      command(is_os('win')
         and [[nnoremap <silent>\l :!dir /b bang_filter_spec<cr>]]
         or  [[nnoremap <silent>\l :!ls bang_filter_spec<cr>]])
-      local result = (helpers.iswin()
+      local result = (is_os('win')
         and [[:!dir /b bang_filter_spec]]
         or  [[:!ls bang_filter_spec    ]])
       feed([[\l]])
@@ -207,12 +213,7 @@ describe("shell command :!", function()
 
     it('handles multibyte sequences split over buffer boundaries', function()
       command('cd '..nvim_dir)
-      local cmd
-      if iswin() then
-        cmd = '!shell-test UTF-8  '
-      else
-        cmd = '!./shell-test UTF-8'
-      end
+      local cmd = is_os('win') and '!shell-test UTF-8  ' or '!./shell-test UTF-8'
       feed_command(cmd)
       -- Note: only the first example of split composed char works
       screen:expect([[
@@ -262,7 +263,7 @@ describe("shell command :!", function()
                                                      |
         Press ENTER or type command to continue^      |
       ]])
-      if iswin() then
+      if is_os('win') then
         feed_command([[!& 'cmd.exe' /c 'echo $a']])
         screen:expect([[
           :!& 'cmd.exe' /c 'echo $a'                   |

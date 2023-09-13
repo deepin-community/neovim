@@ -1,8 +1,10 @@
 local helpers = require('test.functional.helpers')(after_each)
 local thelpers = require('test.functional.terminal.helpers')
 local clear, eq, eval = helpers.clear, helpers.eq, helpers.eval
-local feed, nvim = helpers.feed, helpers.nvim
+local feed, nvim, command = helpers.feed, helpers.nvim, helpers.command
 local feed_data = thelpers.feed_data
+local is_os = helpers.is_os
+local skip = helpers.skip
 
 describe(':terminal mouse', function()
   local screen
@@ -10,9 +12,9 @@ describe(':terminal mouse', function()
   before_each(function()
     clear()
     nvim('set_option', 'statusline', '==========')
-    nvim('command', 'highlight StatusLine cterm=NONE')
-    nvim('command', 'highlight StatusLineNC cterm=NONE')
-    nvim('command', 'highlight VertSplit cterm=NONE')
+    command('highlight StatusLine cterm=NONE')
+    command('highlight StatusLineNC cterm=NONE')
+    command('highlight VertSplit cterm=NONE')
     screen = thelpers.screen_setup()
     local lines = {}
     for i = 1, 30 do
@@ -33,16 +35,41 @@ describe(':terminal mouse', function()
 
   describe('when the terminal has focus', function()
     it('will exit focus on mouse-scroll', function()
-      eq('t', eval('mode()'))
+      eq('t', eval('mode(1)'))
       feed('<ScrollWheelUp><0,0>')
-      eq('n', eval('mode()'))
+      eq('nt', eval('mode(1)'))
+    end)
+
+    it('will exit focus and trigger Normal mode mapping on mouse click', function()
+      command('let g:got_leftmouse = 0')
+      command('nnoremap <LeftMouse> <Cmd>let g:got_leftmouse = 1<CR>')
+      eq('t', eval('mode(1)'))
+      eq(0, eval('g:got_leftmouse'))
+      feed('<LeftMouse>')
+      eq('nt', eval('mode(1)'))
+      eq(1, eval('g:got_leftmouse'))
+    end)
+
+    it('will exit focus and trigger Normal mode mapping on mouse click with modifier', function()
+      command('let g:got_ctrl_leftmouse = 0')
+      command('nnoremap <C-LeftMouse> <Cmd>let g:got_ctrl_leftmouse = 1<CR>')
+      eq('t', eval('mode(1)'))
+      eq(0, eval('g:got_ctrl_leftmouse'))
+      feed('<C-LeftMouse>')
+      eq('nt', eval('mode(1)'))
+      eq(1, eval('g:got_ctrl_leftmouse'))
     end)
 
     it('will exit focus on <C-\\> + mouse-scroll', function()
-      eq('t', eval('mode()'))
+      eq('t', eval('mode(1)'))
       feed('<C-\\>')
       feed('<ScrollWheelUp><0,0>')
-      eq('n', eval('mode()'))
+      eq('nt', eval('mode(1)'))
+    end)
+
+    it('does not leave terminal mode on left-release', function()
+      feed('<LeftRelease>')
+      eq('t', eval('mode(1)'))
     end)
 
     describe('with mouse events enabled by the program', function()
@@ -60,8 +87,8 @@ describe(':terminal mouse', function()
         ]])
       end)
 
-      it('will forward mouse clicks to the program', function()
-        if helpers.pending_win32(pending) then return end
+      it('will forward mouse press, drag and release to the program', function()
+        skip(is_os('win'))
         feed('<LeftMouse><1,2>')
         screen:expect([[
           line27                                            |
@@ -72,10 +99,40 @@ describe(':terminal mouse', function()
            "#{1: }                                              |
           {3:-- TERMINAL --}                                    |
         ]])
+        feed('<LeftDrag><2,2>')
+        screen:expect([[
+          line27                                            |
+          line28                                            |
+          line29                                            |
+          line30                                            |
+          mouse enabled                                     |
+             @##{1: }                                           |
+          {3:-- TERMINAL --}                                    |
+        ]])
+        feed('<LeftDrag><3,2>')
+        screen:expect([[
+          line27                                            |
+          line28                                            |
+          line29                                            |
+          line30                                            |
+          mouse enabled                                     |
+                @$#{1: }                                        |
+          {3:-- TERMINAL --}                                    |
+        ]])
+        feed('<LeftRelease><3,2>')
+        screen:expect([[
+          line27                                            |
+          line28                                            |
+          line29                                            |
+          line30                                            |
+          mouse enabled                                     |
+                   #$#{1: }                                     |
+          {3:-- TERMINAL --}                                    |
+        ]])
       end)
 
       it('will forward mouse scroll to the program', function()
-        if helpers.pending_win32(pending) then return end
+        skip(is_os('win'))
         feed('<ScrollWheelUp><0,0>')
         screen:expect([[
           line27                                            |
@@ -88,13 +145,67 @@ describe(':terminal mouse', function()
         ]])
       end)
 
+      it('dragging and scrolling do not interfere with each other', function()
+        skip(is_os('win'))
+        feed('<LeftMouse><1,2>')
+        screen:expect([[
+          line27                                            |
+          line28                                            |
+          line29                                            |
+          line30                                            |
+          mouse enabled                                     |
+           "#{1: }                                              |
+          {3:-- TERMINAL --}                                    |
+        ]])
+        feed('<ScrollWheelUp><1,2>')
+        screen:expect([[
+          line27                                            |
+          line28                                            |
+          line29                                            |
+          line30                                            |
+          mouse enabled                                     |
+             `"#{1: }                                           |
+          {3:-- TERMINAL --}                                    |
+        ]])
+        feed('<LeftDrag><2,2>')
+        screen:expect([[
+          line27                                            |
+          line28                                            |
+          line29                                            |
+          line30                                            |
+          mouse enabled                                     |
+                @##{1: }                                        |
+          {3:-- TERMINAL --}                                    |
+        ]])
+        feed('<ScrollWheelUp><2,2>')
+        screen:expect([[
+          line27                                            |
+          line28                                            |
+          line29                                            |
+          line30                                            |
+          mouse enabled                                     |
+                   `##{1: }                                     |
+          {3:-- TERMINAL --}                                    |
+        ]])
+        feed('<LeftRelease><2,2>')
+        screen:expect([[
+          line27                                            |
+          line28                                            |
+          line29                                            |
+          line30                                            |
+          mouse enabled                                     |
+                      ###{1: }                                  |
+          {3:-- TERMINAL --}                                    |
+        ]])
+      end)
+
       it('will forward mouse clicks to the program with the correct even if set nu', function()
-        if helpers.pending_win32(pending) then return end
-        nvim('command', 'set number')
+        skip(is_os('win'))
+        command('set number')
         -- When the display area such as a number is clicked, it returns to the
         -- normal mode.
         feed('<LeftMouse><3,0>')
-        eq('n', eval('mode()'))
+        eq('nt', eval('mode(1)'))
         screen:expect([[
           {7: 11 }^line28                                        |
           {7: 12 }line29                                        |
@@ -120,7 +231,6 @@ describe(':terminal mouse', function()
     end)
 
     describe('with a split window and other buffer', function()
-      if helpers.pending_win32(pending) then return end
       before_each(function()
         feed('<c-\\><c-n>:vsp<cr>')
         screen:expect([[
@@ -177,7 +287,7 @@ describe(':terminal mouse', function()
         ]])
       end)
 
-      it('wont lose focus if another window is scrolled', function()
+      it("won't lose focus if another window is scrolled", function()
         feed('<ScrollWheelUp><4,0><ScrollWheelUp><4,0>')
         screen:expect([[
           {7: 21 }line                 │line30                  |
@@ -198,6 +308,34 @@ describe(':terminal mouse', function()
           ==========                ==========              |
           {3:-- TERMINAL --}                                    |
         ]])
+      end)
+
+      it("scrolling another window respects 'mousescroll'", function()
+        command('set mousescroll=ver:1')
+        feed('<ScrollWheelUp><4,0>')
+        screen:expect([[
+          {7: 26 }line                 │line30                  |
+          {7: 27 }line                 │rows: 5, cols: 25       |
+          {7: 28 }line                 │rows: 5, cols: 24       |
+          {7: 29 }line                 │mouse enabled           |
+          {7: 30 }line                 │{1: }                       |
+          ==========                ==========              |
+          {3:-- TERMINAL --}                                    |
+        ]])
+        command('set mousescroll=ver:10')
+        feed('<ScrollWheelUp><4,0>')
+        screen:expect([[
+          {7: 16 }line                 │line30                  |
+          {7: 17 }line                 │rows: 5, cols: 25       |
+          {7: 18 }line                 │rows: 5, cols: 24       |
+          {7: 19 }line                 │mouse enabled           |
+          {7: 20 }line                 │{1: }                       |
+          ==========                ==========              |
+          {3:-- TERMINAL --}                                    |
+        ]])
+        command('set mousescroll=ver:0')
+        feed('<ScrollWheelUp><4,0>')
+        screen:expect_unchanged()
       end)
 
       it('will lose focus if another window is clicked', function()

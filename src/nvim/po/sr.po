@@ -2,7 +2,7 @@
 #
 # Do ":help uganda"  in Vim to read copying and usage conditions.
 # Do ":help credits" in Vim to see a list of people who contributed.
-# Copyright (C) 2017
+# Copyright (C) 2021
 # This file is distributed under the same license as the Vim package.
 # FIRST AUTHOR Ivan Pešić <ivan.pesic@gmail.com>, 2017.
 #
@@ -10,8 +10,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Vim(Serbian)\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2021-02-14 01:49+0400\n"
-"PO-Revision-Date: 2021-02-14 01:54+0400\n"
+"POT-Creation-Date: 2021-06-13 13:16+0400\n"
+"PO-Revision-Date: 2021-06-13 13:50+0400\n"
 "Last-Translator: Ivan Pešić <ivan.pesic@gmail.com>\n"
 "Language-Team: Serbian\n"
 "Language: sr\n"
@@ -96,6 +96,9 @@ msgstr "Извршавање %s"
 #, c-format
 msgid "autocommand %s"
 msgstr "аутокоманда %s"
+
+msgid "E972: Blob value does not have the right number of bytes"
+msgstr "E972: Блоб вредност нема одговарајући број бајтова"
 
 msgid "E831: bf_key_init() called with empty password"
 msgstr "E831: bf_key_init() је позвана са празном лозинком"
@@ -866,7 +869,7 @@ msgid "E976: using Blob as a String"
 msgstr "E976: коришћење Blob као String"
 
 msgid "E908: using an invalid value as a String"
-msgstr "E908: користи се недозвољена вредност као String"
+msgstr "E908: Користи се неважећа вредност као Стринг: %s"
 
 msgid "E698: variable nested too deep for making a copy"
 msgstr "E698: променљива је предубоко угњеждена да би се направила копија"
@@ -913,7 +916,7 @@ msgid "E928: String required"
 msgstr "E928: Захтева се String"
 
 msgid "E808: Number or Float required"
-msgstr "E808: Захтева се Number или Float"
+msgstr "E808: Захтева се Број или Покретни"
 
 msgid "add() argument"
 msgstr "add() аргумент"
@@ -928,7 +931,8 @@ msgstr "&Ок"
 msgid "+-%s%3ld line: "
 msgid_plural "+-%s%3ld lines: "
 msgstr[0] "+-%s%3ld линија: "
-msgstr[1] "+-%s%3ld линија: "
+msgstr[1] "+-%s%3ld линијe: "
+msgstr[2] "+-%s%3ld линија: "
 
 #, c-format
 msgid "E700: Unknown function: %s"
@@ -1129,6 +1133,9 @@ msgid ""
 msgstr ""
 "\n"
 "# Преградне линије, копиране дословно:\n"
+
+msgid "E503: \"%s\" is not a file or writable device"
+msgstr "E503: „%s” није фајл или уређај на који може да се уписује"
 
 msgid "Save As"
 msgstr "Сачувај као"
@@ -2565,100 +2572,6 @@ msgstr "Стил:"
 
 msgid "Size:"
 msgstr "Величина:"
-
-msgid "E550: Missing colon"
-msgstr "E550: Недостаје двотачка"
-
-msgid "E551: Illegal component"
-msgstr "E551: Неисправна компонента"
-
-msgid "E552: digit expected"
-msgstr "E552: очекује се цифра"
-
-#, c-format
-msgid "Page %d"
-msgstr "Страна %d"
-
-msgid "No text to be printed"
-msgstr "Нема текста за штампу"
-
-#, c-format
-msgid "Printing page %d (%d%%)"
-msgstr "Штампање стране %d (%d%%)"
-
-#, c-format
-msgid " Copy %d of %d"
-msgstr " Копија %d од %d"
-
-#, c-format
-msgid "Printed: %s"
-msgstr "Одштампано: %s"
-
-msgid "Printing aborted"
-msgstr "Штампање прекинуто"
-
-msgid "E455: Error writing to PostScript output file"
-msgstr "E455: Грешка приликом уписа у PostScript излазну датотеку"
-
-#, c-format
-msgid "E624: Can't open file \"%s\""
-msgstr "E624: Датотека \"%s\" не може да се отвори"
-
-#, c-format
-msgid "E457: Can't read PostScript resource file \"%s\""
-msgstr "E457: PostScript resource датотека \"%s\" не може да се чита"
-
-#, c-format
-msgid "E618: file \"%s\" is not a PostScript resource file"
-msgstr "E618: датотека \"%s\" није PostScript resource датотека"
-
-#, c-format
-msgid "E619: file \"%s\" is not a supported PostScript resource file"
-msgstr "E619: датотека \"%s\" није подржана PostScript resource датотека"
-
-#, c-format
-msgid "E621: \"%s\" resource file has wrong version"
-msgstr "E621: \"%s\" resource датотека је погрешне верзије"
-
-msgid "E673: Incompatible multi-byte encoding and character set."
-msgstr "E673: Вишебајтно кодирање и скуп карактера нису компатибилни."
-
-msgid "E674: printmbcharset cannot be empty with multi-byte encoding."
-msgstr "E674: printmbcharset не може бити празно са вишебајтним кодирањем."
-
-msgid "E675: No default font specified for multi-byte printing."
-msgstr "E675: Није наведен подразумевани фонт за вишебајтно штампање."
-
-msgid "E324: Can't open PostScript output file"
-msgstr "E324: PostScript излазна датотека не може да се отвори"
-
-#, c-format
-msgid "E456: Can't open file \"%s\""
-msgstr "E456: Датотека \"%s\" не може да се отвори"
-
-msgid "E456: Can't find PostScript resource file \"prolog.ps\""
-msgstr "E456: PostScript resource датотека \"prolog.ps\" не може да се пронађе"
-
-msgid "E456: Can't find PostScript resource file \"cidfont.ps\""
-msgstr ""
-"E456: PostScript resource датотека \"cidfont.ps\" не може да се пронађе"
-
-#, c-format
-msgid "E456: Can't find PostScript resource file \"%s.ps\""
-msgstr "E456: PostScript resource датотека \"%s.ps\" не може да се пронађе"
-
-#, c-format
-msgid "E620: Unable to convert to print encoding \"%s\""
-msgstr "E620: Није могућа конверзија у кодирање за штампу \"%s\""
-
-msgid "Sending to printer..."
-msgstr "Слање штампачу..."
-
-msgid "E365: Failed to print PostScript file"
-msgstr "E365: PostScript датотека није успела да се одштампа"
-
-msgid "Print job sent."
-msgstr "Задатак штампе је послат"
 
 msgid "Add a new database"
 msgstr "Додај нову базу"
@@ -4635,11 +4548,11 @@ msgstr "E531: Користите \":gui\" да покренете GUI"
 msgid "E589: 'backupext' and 'patchmode' are equal"
 msgstr "E589: 'backupext' и 'patchmode' су истоветни"
 
-msgid "E834: Conflicts with value of 'listchars'"
-msgstr "E834: У конфликту са вредношћу 'listchars'"
-
 msgid "E835: Conflicts with value of 'fillchars'"
 msgstr "E835: У конфликту са вредношћу 'fillchars'"
+
+msgid "E834: Conflicts with value of 'listchars'"
+msgstr "E834: У конфликту са вредношћу 'listchars'"
 
 msgid "E617: Cannot be changed in the GTK+ 2 GUI"
 msgstr "E617: Не може да се промени у GTK+ 2 GUI"
@@ -5064,7 +4977,7 @@ msgstr "E554: Синтаксна грешка у %s{...}"
 
 #, c-format
 msgid "E888: (NFA regexp) cannot repeat %s"
-msgstr "E888: (NFA regexp) не може да се понови %s"
+msgstr "E888: (НКА регуларни израз) не може да се понови %s"
 
 msgid ""
 "E864: \\%#= can only be followed by 0, 1, or 2. The automatic engine will be "
@@ -5130,15 +5043,15 @@ msgid "External submatches:\n"
 msgstr "Спољна подпоклапања:\n"
 
 msgid "E865: (NFA) Regexp end encountered prematurely"
-msgstr "E865: Крај (NFA) Regexp израза је достигнут прерано"
+msgstr "E865: (НКА) прерано је достигнут крај регуларног израза"
 
 #, c-format
 msgid "E866: (NFA regexp) Misplaced %c"
-msgstr "E866: (NFA regexp) %c је на погрешном месту"
+msgstr "E866: (НКА регуларни израз) %c је на погрешном месту"
 
 #, c-format
 msgid "E877: (NFA regexp) Invalid character class: %d"
-msgstr "E877: (NFA regexp) Неважећа карактер класа: %d"
+msgstr "E877: (НКА регуларни израз) Неважећа карактер класа: %d"
 
 #, c-format
 msgid "E867: (NFA) Unknown operator '\\z%c'"
@@ -6043,8 +5956,8 @@ msgstr "E424: У употреби је превише различитих ат�
 msgid "E669: Unprintable character in group name"
 msgstr "E669: У имену групе је карактер који не може да се штампа"
 
-msgid "W18: Invalid character in group name"
-msgstr "W18: Неважећи карактер у имену групе"
+msgid "E5248: Invalid character in group name"
+msgstr "E5248: Неважећи карактер у имену групе"
 
 msgid "E849: Too many highlight and syntax groups"
 msgstr "E849: Превише синтаксних и група истицања"
@@ -6422,6 +6335,13 @@ msgstr "E853: Име аргумента је дуплирано: %s"
 msgid "E989: Non-default argument follows default argument"
 msgstr "E989: Неподразумевани аргумент следи иза подразумеваног аргумента"
 
+msgid "E126: Missing :endfunction"
+msgstr "E126: Недостаје :endfunction"
+
+#, c-format
+msgid "W22: Text found after :endfunction: %s"
+msgstr "W22: Пронађен текст након :endfunction: %s"
+
 #, c-format
 msgid "E451: Expected }: %s"
 msgstr "E451: Очекује се }: %s"
@@ -6496,17 +6416,6 @@ msgstr "E862: Овде не може да се користи g:"
 #, c-format
 msgid "E932: Closure function should not be at top level: %s"
 msgstr "E932: Затварајућа функција не би требало да буде на највишем нивоу: %s"
-
-msgid "E126: Missing :endfunction"
-msgstr "E126: Недостаје :endfunction"
-
-#, c-format
-msgid "W1001: Text found after :enddef: %s"
-msgstr "W1001: Пронађен је текст након :enddef: %s"
-
-#, c-format
-msgid "W22: Text found after :endfunction: %s"
-msgstr "W22: Пронађен текст након :endfunction: %s"
 
 #, c-format
 msgid "E707: Function name conflicts with variable: %s"
@@ -6983,8 +6892,8 @@ msgid "E475: Invalid value for argument %s: %s"
 msgstr "E475: Неважећа вредност за аргумент %s: %s"
 
 #, c-format
-msgid "E15: Invalid expression: %s"
-msgstr "E15: Неважећи израз: %s"
+msgid "E15: Invalid expression: \"%s\""
+msgstr "E15: Неважећи израз: „%s”"
 
 msgid "E16: Invalid range"
 msgstr "E16: Неважећи опсег"

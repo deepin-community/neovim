@@ -1,13 +1,15 @@
 #ifndef NVIM_EVENT_WSTREAM_H
 #define NVIM_EVENT_WSTREAM_H
 
-#include <stdint.h>
 #include <stdbool.h>
-
+#include <stddef.h>
+#include <stdint.h>
 #include <uv.h>
 
 #include "nvim/event/loop.h"
 #include "nvim/event/stream.h"
+
+struct wbuffer;
 
 typedef struct wbuffer WBuffer;
 typedef void (*wbuffer_data_finalizer)(void *data);

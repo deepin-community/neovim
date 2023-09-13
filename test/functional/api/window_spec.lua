@@ -1,35 +1,20 @@
 local helpers = require('test.functional.helpers')(after_each)
+local Screen = require('test.functional.ui.screen')
 local clear, nvim, curbuf, curbuf_contents, window, curwin, eq, neq,
-  ok, feed, insert, eval = helpers.clear, helpers.nvim, helpers.curbuf,
+  ok, feed, insert, eval, tabpage = helpers.clear, helpers.nvim, helpers.curbuf,
   helpers.curbuf_contents, helpers.window, helpers.curwin, helpers.eq,
-  helpers.neq, helpers.ok, helpers.feed, helpers.insert, helpers.eval
+  helpers.neq, helpers.ok, helpers.feed, helpers.insert, helpers.eval,
+  helpers.tabpage
 local poke_eventloop = helpers.poke_eventloop
 local curwinmeths = helpers.curwinmeths
+local exec = helpers.exec
 local funcs = helpers.funcs
 local request = helpers.request
 local NIL = helpers.NIL
 local meths = helpers.meths
 local command = helpers.command
 local pcall_err = helpers.pcall_err
-
--- check if str is visible at the beginning of some line
-local function is_visible(str)
-    local slen = string.len(str)
-    local nlines = eval("&lines")
-    for i = 1,nlines do
-        local iseq = true
-        for j = 1,slen do
-            if string.byte(str,j) ~= eval("screenchar("..i..","..j..")") then
-                iseq = false
-                break
-            end
-        end
-        if iseq then
-            return true
-        end
-    end
-    return false
-end
+local assert_alive = helpers.assert_alive
 
 describe('API/win', function()
   before_each(clear)
@@ -71,33 +56,66 @@ describe('API/win', function()
       eq('typing\n  some dumb text', curbuf_contents())
     end)
 
-    it('does not leak memory when using invalid window ID with invalid pos',
-    function()
+    it('does not leak memory when using invalid window ID with invalid pos', function()
       eq('Invalid window id: 1', pcall_err(meths.win_set_cursor, 1, {"b\na"}))
     end)
 
     it('updates the screen, and also when the window is unfocused', function()
+      local screen = Screen.new(30, 9)
+      screen:set_default_attr_ids({
+        [1] = {bold = true, foreground = Screen.colors.Blue},
+        [2] = {bold = true, reverse = true};
+        [3] = {reverse = true};
+      })
+      screen:attach()
+
       insert("prologue")
       feed('100o<esc>')
       insert("epilogue")
       local win = curwin()
       feed('gg')
-      poke_eventloop() -- let nvim process the 'gg' command
 
+      screen:expect{grid=[[
+        ^prologue                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+      ]]}
       -- cursor position is at beginning
       eq({1, 0}, window('get_cursor', win))
-      eq(true, is_visible("prologue"))
-      eq(false, is_visible("epilogue"))
 
       -- move cursor to end
       window('set_cursor', win, {101, 0})
-      eq(false, is_visible("prologue"))
-      eq(true, is_visible("epilogue"))
+      screen:expect{grid=[[
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+        ^epilogue                      |
+                                      |
+      ]]}
 
       -- move cursor to the beginning again
       window('set_cursor', win, {1, 0})
-      eq(true, is_visible("prologue"))
-      eq(false, is_visible("epilogue"))
+      screen:expect{grid=[[
+        ^prologue                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+                                      |
+      ]]}
 
       -- move focus to new window
       nvim('command',"new")
@@ -105,18 +123,45 @@ describe('API/win', function()
 
       -- sanity check, cursor position is kept
       eq({1, 0}, window('get_cursor', win))
-      eq(true, is_visible("prologue"))
-      eq(false, is_visible("epilogue"))
+      screen:expect{grid=[[
+        ^                              |
+        {1:~                             }|
+        {1:~                             }|
+        {2:[No Name]                     }|
+        prologue                      |
+                                      |
+                                      |
+        {3:[No Name] [+]                 }|
+                                      |
+      ]]}
 
       -- move cursor to end
       window('set_cursor', win, {101, 0})
-      eq(false, is_visible("prologue"))
-      eq(true, is_visible("epilogue"))
+      screen:expect{grid=[[
+        ^                              |
+        {1:~                             }|
+        {1:~                             }|
+        {2:[No Name]                     }|
+                                      |
+                                      |
+        epilogue                      |
+        {3:[No Name] [+]                 }|
+                                      |
+      ]]}
 
       -- move cursor to the beginning again
       window('set_cursor', win, {1, 0})
-      eq(true, is_visible("prologue"))
-      eq(false, is_visible("epilogue"))
+      screen:expect{grid=[[
+        ^                              |
+        {1:~                             }|
+        {1:~                             }|
+        {2:[No Name]                     }|
+        prologue                      |
+                                      |
+                                      |
+        {3:[No Name] [+]                 }|
+                                      |
+      ]]}
 
       -- curwin didn't change back
       neq(win, curwin())
@@ -145,6 +190,86 @@ describe('API/win', function()
       eq({2, 5}, window('get_cursor', win))
     end)
 
+    it('updates cursorline and statusline ruler in non-current window', function()
+      local screen = Screen.new(60, 8)
+      screen:set_default_attr_ids({
+        [1] = {bold = true, foreground = Screen.colors.Blue},  -- NonText
+        [2] = {background = Screen.colors.Grey90},  -- CursorLine
+        [3] = {bold = true, reverse = true},  -- StatusLine
+        [4] = {reverse = true},  -- StatusLineNC
+      })
+      screen:attach()
+      command('set ruler')
+      command('set cursorline')
+      insert([[
+        aaa
+        bbb
+        ccc
+        ddd]])
+      local oldwin = curwin()
+      command('vsplit')
+      screen:expect([[
+        aaa                           │aaa                          |
+        bbb                           │bbb                          |
+        ccc                           │ccc                          |
+        {2:dd^d                           }│{2:ddd                          }|
+        {1:~                             }│{1:~                            }|
+        {1:~                             }│{1:~                            }|
+        {3:[No Name] [+]  4,3         All }{4:[No Name] [+]  4,3        All}|
+                                                                    |
+      ]])
+      window('set_cursor', oldwin, {1, 0})
+      screen:expect([[
+        aaa                           │{2:aaa                          }|
+        bbb                           │bbb                          |
+        ccc                           │ccc                          |
+        {2:dd^d                           }│ddd                          |
+        {1:~                             }│{1:~                            }|
+        {1:~                             }│{1:~                            }|
+        {3:[No Name] [+]  4,3         All }{4:[No Name] [+]  1,1        All}|
+                                                                    |
+      ]])
+    end)
+
+    it('updates cursorcolumn in non-current window', function()
+      local screen = Screen.new(60, 8)
+      screen:set_default_attr_ids({
+        [1] = {bold = true, foreground = Screen.colors.Blue},  -- NonText
+        [2] = {background = Screen.colors.Grey90},  -- CursorColumn
+        [3] = {bold = true, reverse = true},  -- StatusLine
+        [4] = {reverse = true},  -- StatusLineNC
+      })
+      screen:attach()
+      command('set cursorcolumn')
+      insert([[
+        aaa
+        bbb
+        ccc
+        ddd]])
+      local oldwin = curwin()
+      command('vsplit')
+      screen:expect([[
+        aa{2:a}                           │aa{2:a}                          |
+        bb{2:b}                           │bb{2:b}                          |
+        cc{2:c}                           │cc{2:c}                          |
+        dd^d                           │ddd                          |
+        {1:~                             }│{1:~                            }|
+        {1:~                             }│{1:~                            }|
+        {3:[No Name] [+]                  }{4:[No Name] [+]                }|
+                                                                    |
+      ]])
+      window('set_cursor', oldwin, {2, 0})
+      screen:expect([[
+        aa{2:a}                           │{2:a}aa                          |
+        bb{2:b}                           │bbb                          |
+        cc{2:c}                           │{2:c}cc                          |
+        dd^d                           │{2:d}dd                          |
+        {1:~                             }│{1:~                            }|
+        {1:~                             }│{1:~                            }|
+        {3:[No Name] [+]                  }{4:[No Name] [+]                }|
+                                                                    |
+      ]])
+    end)
   end)
 
   describe('{get,set}_height', function()
@@ -159,6 +284,22 @@ describe('API/win', function()
       window('set_height', nvim('list_wins')[2], 2)
       eq(2, window('get_height', nvim('list_wins')[2]))
     end)
+
+    it('do not cause ml_get errors with foldmethod=expr #19989', function()
+      insert([[
+        aaaaa
+        bbbbb
+        ccccc]])
+      command('set foldmethod=expr')
+      exec([[
+        new
+        let w = nvim_get_current_win()
+        wincmd w
+        call nvim_win_set_height(w, 5)
+      ]])
+      feed('l')
+      eq('', meths.get_vvar('errmsg'))
+    end)
   end)
 
   describe('{get,set}_width', function()
@@ -172,6 +313,22 @@ describe('API/win', function()
         math.floor(window('get_width', nvim('list_wins')[1]) / 2))
       window('set_width', nvim('list_wins')[2], 2)
       eq(2, window('get_width', nvim('list_wins')[2]))
+    end)
+
+    it('do not cause ml_get errors with foldmethod=expr #19989', function()
+      insert([[
+        aaaaa
+        bbbbb
+        ccccc]])
+      command('set foldmethod=expr')
+      exec([[
+        vnew
+        let w = nvim_get_current_win()
+        wincmd w
+        call nvim_win_set_width(w, 5)
+      ]])
+      feed('l')
+      eq('', meths.get_vvar('errmsg'))
     end)
   end)
 
@@ -206,7 +363,7 @@ describe('API/win', function()
     end)
   end)
 
-  describe('{get,set}_option', function()
+  describe('nvim_win_get_option, nvim_win_set_option', function()
     it('works', function()
       curwin('set_option', 'colorcolumn', '4,3')
       eq('4,3', curwin('get_option', 'colorcolumn'))
@@ -220,9 +377,25 @@ describe('API/win', function()
       eq('', nvim('get_option', 'statusline'))
       command("set modified")
       command("enew") -- global-local: not preserved in new buffer
-      eq("Failed to get value for option 'statusline'",
-        pcall_err(curwin, 'get_option', 'statusline'))
-      eq('', eval('&l:statusline')) -- confirm local value was not copied
+      -- confirm local value was not copied
+      eq('', curwin('get_option', 'statusline'))
+      eq('', eval('&l:statusline'))
+    end)
+
+    it('after switching windows #15390', function()
+      nvim('command', 'tabnew')
+      local tab1 = unpack(nvim('list_tabpages'))
+      local win1 = unpack(tabpage('list_wins', tab1))
+      window('set_option', win1, 'statusline', 'window-status')
+      nvim('command', 'split')
+      nvim('command', 'wincmd J')
+      nvim('command', 'wincmd j')
+      eq('window-status', window('get_option', win1, 'statusline'))
+      assert_alive()
+    end)
+
+    it('returns values for unset local options', function()
+      eq(-1, curwin('get_option', 'scrolloff'))
     end)
   end)
 
@@ -311,7 +484,8 @@ describe('API/win', function()
       eq({newwin}, meths.list_wins())
     end)
 
-    it('handles changed buffer', function()
+    it("handles changed buffer when 'hidden' is unset", function()
+      command('set nohidden')
       local oldwin = meths.get_current_win()
       insert('text')
       command('new')
@@ -349,17 +523,19 @@ describe('API/win', function()
 
     it('closing current (float) window of another tabpage #15313', function()
       command('tabedit')
+      command('botright split')
+      local prevwin = curwin().id
       eq(2, eval('tabpagenr()'))
       local win = meths.open_win(0, true, {
         relative='editor', row=10, col=10, width=50, height=10
       })
-      local tabpage = eval('tabpagenr()')
+      local tab = eval('tabpagenr()')
       command('tabprevious')
       eq(1, eval('tabpagenr()'))
       meths.win_close(win, false)
 
-      eq(1001, meths.tabpage_get_win(tabpage).id)
-      helpers.assert_alive()
+      eq(prevwin, meths.tabpage_get_win(tab).id)
+      assert_alive()
     end)
   end)
 

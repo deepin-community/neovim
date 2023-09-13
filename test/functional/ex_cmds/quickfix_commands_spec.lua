@@ -1,5 +1,7 @@
 local helpers = require('test.functional.helpers')(after_each)
+local Screen = require('test.functional.ui.screen')
 
+local feed = helpers.feed
 local eq = helpers.eq
 local clear = helpers.clear
 local funcs = helpers.funcs
@@ -37,9 +39,9 @@ for _, c in ipairs({'l', 'c'}) do
       -- Second line of each entry (i.e. `nr=-1, …`) was obtained from actual
       -- results. First line (i.e. `{lnum=…`) was obtained from legacy test.
       local list = {
-        {lnum=700, col=10, text='Line 700', module='',
+        {lnum=700, end_lnum=0, col=10, end_col=0, text='Line 700', module='',
          nr=-1, bufnr=2, valid=1, pattern='', vcol=0, ['type']=''},
-        {lnum=800, col=15, text='Line 800', module='',
+        {lnum=800, end_lnum=0, col=15, end_col=0, text='Line 800', module='',
          nr=-1, bufnr=3, valid=1, pattern='', vcol=0, ['type']=''},
       }
       eq(list, getlist())
@@ -47,6 +49,7 @@ for _, c in ipairs({'l', 'c'}) do
       eq(('%s-2.res'):format(file), funcs.bufname(list[2].bufnr))
 
       -- Run cfile/lfile from a modified buffer
+      command('set nohidden')
       command('enew!')
       curbufmeths.set_lines(1, 1, true, {'Quickfix'})
       eq(('Vim(%s):E37: No write since last change (add ! to override)'):format(
@@ -58,7 +61,7 @@ for _, c in ipairs({'l', 'c'}) do
       ]]):format(file))
       command(('%s %s'):format(addfcmd, file))
       list[#list + 1] = {
-        lnum=900, col=30, text='Line 900', module='',
+        lnum=900, end_lnum=0, col=30, end_col=0, text='Line 900', module='',
         nr=-1, bufnr=5, valid=1, pattern='', vcol=0, ['type']='',
       }
       eq(list, getlist())
@@ -71,9 +74,9 @@ for _, c in ipairs({'l', 'c'}) do
       command('enew!')
       command(('%s %s'):format(getfcmd, file))
       list = {
-        {lnum=222, col=77, text='Line 222', module='',
+        {lnum=222, end_lnum=0, col=77, end_col=0, text='Line 222', module='',
          nr=-1, bufnr=2, valid=1, pattern='', vcol=0, ['type']=''},
-        {lnum=333, col=88, text='Line 333', module='',
+        {lnum=333, end_lnum=0, col=88, end_col=0, text='Line 333', module='',
          nr=-1, bufnr=3, valid=1, pattern='', vcol=0, ['type']=''},
       }
       eq(list, getlist())
@@ -108,4 +111,36 @@ describe('quickfix', function()
     ]])
     eq({0, 6, 1, 0, 1}, funcs.getcurpos())
   end)
+
+  it('BufAdd does not cause E16 when reusing quickfix buffer #18135', function()
+    local file = file_base .. '_reuse_qfbuf_BufAdd'
+    write_file(file, ('\n'):rep(100) .. 'foo')
+    source([[
+      set grepprg=internal
+      autocmd BufAdd * call and(0, 0)
+      autocmd QuickFixCmdPost grep ++nested cclose | cwindow
+    ]])
+    command('grep foo ' .. file)
+    command('grep foo ' .. file)
+    os.remove(file)
+  end)
+end)
+
+it(':vimgrep can specify Unicode pattern without delimiters', function()
+  eq('Vim(vimgrep):E480: No match: →', exc_exec('vimgrep → test/functional/fixtures/tty-test.c'))
+  local screen = Screen.new(40, 6)
+  screen:set_default_attr_ids({
+    [0] = {bold = true, foreground = Screen.colors.Blue},  -- NonText
+    [1] = {reverse = true},  -- IncSearch
+  })
+  screen:attach()
+  feed('i→<Esc>:vimgrep →')
+  screen:expect([[
+    {1:→}                                       |
+    {0:~                                       }|
+    {0:~                                       }|
+    {0:~                                       }|
+    {0:~                                       }|
+    :vimgrep →^                              |
+  ]])
 end)

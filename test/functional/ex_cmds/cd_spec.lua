@@ -1,6 +1,6 @@
 -- Specs for :cd, :tcd, :lcd and getcwd()
 
-local lfs = require('lfs')
+local luv = require('luv')
 local helpers = require('test.functional.helpers')(after_each)
 
 local eq = helpers.eq
@@ -9,6 +9,9 @@ local clear = helpers.clear
 local command = helpers.command
 local exc_exec = helpers.exc_exec
 local pathsep = helpers.get_pathsep()
+local skip = helpers.skip
+local is_os = helpers.is_os
+local mkdir = helpers.mkdir
 
 -- These directories will be created for testing
 local directories = {
@@ -34,14 +37,14 @@ for _, cmd in ipairs {'cd', 'chdir'} do
     before_each(function()
       clear()
       for _, d in pairs(directories) do
-        lfs.mkdir(d)
+        mkdir(d)
       end
       directories.start = cwd()
     end)
 
     after_each(function()
       for _, d in pairs(directories) do
-        lfs.rmdir(d)
+        luv.fs_rmdir(d)
       end
     end)
 
@@ -173,7 +176,7 @@ for _, cmd in ipairs {'cd', 'chdir'} do
       -- Change tab-local working directory and verify it is different
       command('silent t' .. cmd .. ' ' .. directories.tab)
       eq(globalDir .. pathsep .. directories.tab, cwd())
-      eq(cwd(), tcwd())  -- working directory maches tab directory
+      eq(cwd(), tcwd())  -- working directory matches tab directory
       eq(1, tlwd())
       eq(cwd(), wcwd())  -- still no window-directory
       eq(0, wlwd())
@@ -271,7 +274,7 @@ end
 describe("getcwd()", function ()
   before_each(function()
     clear()
-    lfs.mkdir(directories.global)
+    mkdir(directories.global)
   end)
 
   after_each(function()
@@ -279,9 +282,7 @@ describe("getcwd()", function ()
   end)
 
   it("returns empty string if working directory does not exist", function()
-    if helpers.iswin() then
-      return
-    end
+    skip(is_os('win'))
     command("cd "..directories.global)
     command("call delete('../"..directories.global.."', 'd')")
     eq("", helpers.eval("getcwd()"))
@@ -294,7 +295,16 @@ describe("getcwd()", function ()
     command('set autochdir')
     command('edit ' .. directories.global .. '/foo')
     eq(curdir .. pathsep .. directories.global, cwd())
+    eq(curdir, wcwd())
+    call('mkdir', 'bar')
+    command('edit ' .. 'bar/foo')
+    eq(curdir .. pathsep .. directories.global .. pathsep .. 'bar', cwd())
+    eq(curdir, wcwd())
+    command('lcd ..')
+    eq(curdir .. pathsep .. directories.global, cwd())
+    eq(curdir .. pathsep .. directories.global, wcwd())
+    command('edit')
+    eq(curdir .. pathsep .. directories.global .. pathsep .. 'bar', cwd())
+    eq(curdir .. pathsep .. directories.global, wcwd())
   end)
 end)
-
-

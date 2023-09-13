@@ -2,16 +2,13 @@
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
 #include <assert.h>
-#include <stdint.h>
 #include <stdbool.h>
-#include <stdlib.h>
-
 #include <uv.h>
 
-#include "nvim/log.h"
 #include "nvim/event/loop.h"
+#include "nvim/event/stream.h"
 #include "nvim/event/wstream.h"
-#include "nvim/vim.h"
+#include "nvim/macros.h"
 #include "nvim/memory.h"
 
 #define DEFAULT_MAXMEM 1024 * 1024 * 2000
@@ -117,10 +114,7 @@ err:
 /// @param cb Pointer to function that will be responsible for freeing
 ///        the buffer data(passing 'free' will work as expected).
 /// @return The allocated WBuffer instance
-WBuffer *wstream_new_buffer(char *data,
-                            size_t size,
-                            size_t refcount,
-                            wbuffer_data_finalizer cb)
+WBuffer *wstream_new_buffer(char *data, size_t size, size_t refcount, wbuffer_data_finalizer cb)
   FUNC_ATTR_NONNULL_ARG(1)
 {
   WBuffer *rv = xmalloc(sizeof(WBuffer));

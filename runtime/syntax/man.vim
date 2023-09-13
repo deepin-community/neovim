@@ -6,11 +6,11 @@ if exists('b:current_syntax')
 endif
 
 syntax case  ignore
-syntax match manReference      display '[^()[:space:]]\+([0-9nx][a-z]*)'
+syntax match manReference      display '[^()[:space:]]\+(\%([0-9][a-z]*\|[nlpox]\))'
 syntax match manSectionHeading display '^\S.*$'
 syntax match manHeader         display '^\%1l.*$'
 syntax match manSubHeading     display '^ \{3\}\S.*$'
-syntax match manOptionDesc     display '^\s\+\%(+\|-\)\S\+'
+syntax match manOptionDesc     display '^\s\+\(\%(+\|-\)\S\+,\s\+\)*\%(+\|-\)\S\+'
 
 highlight default link manHeader         Title
 highlight default link manSectionHeading Statement

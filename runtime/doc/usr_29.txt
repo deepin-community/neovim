@@ -33,9 +33,10 @@ following command: >
 	ctags *.c
 
 "ctags" is a separate program.  Most Unix systems already have it installed.
-If you do not have it yet, you can find Exuberant ctags here:
+If you do not have it yet, you can find Universal ctags at:
+	https://ctags.io ~
 
-	http://ctags.sf.net ~
+Universal ctags is preferred, Exuberant ctags is no longer being developed.
 
 Now when you are in Vim and you want to go to a function definition, you can
 jump to it by using the following command: >
@@ -52,7 +53,7 @@ function.
    The "write_line" function calls "write_char".  You need to figure out what
 it does.  So you position the cursor over the call to "write_char" and press
 CTRL-].  Now you are at the definition of "write_char".
-
+>
 	+-------------------------------------+
 	|void write_block(char **s; int cnt)  |
 	|{				      |
@@ -78,7 +79,7 @@ CTRL-].  Now you are at the definition of "write_char".
 				       |    putchar((int)(unsigned char)c); |
 				       |}				    |
 				       +------------------------------------+
-
+<
 The ":tags" command shows the list of tags that you traversed through:
 
 	:tags
@@ -142,15 +143,15 @@ ONE TAGS FILE
 When Vim has to search many places for tags files, you can hear the disk
 rattling.  It may get a bit slow.  In that case it's better to spend this
 time while generating one big tags file.  You might do this overnight.
-   This requires the Exuberant ctags program, mentioned above.  It offers an
-argument to search a whole directory tree: >
+   This requires the Universal or Exuberant ctags program, mentioned above.
+It offers an argument to search a whole directory tree: >
 
 	cd ~/proj
 	ctags -R .
 
-The nice thing about this is that Exuberant ctags recognizes various file
-types.  Thus this doesn't work just for C and C++ programs, also for Eiffel
-and even Vim scripts.  See the ctags documentation to tune this.
+The nice thing about this is that Universal/Exuberant ctags recognizes various
+file types.  Thus this doesn't work just for C and C++ programs, also for
+Eiffel and even Vim scripts.  See the ctags documentation to tune this.
    Now you only need to tell Vim where your big tags file is: >
 
 	:set tags=~/proj/tags
@@ -232,7 +233,8 @@ A TAGS BROWSER
 Since CTRL-] takes you to the definition of the identifier under the cursor,
 you can use a list of identifier names as a table of contents.  Here is an
 example.
-   First create a list of identifiers (this requires Exuberant ctags): >
+   First create a list of identifiers (this requires Universal or Exuberant
+ctags): >
 
 	ctags --c-types=f -f functions *.c
 
@@ -264,9 +266,6 @@ doesn't work if the tags file isn't sorted.
 
 The 'taglength' option can be used to tell Vim the number of significant
 characters in a tag.
-
-Cscope is a free program.  It does not only find places where an identifier is
-declared, but also where it is used.  See |cscope|.
 
 ==============================================================================
 *29.2*	The preview window
@@ -426,7 +425,7 @@ MOVING IN COMMENTS
 
 To move back to the start of a comment use "[/".  Move forward to the end of a
 comment with "]/".  This only works for /* - */ comments.
-
+>
 	  +->	  +-> /*
 	  |    [/ |    * A comment about      --+
        [/ |	  +--  * wonderful life.	| ]/
@@ -435,7 +434,7 @@ comment with "]/".  This only works for /* - */ comments.
 	  +--	       foo = bar * 3;	      --+
 						| ]/
 		       /* a short comment */  <-+
-
+<
 ==============================================================================
 *29.4*	Finding global identifiers
 
@@ -576,7 +575,7 @@ and jump to the first place where the word under the cursor is used: >
 Hint: Goto Definition.  This command is very useful to find a variable or
 function that was declared locally ("static", in C terms).  Example (cursor on
 "counter"):
-
+>
 	   +->   static int counter = 0;
 	   |
 	   |     int get_counter(void)
@@ -584,7 +583,7 @@ function that was declared locally ("static", in C terms).  Example (cursor on
 	   |	     ++counter;
 	   +--	     return counter;
 		 }
-
+<
 To restrict the search even further, and look only in the current function,
 use this command: >
 
@@ -594,7 +593,7 @@ This will go back to the start of the current function and find the first
 occurrence of the word under the cursor.  Actually, it searches backwards to
 an empty line above a "{" in the first column.  From there it searches forward
 for the identifier.  Example (cursor on "idx"):
-
+>
 		int find_entry(char *name)
 		{
 	   +->	    int idx;
@@ -603,7 +602,7 @@ for the identifier.  Example (cursor on "idx"):
 	   |		if (strcmp(table[idx].name, name) == 0)
 	   +--		    return idx;
 		}
-
+<
 ==============================================================================
 
 Next chapter: |usr_30.txt|  Editing programs

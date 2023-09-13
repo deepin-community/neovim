@@ -8,105 +8,111 @@
 
   outputs = { self, nixpkgs, flake-utils }:
     {
-      overlay = final: prev:
-        let
-          pkgs = nixpkgs.legacyPackages.${prev.system};
-        in
-        rec {
-          neovim = pkgs.neovim-unwrapped.overrideAttrs (oa: {
-            version = "master";
-            src = ../.;
+      overlay = final: prev: {
 
-            buildInputs = oa.buildInputs ++ ([
-              pkgs.tree-sitter
-            ]);
+        neovim = final.neovim-unwrapped.overrideAttrs (oa: rec {
+          version = self.shortRev or "dirty";
+          src = ../.;
+          preConfigure = ''
+            sed -i cmake.config/versiondef.h.in -e 's/@NVIM_VERSION_PRERELEASE@/-dev-${version}/'
+          '';
+          nativeBuildInputs = oa.nativeBuildInputs ++ [
+            final.libiconv
+          ];
+        });
 
-            cmakeFlags = oa.cmakeFlags ++ [
-              "-DUSE_BUNDLED=OFF"
-            ];
-          });
+        # a development binary to help debug issues
+        neovim-debug = let
+          stdenv = if final.stdenv.isLinux then
+            final.llvmPackages_latest.stdenv
+          else
+            final.stdenv;
+        in (final.neovim.override {
+          lua = final.luajit;
+          inherit stdenv;
+        }).overrideAttrs (oa: {
 
-          # a development binary to help debug issues
-          neovim-debug = let
-            stdenv = pkgs.stdenvAdapters.keepDebugInfo (if pkgs.stdenv.isLinux then pkgs.llvmPackages_latest.stdenv else pkgs.stdenv);
-          in
-            pkgs.enableDebugging ((neovim.override {
-            lua = pkgs.enableDebugging pkgs.luajit;
-            inherit stdenv;
-          }).overrideAttrs (oa: {
-            cmakeBuildType = "Debug";
-            cmakeFlags = oa.cmakeFlags ++ [
-              "-DMIN_LOG_LEVEL=0"
-            ];
+          dontStrip = true;
+          NIX_CFLAGS_COMPILE = " -ggdb -Og";
 
-            disallowedReferences = [];
-          }));
+          cmakeBuildType = "Debug";
 
-          # for neovim developers, builds a slow binary
-          # huge closure size but aims at covering all scripts
-          # brings development tools as well
-          neovim-developer =
-            let
-              lib = nixpkgs.lib;
-              pythonEnv = pkgs.python3.withPackages(ps: [
-                ps.msgpack
-                ps.flake8  # for 'make pylint'
-              ]);
-              luacheck = pkgs.luaPackages.luacheck;
-            in
-            (neovim-debug.override ({ doCheck = pkgs.stdenv.isLinux; })).overrideAttrs (oa: {
-              cmakeFlags = oa.cmakeFlags ++ [
-                "-DLUACHECK_PRG=${luacheck}/bin/luacheck"
-                "-DMIN_LOG_LEVEL=0"
-                "-DENABLE_LTO=OFF"
-                "-DUSE_BUNDLED=OFF"
-              ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
-                # https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
-                # https://clang.llvm.org/docs/AddressSanitizer.html#symbolizing-the-reports
-                "-DCLANG_ASAN_UBSAN=ON"
-              ];
+          disallowedReferences = [ ];
+        });
 
-              nativeBuildInputs = oa.nativeBuildInputs ++ (with pkgs; [
-                pythonEnv
-                include-what-you-use # for scripts/check-includes.py
-                jq # jq for scripts/vim-patch.sh -r
-                shellcheck # for `make shlint`
-                doxygen    # for script/gen_vimdoc.py
-                clang-tools # for clangd to find the correct headers
-              ]);
-
-              shellHook = oa.shellHook + ''
-                export NVIM_PYTHON_LOG_LEVEL=DEBUG
-                export NVIM_LOG_FILE=/tmp/nvim.log
-
-                export ASAN_OPTIONS="log_path=./test.log:abort_on_error=1"
-                export UBSAN_OPTIONS=print_stacktrace=1
-              '';
-            });
-        };
-    } //
-    flake-utils.lib.eachDefaultSystem (system:
+        # for neovim developers, beware of the slow binary
+        neovim-developer = let inherit (final.luaPackages) luacheck;
+        in (final.neovim-debug.override {
+          doCheck = final.stdenv.isLinux;
+        }).overrideAttrs (oa: {
+          cmakeFlags = oa.cmakeFlags ++ [
+            "-DLUACHECK_PRG=${luacheck}/bin/luacheck"
+            "-DENABLE_LTO=OFF"
+          ] ++ final.lib.optionals final.stdenv.isLinux [
+            # https://github.com/google/sanitizers/wiki/AddressSanitizerFlags
+            # https://clang.llvm.org/docs/AddressSanitizer.html#symbolizing-the-reports
+            "-DENABLE_ASAN_UBSAN=ON"
+          ];
+        });
+      };
+    } // flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
           overlays = [ self.overlay ];
           inherit system;
         };
-      in
-      rec {
 
+        lua = pkgs.lua5_1;
+
+        pythonEnv = pkgs.python3.withPackages (ps: [
+          ps.msgpack
+        ]);
+      in {
         packages = with pkgs; {
+          default = neovim;
           inherit neovim neovim-debug neovim-developer;
         };
 
-        defaultPackage = pkgs.neovim;
-
-        apps = {
-          nvim = flake-utils.lib.mkApp { drv = pkgs.neovim; name = "nvim"; };
-          nvim-debug = flake-utils.lib.mkApp { drv = pkgs.neovim-debug; name = "nvim"; };
+        checks = {
+          shlint = pkgs.runCommand "shlint" {
+            nativeBuildInputs = [ pkgs.shellcheck ];
+            preferLocalBuild = true;
+          } "make -C ${./..} shlint > $out";
         };
 
-        defaultApp = apps.nvim;
+        # kept for backwards-compatibility
+        defaultPackage = pkgs.neovim;
 
-        devShell = pkgs.neovim-developer;
-    });
+        devShells = {
+          default = pkgs.neovim-developer.overrideAttrs (oa: {
+
+            buildInputs = with pkgs;
+              oa.buildInputs ++ [
+                cmake
+                lua.pkgs.luacheck
+                sumneko-lua-language-server
+                pythonEnv
+                include-what-you-use # for scripts/check-includes.py
+                jq # jq for scripts/vim-patch.sh -r
+                shellcheck # for `make shlint`
+                doxygen # for script/gen_vimdoc.py
+                clang-tools # for clangd to find the correct headers
+              ];
+
+            shellHook = oa.shellHook + ''
+              export NVIM_PYTHON_LOG_LEVEL=DEBUG
+              export NVIM_LOG_FILE=/tmp/nvim.log
+              export ASAN_SYMBOLIZER_PATH=${pkgs.llvm_11}/bin/llvm-symbolizer
+
+              # ASAN_OPTIONS=detect_leaks=1
+              export ASAN_OPTIONS="log_path=./test.log:abort_on_error=1"
+              export UBSAN_OPTIONS=print_stacktrace=1
+
+              # for treesitter functionaltests
+              mkdir -p runtime/parser
+              cp -f ${pkgs.vimPlugins.nvim-treesitter.builtGrammars.c}/parser runtime/parser/c.so
+            '';
+          });
+        };
+      });
 }

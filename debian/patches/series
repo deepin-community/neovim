@@ -1,1 +1,7 @@
-fixlsp_spec-tests-depended-on-previous-s.patch
+# fixtests-check-for-eof-on-exit-of-nvim-p.patch
+# testmksession_spec-use-bwipeout-instead-.patch
+# test-deal-with-rpc-call-causing-nvim-to-.patch
+# testlet_spec-increase-expect_exit-timeou.patch
+# testjob_spec-accept-alternate-messages-f.patch
+# fixtreesitter-validate-language-name.patch
+# fixtest-adapt-test-to-release-0.8.patch

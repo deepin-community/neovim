@@ -1,5 +1,4 @@
 local helpers = require('test.functional.helpers')(after_each)
-local uname = helpers.uname
 local clear, eq, eval, next_msg, ok, source = helpers.clear, helpers.eq,
    helpers.eval, helpers.next_msg, helpers.ok, helpers.source
 local command, funcs, meths = helpers.command, helpers.funcs, helpers.meths
@@ -10,6 +9,9 @@ local nvim_prog = helpers.nvim_prog
 local is_os = helpers.is_os
 local retry = helpers.retry
 local expect_twostreams = helpers.expect_twostreams
+local assert_alive = helpers.assert_alive
+local pcall_err = helpers.pcall_err
+local skip = helpers.skip
 
 describe('channels', function()
   local init = [[
@@ -29,11 +31,11 @@ describe('channels', function()
   end)
 
   pending('can connect to socket', function()
-    local server = spawn(nvim_argv)
+    local server = spawn(nvim_argv, nil, nil, true)
     set_session(server)
     local address = funcs.serverlist()[1]
-    local client = spawn(nvim_argv)
-    set_session(client, true)
+    local client = spawn(nvim_argv, nil, nil, true)
+    set_session(client)
     source(init)
 
     meths.set_var('address', address)
@@ -42,11 +44,11 @@ describe('channels', function()
     ok(id > 0)
 
     command("call chansend(g:id, msgpackdump([[2,'nvim_set_var',['code',23]]]))")
-    set_session(server, true)
+    set_session(server)
     retry(nil, 1000, function()
       eq(23, meths.get_var('code'))
     end)
-    set_session(client, true)
+    set_session(client)
 
     command("call chansend(g:id, msgpackdump([[0,0,'nvim_eval',['2+3']]]))")
 
@@ -89,12 +91,47 @@ describe('channels', function()
     command("call chansend(id, 'howdy')")
     eq({"notification", "stdout", {id, {"[1, ['howdy'], 'stdin']"}}}, next_msg())
 
+    command("call chansend(id, 0z686f6c61)")
+    eq({"notification", "stdout", {id, {"[1, ['hola'], 'stdin']"}}}, next_msg())
+
     command("call chanclose(id, 'stdin')")
     expect_twostreams({{"notification", "stdout", {id, {"[1, [''], 'stdin']"}}},
                        {'notification', 'stdout', {id, {''}}}},
                       {{"notification", "stderr", {id, {"*dies*"}}},
                        {'notification', 'stderr', {id, {''}}}})
     eq({"notification", "exit", {3,0}}, next_msg())
+  end)
+
+  it('can use stdio channel and on_print callback', function()
+    source([[
+      let g:job_opts = {
+      \ 'on_stdout': function('OnEvent'),
+      \ 'on_stderr': function('OnEvent'),
+      \ 'on_exit': function('OnEvent'),
+      \ }
+    ]])
+    meths.set_var("nvim_prog", nvim_prog)
+    meths.set_var("code", [[
+      function! OnStdin(id, data, event) dict
+        echo string([a:id, a:data, a:event])
+        if a:data == ['']
+          quit
+        endif
+      endfunction
+      function! OnPrint(text) dict
+        call chansend(g:x, ['OnPrint:' .. a:text])
+      endfunction
+      let g:x = stdioopen({'on_stdin': funcref('OnStdin'), 'on_print':'OnPrint'})
+      call chansend(x, "hello")
+    ]])
+    command("let g:id = jobstart([ g:nvim_prog, '-u', 'NONE', '-i', 'NONE', '--cmd', 'set noswapfile', '--headless', '--cmd', g:code], g:job_opts)")
+    local id = eval("g:id")
+    ok(id > 0)
+
+    eq({ "notification", "stdout", {id, { "hello" } } }, next_msg())
+
+    command("call chansend(id, 'howdy')")
+    eq({"notification", "stdout", {id, {"OnPrint:[1, ['howdy'], 'stdin']"}}}, next_msg())
   end)
 
   local function expect_twoline(id, stream, line1, line2, nobr)
@@ -108,7 +145,7 @@ describe('channels', function()
   end
 
   it('can use stdio channel with pty', function()
-    if helpers.pending_win32(pending) then return end
+    skip(is_os('win'))
     source([[
       let g:job_opts = {
       \ 'on_stdout': function('OnEvent'),
@@ -131,6 +168,8 @@ describe('channels', function()
     command("call chansend(id, 'TEXT\n')")
     expect_twoline(id, "stdout", "TEXT\r", "[1, ['TEXT', ''], 'stdin']")
 
+    command("call chansend(id, 0z426c6f6273210a)")
+    expect_twoline(id, "stdout", "Blobs!\r", "[1, ['Blobs!', ''], 'stdin']")
 
     command("call chansend(id, 'neovan')")
     eq({"notification", "stdout", {id, {"neovan"}}}, next_msg())
@@ -139,8 +178,7 @@ describe('channels', function()
 
     command("call chansend(id, 'incomplet\004')")
 
-    local is_bsd = not not string.find(uname(), 'bsd')
-    local bsdlike = is_bsd or is_os('mac')
+    local bsdlike = is_os('bsd') or is_os('mac')
     local extra = bsdlike and "^D\008\008" or ""
     expect_twoline(id, "stdout",
                    "incomplet"..extra, "[1, ['incomplet'], 'stdin']", true)
@@ -160,7 +198,7 @@ describe('channels', function()
 
 
   it('stdio channel can use rpc and stderr simultaneously', function()
-    if helpers.pending_win32(pending) then return end
+    skip(is_os('win'))
     source([[
       let g:job_opts = {
       \ 'on_stderr': function('OnEvent'),
@@ -192,6 +230,7 @@ describe('channels', function()
   end)
 
   it('can use buffered output mode', function()
+    skip(funcs.executable('grep') == 0, 'missing "grep" command')
     source([[
       let g:job_opts = {
       \ 'on_stdout': function('OnEvent'),
@@ -224,6 +263,7 @@ describe('channels', function()
   end)
 
   it('can use buffered output mode with no stream callback', function()
+    skip(funcs.executable('grep') == 0, 'missing "grep" command')
     source([[
       function! OnEvent(id, data, event) dict
         call rpcnotify(1, a:event, a:id, a:data, self.stdout)
@@ -275,5 +315,24 @@ describe('channels', function()
 
     -- works correctly with no output
     eq({"notification", "exit", {id, 1, {''}}}, next_msg())
+  end)
+end)
+
+describe('loopback', function()
+  before_each(function()
+    clear()
+    command("let chan = sockconnect('pipe', v:servername, {'rpc': v:true})")
+  end)
+
+  it('does not crash when sending raw data', function()
+    eq("Vim(call):Can't send raw data to rpc channel",
+       pcall_err(command, "call chansend(chan, 'test')"))
+    assert_alive()
+  end)
+
+  it('are released when closed', function()
+    local chans = eval('len(nvim_list_chans())')
+    command('call chanclose(chan)')
+    eq(chans - 1, eval('len(nvim_list_chans())'))
   end)
 end)

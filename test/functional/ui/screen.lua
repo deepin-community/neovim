@@ -75,7 +75,8 @@ local busted = require('busted')
 local deepcopy = helpers.deepcopy
 local shallowcopy = helpers.shallowcopy
 local concat_tables = helpers.concat_tables
-local request, run_session = helpers.request, helpers.run_session
+local pesc = helpers.pesc
+local run_session = helpers.run_session
 local eq = helpers.eq
 local dedent = helpers.dedent
 local get_session = helpers.get_session
@@ -90,8 +91,6 @@ end
 local Screen = {}
 Screen.__index = Screen
 
-local debug_screen
-
 local default_timeout_factor = 1
 if os.getenv('VALGRIND') then
   default_timeout_factor = default_timeout_factor * 3
@@ -103,13 +102,10 @@ end
 
 local default_screen_timeout = default_timeout_factor * 3500
 
-do
-  local spawn, nvim_prog = helpers.spawn, helpers.nvim_prog
-  local session = spawn({nvim_prog, '-u', 'NONE', '-i', 'NONE', '-N', '--embed'})
+function Screen._init_colors(session)
   local status, rv = session:request('nvim_get_color_map')
   if not status then
-    print('failed to get color map')
-    os.exit(1)
+    error('failed to get color map')
   end
   local colors = rv
   local colornames = {}
@@ -118,24 +114,15 @@ do
     -- this is just a helper to get any canonical name of a color
     colornames[rgb] = name
   end
-  session:close()
   Screen.colors = colors
   Screen.colornames = colornames
 end
 
-function Screen.debug(command)
-  if not command then
-    command = 'pynvim -n -c '
-  end
-  command = command .. request('vim_eval', '$NVIM_LISTEN_ADDRESS')
-  if debug_screen then
-    debug_screen:close()
-  end
-  debug_screen = io.popen(command, 'r')
-  debug_screen:read()
-end
-
 function Screen.new(width, height)
+  if not Screen.colors then
+    Screen._init_colors(get_session())
+  end
+
   if not width then
     width = 53
   end
@@ -179,6 +166,7 @@ function Screen.new(width, height)
     _width = width,
     _height = height,
     _grids = {},
+    _grid_win_extmarks = {},
     _cursor = {
       grid = 1, row = 1, col = 1
     },
@@ -227,7 +215,7 @@ function Screen:attach(options, session)
     -- simplify test code by doing the same.
     self._options.rgb = true
   end
-  if self._options.ext_multigrid or self._options.ext_float then
+  if self._options.ext_multigrid then
     self._options.ext_linegrid = true
   end
 end
@@ -255,7 +243,7 @@ end
 -- canonical order of ext keys, used  to generate asserts
 local ext_keys = {
   'popupmenu', 'cmdline', 'cmdline_block', 'wildmenu_items', 'wildmenu_pos',
-  'messages', 'showmode', 'showcmd', 'ruler', 'float_pos', 'win_viewport'
+  'messages', 'msg_history', 'showmode', 'showcmd', 'ruler', 'float_pos', 'win_viewport'
 }
 
 -- Asserts that the screen state eventually matches an expected state.
@@ -270,7 +258,7 @@ local ext_keys = {
 -- grid:        Expected screen state (string). Each line represents a screen
 --              row. Last character of each row (typically "|") is stripped.
 --              Common indentation is stripped.
---              "{MATCH:x}|" lines are matched against Lua pattern `x`.
+--              "{MATCH:x}" in a line is matched against Lua pattern `x`.
 -- attr_ids:    Expected text attributes. Screen rows are transformed according
 --              to this table, as follows: each substring S composed of
 --              characters having the same attributes will be substituted by
@@ -278,6 +266,8 @@ local ext_keys = {
 --              attributes in the final state are an error.
 --              Use screen:set_default_attr_ids() to define attributes for many
 --              expect() calls.
+-- extmarks:    Expected win_extmarks accumulated for the grids. For each grid,
+--              the win_extmark messages are accumulated into an array.
 -- condition:   Function asserting some arbitrary condition. Return value is
 --              ignored, throw an error (use eq() or similar) to signal failure.
 -- any:         Lua pattern string expected to match a screen line. NB: the
@@ -320,7 +310,7 @@ function Screen:expect(expected, attr_ids, ...)
     assert(not (attr_ids ~= nil))
     local is_key = {grid=true, attr_ids=true, condition=true, mouse_enabled=true,
                     any=true, mode=true, unchanged=true, intermediate=true,
-                    reset=true, timeout=true, request_cb=true, hl_groups=true}
+                    reset=true, timeout=true, request_cb=true, hl_groups=true, extmarks=true}
     for _, v in ipairs(ext_keys) do
       is_key[v] = true
     end
@@ -393,8 +383,20 @@ function Screen:expect(expected, attr_ids, ...)
       end
       for i, row in ipairs(expected_rows) do
         msg_expected_rows[i] = row
-        local m = (row ~= actual_rows[i] and row:match('{MATCH:(.*)}') or nil)
-        if row ~= actual_rows[i] and (not m or not actual_rows[i]:match(m)) then
+        local pat = nil
+        if actual_rows[i] and row ~= actual_rows[i] then
+          local after = row
+          while true do
+            local s, e, m = after:find('{MATCH:(.-)}')
+            if not s then
+              pat = pat and (pat .. pesc(after))
+              break
+            end
+            pat = (pat or '') .. pesc(after:sub(1, s - 1)) .. m
+            after = after:sub(e + 1)
+          end
+        end
+        if row ~= actual_rows[i] and (not pat or not actual_rows[i]:match(pat)) then
           msg_expected_rows[i] = '*' .. msg_expected_rows[i]
           if i <= #actual_rows then
             actual_rows[i] = '*' .. actual_rows[i]
@@ -459,18 +461,41 @@ screen:redraw_debug() to show all intermediate screen states.  ]])
         end
       end
     end
+
+    if expected.extmarks ~= nil then
+      for gridid, expected_marks in pairs(expected.extmarks) do
+        local stored_marks = self._grid_win_extmarks[gridid]
+        if stored_marks == nil then
+          return 'no win_extmark for grid '..tostring(gridid)
+        end
+        local status, res = pcall(eq, expected_marks, stored_marks, "extmarks for grid "..tostring(gridid))
+        if not status then
+          return tostring(res)
+        end
+      end
+      for gridid, _ in pairs(self._grid_win_extmarks) do
+        local expected_marks = expected.extmarks[gridid]
+        if expected_marks == nil then
+          return 'unexpected win_extmark for grid '..tostring(gridid)
+        end
+      end
+    end
   end, expected)
 end
 
-function Screen:expect_unchanged(waittime_ms, ignore_attrs, request_cb)
+function Screen:expect_unchanged(intermediate, waittime_ms, ignore_attrs)
   waittime_ms = waittime_ms and waittime_ms or 100
   -- Collect the current screen state.
-  self:sleep(0, request_cb)
   local kwargs = self:get_snapshot(nil, ignore_attrs)
 
-  -- Check that screen state does not change.
-  kwargs.unchanged = true
+  if intermediate then
+    kwargs.intermediate = true
+  else
+    kwargs.unchanged = true
+  end
+
   kwargs.timeout = waittime_ms
+  -- Check that screen state does not change.
   self:expect(kwargs)
 end
 
@@ -511,7 +536,7 @@ function Screen:_wait(check, flags)
   end
 
   assert(timeout >= minimal_timeout)
-  local did_miminal_timeout = false
+  local did_minimal_timeout = false
 
   local function notification_cb(method, args)
     assert(method == 'redraw', string.format(
@@ -528,30 +553,31 @@ function Screen:_wait(check, flags)
 
     if not err then
       success_seen = true
-      if did_miminal_timeout then
+      if did_minimal_timeout then
         self._session:stop()
       end
     elseif success_seen and #args > 0 then
+      success_seen = false
       failure_after_success = true
       -- print(inspect(args))
     end
 
     return true
   end
-  run_session(self._session, flags.request_cb, notification_cb, nil, minimal_timeout)
+  local eof = run_session(self._session, flags.request_cb, notification_cb, nil, minimal_timeout)
   if not did_flush then
     err = "no flush received"
   elseif not checked then
     err = check()
     if not err and flags.unchanged then
-      -- expecting NO screen change: use a shorter timout
+      -- expecting NO screen change: use a shorter timeout
       success_seen = true
     end
   end
 
-  if not success_seen then
-    did_miminal_timeout = true
-    run_session(self._session, flags.request_cb, notification_cb, nil, timeout-minimal_timeout)
+  if not success_seen and not eof then
+    did_minimal_timeout = true
+    eof = run_session(self._session, flags.request_cb, notification_cb, nil, timeout-minimal_timeout)
   end
 
   local did_warn = false
@@ -576,24 +602,26 @@ to the test if they make sense.
     print([[
 
 warning: Screen changes were received after the expected state. This indicates
-indeterminism in the test. Try adding screen:expect(...) (or wait()) between
-asynchronous (feed(), nvim_input()) and synchronous API calls.
+indeterminism in the test. Try adding screen:expect(...) (or poke_eventloop())
+between asynchronous (feed(), nvim_input()) and synchronous API calls.
   - Use screen:redraw_debug() to investigate; it may find relevant intermediate
     states that should be added to the test to make it more robust.
   - If the purpose of the test is to assert state after some user input sent
     with feed(), adding screen:expect() before the feed() will help to ensure
     the input is sent when Nvim is in a predictable state. This is preferable
-    to wait(), for being closer to real user interaction.
-  - wait() can trigger redraws and consequently generate more indeterminism.
-    Try removing wait().
+    to poke_eventloop(), for being closer to real user interaction.
+  - poke_eventloop() can trigger redraws and thus generate more indeterminism.
+    Try removing poke_eventloop().
       ]])
     did_warn = true
   end
 
 
   if err then
+    if eof then err = err..'\n\n'..eof[2] end
     busted.fail(err, 3)
   elseif did_warn then
+    if eof then print(eof[2]) end
     local tb = debug.traceback()
     local index = string.find(tb, '\n%s*%[C]')
     print(string.sub(tb,1,index))
@@ -703,6 +731,7 @@ function Screen:_reset()
   self.cmdline_block = {}
   self.wildmenu_items = nil
   self.wildmenu_pos = nil
+  self._grid_win_extmarks = {}
 end
 
 function Screen:_handle_mode_info_set(cursor_style_enabled, mode_info)
@@ -758,6 +787,7 @@ end
 
 function Screen:_handle_grid_cursor_goto(grid, row, col)
   self._cursor.grid = grid
+  assert(row >= 0 and col >= 0)
   self._cursor.row = row + 1
   self._cursor.col = col + 1
 end
@@ -773,13 +803,17 @@ function Screen:_handle_win_pos(grid, win, startrow, startcol, width, height)
   self.float_pos[grid] = nil
 end
 
-function Screen:_handle_win_viewport(grid, win, topline, botline, curline, curcol)
+function Screen:_handle_win_viewport(grid, win, topline, botline, curline, curcol, linecount, scroll_delta)
+  -- accumulate scroll delta
+  local last_scroll_delta = self.win_viewport[grid] and self.win_viewport[grid].sum_scroll_delta or 0
   self.win_viewport[grid] = {
     win = win,
     topline = topline,
     botline = botline,
     curline = curline,
-    curcol = curcol
+    curcol = curcol,
+    linecount = linecount,
+    sum_scroll_delta = scroll_delta + last_scroll_delta
   }
 end
 
@@ -800,6 +834,13 @@ end
 
 function Screen:_handle_win_close(grid)
   self.float_pos[grid] = nil
+end
+
+function Screen:_handle_win_extmark(grid, ...)
+  if self._grid_win_extmarks[grid] == nil then
+    self._grid_win_extmarks[grid] = {}
+  end
+  table.insert(self._grid_win_extmarks[grid], {...})
 end
 
 function Screen:_handle_busy_start()
@@ -1066,6 +1107,10 @@ function Screen:_handle_msg_history_show(entries)
   self.msg_history = entries
 end
 
+function Screen:_handle_msg_history_clear()
+  self.msg_history = {}
+end
+
 function Screen:_clear_block(grid, top, bot, left, right)
   for i = top, bot do
     self:_clear_row_section(grid, i, left, right)
@@ -1154,7 +1199,7 @@ function Screen:_extstate_repr(attr_state)
 
   local msg_history = {}
   for i, entry in ipairs(self.msg_history) do
-    messages[i] = {kind=entry[1], content=self:_chunks_repr(entry[2], attr_state)}
+    msg_history[i] = {kind=entry[1], content=self:_chunks_repr(entry[2], attr_state)}
   end
 
   local win_viewport = (next(self.win_viewport) and self.win_viewport) or nil
@@ -1306,7 +1351,7 @@ local function fmt_ext_state(name, state)
     for k,v in pairs(state) do
       str = (str.."  ["..k.."] = {win = {id = "..v.win.id.."}, topline = "
              ..v.topline..", botline = "..v.botline..", curline = "..v.curline
-             ..", curcol = "..v.curcol.."};\n")
+             ..", curcol = "..v.curcol..", linecount = "..v.linecount..", sum_scroll_delta = "..v.sum_scroll_delta.."};\n")
     end
     return str .. "}"
   elseif name == "float_pos" then
@@ -1526,7 +1571,8 @@ function Screen:_get_attr_id(attr_state, attrs, hl_id)
       attr_state.modified = true
       return id
     end
-    return "UNEXPECTED "..self:_pprint_attrs(self._attr_table[hl_id][1])
+    local kind = self._options.rgb and 1 or 2
+    return "UNEXPECTED "..self:_pprint_attrs(self._attr_table[hl_id][kind])
   else
     if self:_equal_attrs(attrs, {}) then
       -- ignore this attrs
@@ -1559,9 +1605,10 @@ end
 function Screen:_equal_attrs(a, b)
     return a.bold == b.bold and a.standout == b.standout and
        a.underline == b.underline and a.undercurl == b.undercurl and
-       a.italic == b.italic and a.reverse == b.reverse and
-       a.foreground == b.foreground and a.background == b.background and
-       a.special == b.special and a.blend == b.blend and
+       a.underdouble == b.underdouble and a.underdotted == b.underdotted and
+       a.underdashed == b.underdashed and a.italic == b.italic and
+       a.reverse == b.reverse and a.foreground == b.foreground and
+       a.background == b.background and a.special == b.special and a.blend == b.blend and
        a.strikethrough == b.strikethrough and
        a.fg_indexed == b.fg_indexed and a.bg_indexed == b.bg_indexed
 end

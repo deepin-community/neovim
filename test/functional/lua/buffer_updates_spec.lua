@@ -1,6 +1,6 @@
 -- Test suite for testing interactions with API bindings
 local helpers = require('test.functional.helpers')(after_each)
-local lfs = require('lfs')
+local luv = require('luv')
 
 local command = helpers.command
 local meths = helpers.meths
@@ -111,6 +111,24 @@ describe('lua buffer event callbacks: on_lines', function()
 
     -- plugins can opt in to receive changedtick events, or choose
     -- to only receive actual changes.
+    check_events {
+      { "test1", "lines", 1, tick, 3, 4, 5, 13 };
+      { "test2", "lines", 1, tick, 3, 4, 5, 13 };
+      { "test2", "changedtick", 1, tick+1 };
+    }
+    tick = tick + 1
+
+    tick = tick + 1
+    command('redo')
+    check_events {
+      { "test1", "lines", 1, tick, 3, 5, 4, 32 };
+      { "test2", "lines", 1, tick, 3, 5, 4, 32 };
+      { "test2", "changedtick", 1, tick+1 };
+    }
+    tick = tick + 1
+
+    tick = tick + 1
+    command('undo!')
     check_events {
       { "test1", "lines", 1, tick, 3, 4, 5, 13 };
       { "test2", "lines", 1, tick, 3, 4, 5, 13 };
@@ -252,9 +270,8 @@ describe('lua buffer event callbacks: on_lines', function()
     eq(2, meths.win_get_cursor(0)[1])
   end)
 
-  it('does not SEGFAULT when calling win_findbuf in on_detach', function()
-
-    exec_lua[[
+  it('does not SEGFAULT when accessing window buffer info in on_detach #14998', function()
+    local code = [[
       local buf = vim.api.nvim_create_buf(false, false)
 
       vim.cmd"split"
@@ -262,12 +279,18 @@ describe('lua buffer event callbacks: on_lines', function()
 
       vim.api.nvim_buf_attach(buf, false, {
         on_detach = function(_, buf)
+          vim.fn.tabpagebuflist()
           vim.fn.win_findbuf(buf)
         end
       })
     ]]
 
+    exec_lua(code)
     command("q!")
+    helpers.assert_alive()
+
+    exec_lua(code)
+    command("bd!")
     helpers.assert_alive()
   end)
 
@@ -294,7 +317,18 @@ describe('lua buffer event callbacks: on_lines', function()
     feed('1G0')
     feed('P')
     eq(meths.get_var('linesev'), { "lines", 1, 6, 0, 3, 3, 9 })
+  end)
 
+  it('calling nvim_buf_call() from callback does not cause Normal mode CTRL-A to misbehave #16729', function()
+    exec_lua([[
+      vim.api.nvim_buf_attach(0, false, {
+        on_lines = function(...)
+          vim.api.nvim_buf_call(0, function() end)
+        end,
+      })
+    ]])
+    feed('itest123<Esc><C-A>')
+    eq('test124', meths.get_current_line())
   end)
 end)
 
@@ -310,7 +344,7 @@ describe('lua: nvim_buf_attach on_bytes', function()
       start_txt = meths.buf_get_lines(0, 0, -1, true)
     end
     local shadowbytes = table.concat(start_txt, '\n') .. '\n'
-    -- TODO: while we are brewing the real strong coffe,
+    -- TODO: while we are brewing the real strong coffee,
     -- verify should check buf_get_offset after every check_events
     if verify then
       local len = meths.buf_get_offset(0, meths.buf_line_count(0))
@@ -612,7 +646,15 @@ describe('lua: nvim_buf_attach on_bytes', function()
       }
 
       feed("<esc>")
-      -- replacing with escaped characters
+      -- replacing with expression register
+      feed([[:%s/b/\=5+5]])
+      check_events {
+        { "test1", "bytes", 1, 3, 0, 1, 1, 0, 1, 1, 0, 2, 2 };
+        { "test1", "bytes", 1, 5, 0, 1, 1, 0, 2, 2, 0, 1, 1 };
+      }
+
+      feed("<esc>")
+      -- replacing with backslash
       feed([[:%s/b/\\]])
       check_events {
         { "test1", "bytes", 1, 3, 0, 1, 1, 0, 1, 1, 0, 1, 1 };
@@ -620,8 +662,24 @@ describe('lua: nvim_buf_attach on_bytes', function()
       }
 
       feed("<esc>")
-      -- replacing with expression register
-      feed([[:%s/b/\=5+5]])
+      -- replacing with backslash from expression register
+      feed([[:%s/b/\='\']])
+      check_events {
+        { "test1", "bytes", 1, 3, 0, 1, 1, 0, 1, 1, 0, 1, 1 };
+        { "test1", "bytes", 1, 5, 0, 1, 1, 0, 1, 1, 0, 1, 1 };
+      }
+
+      feed("<esc>")
+      -- replacing with backslash followed by another character
+      feed([[:%s/b/\\!]])
+      check_events {
+        { "test1", "bytes", 1, 3, 0, 1, 1, 0, 1, 1, 0, 2, 2 };
+        { "test1", "bytes", 1, 5, 0, 1, 1, 0, 2, 2, 0, 1, 1 };
+      }
+
+      feed("<esc>")
+      -- replacing with backslash followed by another character from expression register
+      feed([[:%s/b/\='\!']])
       check_events {
         { "test1", "bytes", 1, 3, 0, 1, 1, 0, 1, 1, 0, 2, 2 };
         { "test1", "bytes", 1, 5, 0, 1, 1, 0, 2, 2, 0, 1, 1 };
@@ -696,7 +754,8 @@ describe('lua: nvim_buf_attach on_bytes', function()
       write_file("Xtest-reload", dedent [[
         old line 1
         old line 2]])
-      lfs.touch("Xtest-reload", os.time() - 10)
+      local atime = os.time() - 10
+      luv.fs_utime("Xtest-reload", atime, atime)
       command "e Xtest-reload"
       command "set autoread"
 
@@ -978,6 +1037,22 @@ describe('lua: nvim_buf_attach on_bytes', function()
       }
     end)
 
+    it("visual paste", function()
+      local check_events= setup_eventcheck(verify, { "aaa {", "b", "}" })
+      -- Setting up
+      feed[[jdd]]
+      check_events {
+        { "test1", "bytes", 1, 3, 1, 0, 6, 1, 0, 2, 0, 0, 0 };
+      }
+
+      -- Actually testing
+      feed[[v%p]]
+      check_events {
+        { "test1", "bytes", 1, 8, 0, 4, 4, 1, 1, 3, 0, 0, 0 };
+        { "test1", "bytes", 1, 8, 0, 4, 4, 0, 0, 0, 2, 0, 3 };
+      }
+    end)
+
     it("nvim_buf_set_lines", function()
       local check_events = setup_eventcheck(verify, {"AAA", "BBB"})
 
@@ -1033,6 +1108,130 @@ describe('lua: nvim_buf_attach on_bytes', function()
         { "test1", "bytes", 1, 5, 0, 0, 0, 1, 0, 8, 0, 0, 0 };
       }
     end)
+
+    it("sends updates on U", function()
+      feed("ggiAAA<cr>BBB")
+      feed("<esc>gg$a CCC")
+
+      local check_events = setup_eventcheck(verify, nil)
+
+      feed("ggU")
+
+      check_events {
+         { "test1", "bytes", 1, 6, 0, 7, 7, 0, 0, 0, 0, 3, 3 };
+      }
+    end)
+
+    it("delete in completely empty buffer", function()
+      local check_events = setup_eventcheck(verify, nil)
+
+      command "delete"
+      check_events { }
+    end)
+
+    it("delete the only line of a buffer", function()
+      local check_events = setup_eventcheck(verify, {"AAA"})
+
+      command "delete"
+      check_events {
+        { "test1", "bytes", 1, 3, 0, 0, 0, 1, 0, 4, 1, 0, 1 };
+      }
+    end)
+
+    it("delete the last line of a buffer with two lines", function()
+      local check_events = setup_eventcheck(verify, {"AAA", "BBB"})
+
+      command "2delete"
+      check_events {
+        { "test1", "bytes", 1, 3, 1, 0, 4, 1, 0, 4, 0, 0, 0 };
+      }
+    end)
+
+    it(":sort lines", function()
+      local check_events = setup_eventcheck(verify, {"CCC", "BBB", "AAA"})
+
+      command "%sort"
+      check_events {
+        { "test1", "bytes", 1, 3, 0, 0, 0, 3, 0, 12, 3, 0, 12 };
+      }
+    end)
+
+    it("handles already sorted lines", function()
+      local check_events = setup_eventcheck(verify, {"AAA", "BBB", "CCC"})
+
+      command "%sort"
+      check_events { }
+    end)
+
+    it("works with accepting spell suggestions", function()
+      local check_events = setup_eventcheck(verify, {"hallo"})
+
+      feed("gg0z=4<cr><cr>") -- accepts 'Hello'
+      check_events {
+        { "test1", "bytes", 1, 3, 0, 0, 0, 0, 2, 2, 0, 2, 2 };
+      }
+    end)
+
+    it('works with :diffput and :diffget', function()
+      local check_events = setup_eventcheck(verify, {"AAA"})
+      command('diffthis')
+      command('new')
+      command('diffthis')
+      meths.buf_set_lines(0, 0, -1, true, {"AAA", "BBB"})
+      feed('G')
+      command('diffput')
+      check_events {
+        { "test1", "bytes", 1, 3, 1, 0, 4, 0, 0, 0, 1, 0, 4 };
+      }
+      meths.buf_set_lines(0, 0, -1, true, {"AAA", "CCC"})
+      feed('<C-w>pG')
+      command('diffget')
+      check_events {
+        { "test1", "bytes", 1, 4, 1, 0, 4, 1, 0, 4, 1, 0, 4 };
+      }
+    end)
+
+    local function test_lockmarks(mode)
+      local description = (mode ~= "") and mode or "(baseline)"
+      it("test_lockmarks " .. description .. " %delete _", function()
+        local check_events = setup_eventcheck(verify, {"AAA", "BBB", "CCC"})
+
+        command(mode .. " %delete _")
+        check_events {
+          { "test1", "bytes", 1, 3, 0, 0, 0, 3, 0, 12, 1, 0, 1 };
+        }
+      end)
+
+      it("test_lockmarks " .. description .. " append()", function()
+        local check_events = setup_eventcheck(verify)
+
+        command(mode .. " call append(0, 'CCC')")
+        check_events {
+          { "test1", "bytes", 1, 2, 0, 0, 0, 0, 0, 0, 1, 0, 4 };
+        }
+
+        command(mode .. " call append(1, 'BBBB')")
+        check_events {
+          { "test1", "bytes", 1, 3, 1, 0, 4, 0, 0, 0, 1, 0, 5 };
+        }
+
+        command(mode .. " call append(2, '')")
+        check_events {
+          { "test1", "bytes", 1, 4, 2, 0, 9, 0, 0, 0, 1, 0, 1 };
+        }
+
+        command(mode .. " $delete _")
+        check_events {
+          { "test1", "bytes", 1, 5, 3, 0, 10, 1, 0, 1, 0, 0, 0 };
+        }
+
+        eq("CCC|BBBB|", table.concat(meths.buf_get_lines(0, 0, -1, true), "|"))
+      end)
+    end
+
+    -- check that behavior is identical with and without "lockmarks"
+    test_lockmarks ""
+    test_lockmarks "lockmarks"
 
     teardown(function()
       os.remove "Xtest-reload"

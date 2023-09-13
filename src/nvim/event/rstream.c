@@ -2,19 +2,19 @@
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
 #include <assert.h>
-#include <stdint.h>
 #include <stdbool.h>
-#include <stdlib.h>
-
+#include <stddef.h>
+#include <stdint.h>
 #include <uv.h>
 
-#include "nvim/event/rstream.h"
-#include "nvim/ascii.h"
-#include "nvim/vim.h"
-#include "nvim/memory.h"
-#include "nvim/log.h"
-#include "nvim/misc1.h"
 #include "nvim/event/loop.h"
+#include "nvim/event/rstream.h"
+#include "nvim/event/stream.h"
+#include "nvim/log.h"
+#include "nvim/macros.h"
+#include "nvim/main.h"
+#include "nvim/os/os_defs.h"
+#include "nvim/rbuffer.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "event/rstream.c.generated.h"
@@ -42,7 +42,6 @@ void rstream_init(Stream *stream, size_t bufsize)
   stream->buffer->full_cb = on_rbuffer_full;
   stream->buffer->nonfull_cb = on_rbuffer_nonfull;
 }
-
 
 /// Starts watching for events from a `Stream` instance.
 ///
@@ -86,7 +85,7 @@ static void on_rbuffer_nonfull(RBuffer *buf, void *data)
 
 // Callbacks used by libuv
 
-// Called by libuv to allocate memory for reading.
+/// Called by libuv to allocate memory for reading.
 static void alloc_cb(uv_handle_t *handle, size_t suggested, uv_buf_t *buf)
 {
   Stream *stream = handle->data;
@@ -96,9 +95,9 @@ static void alloc_cb(uv_handle_t *handle, size_t suggested, uv_buf_t *buf)
   buf->len = UV_BUF_LEN(write_count);
 }
 
-// Callback invoked by libuv after it copies the data into the buffer provided
-// by `alloc_cb`. This is also called on EOF or when `alloc_cb` returns a
-// 0-length buffer.
+/// Callback invoked by libuv after it copies the data into the buffer provided
+/// by `alloc_cb`. This is also called on EOF or when `alloc_cb` returns a
+/// 0-length buffer.
 static void read_cb(uv_stream_t *uvstream, ssize_t cnt, const uv_buf_t *buf)
 {
   Stream *stream = uvstream->data;
@@ -135,11 +134,11 @@ static void read_cb(uv_stream_t *uvstream, ssize_t cnt, const uv_buf_t *buf)
   invoke_read_cb(stream, nread, false);
 }
 
-// Called by the by the 'idle' handle to emulate a reading event
-//
-// Idle callbacks are invoked once per event loop:
-//  - to perform some very low priority activity.
-//  - to keep the loop "alive" (so there is always an event to process)
+/// Called by the by the 'idle' handle to emulate a reading event
+///
+/// Idle callbacks are invoked once per event loop:
+///  - to perform some very low priority activity.
+///  - to keep the loop "alive" (so there is always an event to process)
 static void fread_idle_cb(uv_idle_t *handle)
 {
   uv_fs_t req;
@@ -156,18 +155,17 @@ static void fread_idle_cb(uv_idle_t *handle)
   uintmax_t fpos_intmax = stream->fpos;
   if (fpos_intmax > INT64_MAX) {
     ELOG("stream offset overflow");
-    preserve_exit();
+    preserve_exit("stream offset overflow");
   }
 
   // Synchronous read
-  uv_fs_read(
-      handle->loop,
-      &req,
-      stream->fd,
-      &stream->uvbuf,
-      1,
-      (int64_t) stream->fpos,
-      NULL);
+  uv_fs_read(handle->loop,
+             &req,
+             stream->fd,
+             &stream->uvbuf,
+             1,
+             (int64_t)stream->fpos,
+             NULL);
 
   uv_fs_req_cleanup(&req);
 
@@ -178,7 +176,7 @@ static void fread_idle_cb(uv_idle_t *handle)
   }
 
   // no errors (req.result (ssize_t) is positive), it's safe to cast.
-  size_t nread = (size_t) req.result;
+  size_t nread = (size_t)req.result;
   rbuffer_produced(stream->buffer, nread);
   stream->fpos += nread;
   invoke_read_cb(stream, nread, false);

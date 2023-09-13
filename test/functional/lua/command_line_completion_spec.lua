@@ -5,7 +5,7 @@ local eq = helpers.eq
 local exec_lua = helpers.exec_lua
 
 local get_completions = function(input, env)
-  return exec_lua("return {vim._expand_pat(...)}", '^' .. input, env)
+  return exec_lua("return {vim._expand_pat(...)}", input, env)
 end
 
 local get_compl_parts = function(parts)
@@ -104,6 +104,17 @@ describe('nlua_expand_pat', function()
         }
       })
     )
+  end)
+
+  it('should work with lazy submodules of "vim" global', function()
+    eq({{ 'inspect', 'inspect_pos' }, 4 },
+       get_completions('vim.inspec'))
+
+    eq({{ 'treesitter' }, 4 },
+       get_completions('vim.treesi'))
+
+    eq({{ 'set' }, 11 },
+       get_completions('vim.keymap.se'))
   end)
 
   it('should be able to interpolate globals', function()

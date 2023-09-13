@@ -7,7 +7,7 @@ The Ruby Interface to Vim				*if_ruby* *ruby* *Ruby*
 
 			*E266* *E267* *E268* *E269* *E270* *E271* *E272* *E273*
 
-The home page for ruby is http://www.ruby-lang.org/.  You can find links for
+The home page for ruby is https://www.ruby-lang.org/.  You can find links for
 downloading Ruby there.
 
                                       Type |gO| to see the table of contents.
@@ -31,10 +31,6 @@ downloading Ruby there.
 
 			This form of the |:ruby| command is mainly useful for
 			including ruby code in vim scripts.
-
-			Note: This command doesn't work when the Ruby feature
-			wasn't compiled in.  To avoid errors, see
-			|script-here|.
 
 Example Vim script: >
 

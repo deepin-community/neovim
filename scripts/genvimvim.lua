@@ -1,4 +1,4 @@
-mpack = require('mpack')
+local mpack = require('mpack')
 
 if arg[1] == '--help' then
   print('Usage: lua genvimvim.lua src/nvim runtime/syntax/vim/generated.vim')
@@ -10,6 +10,8 @@ local syntax_file = arg[2]
 local funcs_file = arg[3]
 
 package.path = nvimsrcdir .. '/?.lua;' .. package.path
+
+_G.vim = loadfile(nvimsrcdir..'/../../runtime/lua/vim/shared.lua')()
 
 local lld = {}
 local syn_fd = io.open(syntax_file, 'w')
@@ -44,15 +46,17 @@ local function cmd_kw(prev_cmd, cmd)
 end
 
 -- Exclude these from the vimCommand keyword list, they are handled specially
--- in syntax/vim.vim (vimAugroupKey, vimAutoCmd). #9327
-local function is_autocmd_cmd(cmd)
+-- in syntax/vim.vim (vimAugroupKey, vimAutoCmd, vimGlobal, vimSubst). #9327
+local function is_special_cased_cmd(cmd)
   return (cmd == 'augroup'
           or cmd == 'autocmd'
           or cmd == 'doautocmd'
-          or cmd == 'doautoall')
+          or cmd == 'doautoall'
+          or cmd == 'global'
+          or cmd == 'substitute')
 end
 
-vimcmd_start = 'syn keyword vimCommand contained '
+local vimcmd_start = 'syn keyword vimCommand contained '
 w(vimcmd_start)
 local prev_cmd = nil
 for _, cmd_desc in ipairs(ex_cmds.cmds) do
@@ -60,7 +64,7 @@ for _, cmd_desc in ipairs(ex_cmds.cmds) do
     w('\n' .. vimcmd_start)
   end
   local cmd = cmd_desc.command
-  if cmd:match('%w') and cmd ~= 'z' and not is_autocmd_cmd(cmd) then
+  if cmd:match('%w') and cmd ~= 'z' and not is_special_cased_cmd(cmd) then
     w(' ' .. cmd_kw(prev_cmd, cmd))
   end
   prev_cmd = cmd
@@ -113,7 +117,7 @@ end
 local nvimau_start = 'syn keyword nvimAutoEvent contained '
 w('\n\n' .. nvimau_start)
 
-for au, _ in pairs(auevents.nvim_specific) do
+for au, _ in vim.spairs(auevents.nvim_specific) do
   if lld.line_length > 850 then
     w('\n' .. nvimau_start)
   end
@@ -123,9 +127,8 @@ end
 w('\n\nsyn case match')
 local vimfun_start = 'syn keyword vimFuncName contained '
 w('\n\n' .. vimfun_start)
-funcs = mpack.unpack(io.open(funcs_file, 'rb'):read("*all"))
-local started = 0
-for name, def in pairs(funcs) do
+local funcs = mpack.unpack(io.open(funcs_file, 'rb'):read("*all"))
+for _, name in ipairs(funcs) do
   if name then
     if lld.line_length > 850 then
       w('\n' .. vimfun_start)

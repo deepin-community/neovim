@@ -20,9 +20,9 @@
 // is 8 bytes we could use something smaller, but what?
 typedef int idx_T;
 
-# define SPL_FNAME_TMPL  "%s.%s.spl"
-# define SPL_FNAME_ADD   ".add."
-# define SPL_FNAME_ASCII ".ascii."
+#define SPL_FNAME_TMPL  "%s.%s.spl"
+#define SPL_FNAME_ADD   ".add."
+#define SPL_FNAME_ASCII ".ascii."
 
 // Flags used for a word.  Only the lowest byte can be used, the region byte
 // comes above it.
@@ -34,6 +34,8 @@ typedef int idx_T;
 #define WF_AFX      0x20        // affix ID follows
 #define WF_FIXCAP   0x40        // keep-case word, allcap not allowed
 #define WF_KEEPCAP  0x80        // keep-case word
+
+#define WF_CAPMASK (WF_ONECAP | WF_ALLCAP | WF_KEEPCAP | WF_FIXCAP)
 
 // for <flags2>, shifted up one byte to be used in wn_flags
 #define WF_HAS_AFF  0x0100      // word includes affix
@@ -60,7 +62,6 @@ typedef int idx_T;
 #define WF_PFX_COMPFORBID (WFP_COMPFORBID << 24)  // postponed prefix with
                                                   // COMPOUNDFORBIDFLAG
 
-
 // flags for <compoptions>
 #define COMP_CHECKDUP           1       // CHECKCOMPOUNDDUP
 #define COMP_CHECKREP           2       // CHECKCOMPOUNDREP
@@ -71,31 +72,31 @@ typedef int idx_T;
 // si_repsal, sl_rep, and si_sal.  Not for sl_sal!
 // One replacement: from "ft_from" to "ft_to".
 typedef struct fromto_S {
-  char_u      *ft_from;
-  char_u      *ft_to;
+  char *ft_from;
+  char *ft_to;
 } fromto_T;
 
 // Info from "SAL" entries in ".aff" file used in sl_sal.
 // The info is split for quick processing by spell_soundfold().
 // Note that "sm_oneof" and "sm_rules" point into sm_lead.
 typedef struct salitem_S {
-  char_u      *sm_lead;         // leading letters
-  int sm_leadlen;               // length of "sm_lead"
-  char_u      *sm_oneof;        // letters from () or NULL
-  char_u      *sm_rules;        // rules like ^, $, priority
-  char_u      *sm_to;           // replacement.
-  int         *sm_lead_w;       // wide character copy of "sm_lead"
-  int         *sm_oneof_w;      // wide character copy of "sm_oneof"
-  int         *sm_to_w;         // wide character copy of "sm_to"
+  char *sm_lead;        // leading letters
+  int sm_leadlen;       // length of "sm_lead"
+  char *sm_oneof;       // letters from () or NULL
+  char *sm_rules;       // rules like ^, $, priority
+  char *sm_to;          // replacement.
+  int *sm_lead_w;       // wide character copy of "sm_lead"
+  int *sm_oneof_w;      // wide character copy of "sm_oneof"
+  int *sm_to_w;         // wide character copy of "sm_to"
 } salitem_T;
 
 typedef int salfirst_T;
 
 // Values for SP_*ERROR are negative, positive values are used by
 // read_cnt_string().
-#define SP_TRUNCERROR   -1      // spell file truncated error
-#define SP_FORMERROR    -2      // format error in spell file
-#define SP_OTHERERROR   -3      // other error while reading spell file
+#define SP_TRUNCERROR   (-1)    // spell file truncated error
+#define SP_FORMERROR    (-2)    // format error in spell file
+#define SP_OTHERERROR   (-3)    // other error while reading spell file
 
 // Structure used to store words and other info for one language, loaded from
 // a .spl file.
@@ -113,25 +114,25 @@ typedef int salfirst_T;
 typedef struct slang_S slang_T;
 
 struct slang_S {
-  slang_T     *sl_next;         // next language
-  char_u      *sl_name;         // language name "en", "en.rare", "nl", etc.
-  char_u      *sl_fname;        // name of .spl file
-  bool sl_add;                  // true if it's a .add file.
+  slang_T *sl_next;         // next language
+  char *sl_name;            // language name "en", "en.rare", "nl", etc.
+  char *sl_fname;           // name of .spl file
+  bool sl_add;              // true if it's a .add file.
 
-  char_u      *sl_fbyts;        // case-folded word bytes
-  long        sl_fbyts_len;     // length of sl_fbyts
-  idx_T       *sl_fidxs;        // case-folded word indexes
-  char_u      *sl_kbyts;        // keep-case word bytes
-  idx_T       *sl_kidxs;        // keep-case word indexes
-  char_u      *sl_pbyts;        // prefix tree word bytes
-  idx_T       *sl_pidxs;        // prefix tree word indexes
+  uint8_t *sl_fbyts;        // case-folded word bytes
+  long sl_fbyts_len;        // length of sl_fbyts
+  idx_T *sl_fidxs;          // case-folded word indexes
+  uint8_t *sl_kbyts;        // keep-case word bytes
+  idx_T *sl_kidxs;          // keep-case word indexes
+  uint8_t *sl_pbyts;        // prefix tree word bytes
+  idx_T *sl_pidxs;          // prefix tree word indexes
 
-  char_u      *sl_info;         // infotext string or NULL
+  char *sl_info;            // infotext string or NULL
 
-  char_u sl_regions[MAXREGIONS * 2 + 1];
-                                // table with up to 8 region names plus NUL
+  char sl_regions[MAXREGIONS * 2 + 1];
+  // table with up to 8 region names plus NUL
 
-  char_u      *sl_midword;      // MIDWORD string or NULL
+  char *sl_midword;             // MIDWORD string or NULL
 
   hashtab_T sl_wordcount;       // hashtable with word count, wordcount_T
 
@@ -140,17 +141,17 @@ struct slang_S {
   int sl_compsylmax;            // COMPOUNDSYLMAX (default: MAXWLEN)
   int sl_compoptions;           // COMP_* flags
   garray_T sl_comppat;          // CHECKCOMPOUNDPATTERN items
-  regprog_T   *sl_compprog;     // COMPOUNDRULE turned into a regexp progrm
+  regprog_T *sl_compprog;       // COMPOUNDRULE turned into a regexp progrm
                                 // (NULL when no compounding)
-  char_u      *sl_comprules;    // all COMPOUNDRULE concatenated (or NULL)
-  char_u      *sl_compstartflags;   // flags for first compound word
-  char_u      *sl_compallflags;   // all flags for compound words
+  uint8_t *sl_comprules;        // all COMPOUNDRULE concatenated (or NULL)
+  uint8_t *sl_compstartflags;   // flags for first compound word
+  uint8_t *sl_compallflags;     // all flags for compound words
   bool sl_nobreak;              // When true: no spaces between words
-  char_u      *sl_syllable;     // SYLLABLE repeatable chars or NULL
+  char *sl_syllable;            // SYLLABLE repeatable chars or NULL
   garray_T sl_syl_items;        // syllable items
 
   int sl_prefixcnt;             // number of items in "sl_prefprog"
-  regprog_T   **sl_prefprog;    // table with regprogs for prefixes
+  regprog_T **sl_prefprog;    // table with regprogs for prefixes
 
   garray_T sl_rep;              // list of fromto_T entries from REP lines
   int16_t sl_rep_first[256];        // indexes where byte first appears, -1 if
@@ -171,9 +172,9 @@ struct slang_S {
 
   // Info from the .sug file.  Loaded on demand.
   time_t sl_sugtime;            // timestamp for .sug file
-  char_u      *sl_sbyts;        // soundfolded word bytes
-  idx_T       *sl_sidxs;        // soundfolded word indexes
-  buf_T       *sl_sugbuf;       // buffer with word number table
+  uint8_t *sl_sbyts;      // soundfolded word bytes
+  idx_T *sl_sidxs;        // soundfolded word indexes
+  buf_T *sl_sugbuf;       // buffer with word number table
   bool sl_sugloaded;            // true when .sug file was loaded or failed to
                                 // load
 
@@ -186,9 +187,9 @@ struct slang_S {
 
 // Structure used in "b_langp", filled from 'spelllang'.
 typedef struct langp_S {
-  slang_T     *lp_slang;        // info for this language
-  slang_T     *lp_sallang;      // language used for sound folding or NULL
-  slang_T     *lp_replang;      // language used for REP items or NULL
+  slang_T *lp_slang;        // info for this language
+  slang_T *lp_sallang;      // language used for sound folding or NULL
+  slang_T *lp_replang;      // language used for REP items or NULL
   int lp_region;                // bitmask for region or REGION_ALL
 } langp_T;
 
@@ -205,59 +206,9 @@ typedef struct langp_S {
 typedef struct {
   bool st_isw[256];           // flags: is word char
   bool st_isu[256];           // flags: is uppercase char
-  char_u st_fold[256];        // chars: folded case
-  char_u st_upper[256];       // chars: upper case
+  uint8_t st_fold[256];        // chars: folded case
+  uint8_t st_upper[256];       // chars: upper case
 } spelltab_T;
-
-// For finding suggestions: At each node in the tree these states are tried:
-typedef enum {
-  STATE_START = 0,      // At start of node check for NUL bytes (goodword
-                        // ends); if badword ends there is a match, otherwise
-                        // try splitting word.
-  STATE_NOPREFIX,       // try without prefix
-  STATE_SPLITUNDO,      // Undo splitting.
-  STATE_ENDNUL,         // Past NUL bytes at start of the node.
-  STATE_PLAIN,          // Use each byte of the node.
-  STATE_DEL,            // Delete a byte from the bad word.
-  STATE_INS_PREP,       // Prepare for inserting bytes.
-  STATE_INS,            // Insert a byte in the bad word.
-  STATE_SWAP,           // Swap two bytes.
-  STATE_UNSWAP,         // Undo swap two characters.
-  STATE_SWAP3,          // Swap two characters over three.
-  STATE_UNSWAP3,        // Undo Swap two characters over three.
-  STATE_UNROT3L,        // Undo rotate three characters left
-  STATE_UNROT3R,        // Undo rotate three characters right
-  STATE_REP_INI,        // Prepare for using REP items.
-  STATE_REP,            // Use matching REP items from the .aff file.
-  STATE_REP_UNDO,       // Undo a REP item replacement.
-  STATE_FINAL           // End of this node.
-} state_T;
-
-// Struct to keep the state at each level in suggest_try_change().
-typedef struct trystate_S {
-  state_T ts_state;             // state at this level, STATE_
-  int ts_score;                 // score
-  idx_T ts_arridx;              // index in tree array, start of node
-  short ts_curi;                // index in list of child nodes
-  char_u ts_fidx;               // index in fword[], case-folded bad word
-  char_u ts_fidxtry;            // ts_fidx at which bytes may be changed
-  char_u ts_twordlen;           // valid length of tword[]
-  char_u ts_prefixdepth;        // stack depth for end of prefix or
-                                // PFD_PREFIXTREE or PFD_NOPREFIX
-  char_u ts_flags;              // TSF_ flags
-  char_u ts_tcharlen;           // number of bytes in tword character
-  char_u ts_tcharidx;           // current byte index in tword character
-  char_u ts_isdiff;             // DIFF_ values
-  char_u ts_fcharstart;         // index in fword where badword char started
-  char_u ts_prewordlen;         // length of word in "preword[]"
-  char_u ts_splitoff;           // index in "tword" after last split
-  char_u ts_splitfidx;          // "ts_fidx" at word split
-  char_u ts_complen;            // nr of compound words used
-  char_u ts_compsplit;          // index for "compflags" where word was spit
-  char_u ts_save_badflags;      // su_badflags saved here
-  char_u ts_delidx;             // index in fword for char that was deleted,
-                                // valid when "ts_flags" has TSF_DIDDEL
-} trystate_T;
 
 // Use our own character-case definitions, because the current locale may
 // differ from what the .spl file uses.
@@ -267,8 +218,7 @@ typedef struct trystate_S {
 // the "w" library function for characters above 255.
 #define SPELL_TOFOLD(c) ((c) >= 128 ? utf_fold(c) : (int)spelltab.st_fold[c])
 
-#define SPELL_TOUPPER(c) ((c) >= 128 ? mb_toupper(c) \
-                          : (int)spelltab.st_upper[c])
+#define SPELL_TOUPPER(c) ((c) >= 128 ? mb_toupper(c) : (int)spelltab.st_upper[c])
 
 #define SPELL_ISUPPER(c) ((c) >= 128 ? mb_isupper(c) : spelltab.st_isu[c])
 
@@ -277,7 +227,7 @@ typedef struct trystate_S {
 extern slang_T *first_lang;
 
 // file used for "zG" and "zW"
-extern char_u *int_wordlist;
+extern char *int_wordlist;
 
 extern spelltab_T spelltab;
 extern int did_set_spelltab;
@@ -290,5 +240,18 @@ typedef enum {
   SPELL_ADD_BAD = 1,
   SPELL_ADD_RARE = 2,
 } SpellAddType;
+
+typedef struct wordcount_S {
+  uint16_t wc_count;                ///< nr of times word was seen
+  char wc_word[];                   ///< word
+} wordcount_T;
+
+#define WC_KEY_OFF   offsetof(wordcount_T, wc_word)
+#define HI2WC(hi)    ((wordcount_T *)((hi)->hi_key - WC_KEY_OFF))
+#define MAXWORDCOUNT 0xffff
+
+// Remember what "z?" replaced.
+extern char *repl_from;
+extern char *repl_to;
 
 #endif  // NVIM_SPELL_DEFS_H

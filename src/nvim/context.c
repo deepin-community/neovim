@@ -3,13 +3,29 @@
 
 // Context: snapshot of the entire editor state as one big object/map
 
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "nvim/api/private/converter.h"
+#include "nvim/api/private/defs.h"
+#include "nvim/api/private/helpers.h"
+#include "nvim/api/vimscript.h"
 #include "nvim/context.h"
 #include "nvim/eval/encode.h"
+#include "nvim/eval/typval.h"
+#include "nvim/eval/typval_defs.h"
+#include "nvim/eval/userfunc.h"
 #include "nvim/ex_docmd.h"
+#include "nvim/gettext.h"
+#include "nvim/hashtab.h"
+#include "nvim/keycodes.h"
+#include "nvim/memory.h"
+#include "nvim/message.h"
 #include "nvim/option.h"
 #include "nvim/shada.h"
-#include "nvim/api/vim.h"
-#include "nvim/api/private/helpers.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "context.c.generated.h"
@@ -31,6 +47,7 @@ void ctx_free_all(void)
 
 /// Returns the size of the context stack.
 size_t ctx_size(void)
+  FUNC_ATTR_PURE
 {
   return kv_size(ctx_stack);
 }
@@ -38,6 +55,7 @@ size_t ctx_size(void)
 /// Returns pointer to Context object with given zero-based index from the top
 /// of context stack or NULL if index is out of bounds.
 Context *ctx_get(size_t index)
+  FUNC_ATTR_PURE
 {
   if (index < kv_size(ctx_stack)) {
     return &kv_Z(ctx_stack, index);
@@ -125,8 +143,8 @@ bool ctx_restore(Context *ctx, const int flags)
     free_ctx = true;
   }
 
-  char_u *op_shada;
-  get_option_value("shada", NULL, &op_shada, OPT_GLOBAL);
+  char *op_shada;
+  get_option_value("shada", NULL, &op_shada, NULL, OPT_GLOBAL);
   set_option_value("shada", 0L, "!,'100,%", OPT_GLOBAL);
 
   if (flags & kCtxRegs) {
@@ -153,7 +171,7 @@ bool ctx_restore(Context *ctx, const int flags)
     ctx_free(ctx);
   }
 
-  set_option_value("shada", 0L, (char *)op_shada, OPT_GLOBAL);
+  set_option_value("shada", 0L, op_shada, OPT_GLOBAL);
   xfree(op_shada);
 
   return true;
@@ -245,16 +263,19 @@ static inline void ctx_save_funcs(Context *ctx, bool scriptonly)
   ctx->funcs = (Array)ARRAY_DICT_INIT;
   Error err = ERROR_INIT;
 
-  HASHTAB_ITER(&func_hashtab, hi, {
-    const char_u *const name = hi->hi_key;
-    bool islambda = (STRNCMP(name, "<lambda>", 8) == 0);
-    bool isscript = (name[0] == K_SPECIAL);
+  HASHTAB_ITER(func_tbl_get(), hi, {
+    const char *const name = hi->hi_key;
+    bool islambda = (strncmp(name, "<lambda>", 8) == 0);
+    bool isscript = ((uint8_t)name[0] == K_SPECIAL);
 
     if (!islambda && (!scriptonly || isscript)) {
-      size_t cmd_len = sizeof("func! ") + STRLEN(name);
+      size_t cmd_len = sizeof("func! ") + strlen(name);
       char *cmd = xmalloc(cmd_len);
       snprintf(cmd, cmd_len, "func! %s", name);
-      String func_body = nvim_exec(cstr_as_string(cmd), true, &err);
+      Dict(exec_opts) opts = { 0 };
+      opts.output = BOOLEAN_OBJ(true);
+      String func_body = exec_impl(VIML_INTERNAL_CALL, cstr_as_string(cmd),
+                                   &opts, &err);
       xfree(cmd);
       if (!ERROR_SET(&err)) {
         ADD(ctx->funcs, STRING_OBJ(func_body));
@@ -314,7 +335,7 @@ static inline msgpack_sbuffer array_to_sbuf(Array array)
   object_to_vim(ARRAY_OBJ(array), &list_tv, &err);
 
   if (!encode_vim_list_to_buf(list_tv.vval.v_list, &sbuf.size, &sbuf.data)) {
-    EMSG(_("E474: Failed to convert list to msgpack string buffer"));
+    emsg(_("E474: Failed to convert list to msgpack string buffer"));
   }
   sbuf.alloc = sbuf.size;
 
@@ -339,7 +360,7 @@ Dictionary ctx_to_dict(Context *ctx)
   PUT(rv, "jumps", ARRAY_OBJ(sbuf_to_array(ctx->jumps)));
   PUT(rv, "bufs", ARRAY_OBJ(sbuf_to_array(ctx->bufs)));
   PUT(rv, "gvars", ARRAY_OBJ(sbuf_to_array(ctx->gvars)));
-  PUT(rv, "funcs", ARRAY_OBJ(copy_array(ctx->funcs)));
+  PUT(rv, "funcs", ARRAY_OBJ(copy_array(ctx->funcs, NULL)));
 
   return rv;
 }
@@ -375,7 +396,7 @@ int ctx_from_dict(Dictionary dict, Context *ctx)
       ctx->gvars = array_to_sbuf(item.value.data.array);
     } else if (strequal(item.key.data, "funcs")) {
       types |= kCtxFuncs;
-      ctx->funcs = copy_object(item.value).data.array;
+      ctx->funcs = copy_object(item.value, NULL).data.array;
     }
   }
 

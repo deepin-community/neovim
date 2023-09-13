@@ -3,14 +3,14 @@ local clear = helpers.clear
 local eval = helpers.eval
 local eq = helpers.eq
 local feed_command = helpers.feed_command
-local iswin = helpers.iswin
 local retry = helpers.retry
 local ok = helpers.ok
 local source = helpers.source
 local poke_eventloop = helpers.poke_eventloop
-local uname = helpers.uname
 local load_adjust = helpers.load_adjust
-local isCI = helpers.isCI
+local write_file = helpers.write_file
+local is_os = helpers.is_os
+local is_ci = helpers.is_ci
 
 local function isasan()
   local version = eval('execute("version")')
@@ -21,8 +21,8 @@ clear()
 if isasan() then
   pending('ASAN build is difficult to estimate memory usage', function() end)
   return
-elseif iswin() then
-  if isCI('github') then
+elseif is_os('win') then
+  if is_ci('github') then
     pending('Windows runners in Github Actions do not have a stable environment to estimate memory usage', function() end)
     return
   elseif eval("executable('wmic')") == 0 then
@@ -37,7 +37,7 @@ end
 local monitor_memory_usage = {
   memory_usage = function(self)
     local handle
-    if iswin() then
+    if is_os('win') then
       handle = io.popen('wmic process where processid=' ..self.pid..' get WorkingSetSize')
     else
       handle = io.popen('ps -o rss= -p '..self.pid)
@@ -84,6 +84,12 @@ setmetatable(monitor_memory_usage,
 end})
 
 describe('memory usage', function()
+  local tmpfile = 'X_memory_usage'
+
+  after_each(function()
+    os.remove(tmpfile)
+  end)
+
   local function check_result(tbl, status, result)
     if not status then
       print('')
@@ -103,7 +109,7 @@ describe('memory usage', function()
   it('function capture vargs', function()
     local pid = eval('getpid()')
     local before = monitor_memory_usage(pid)
-    source([[
+    write_file(tmpfile, [[
       func s:f(...)
         let x = a:000
       endfunc
@@ -111,6 +117,8 @@ describe('memory usage', function()
         call s:f(0)
       endfor
     ]])
+    -- TODO: check_result fails if command() is used here. Why? #16064
+    feed_command('source '..tmpfile)
     poke_eventloop()
     local after = monitor_memory_usage(pid)
     -- Estimate the limit of max usage as 2x initial usage.
@@ -136,7 +144,7 @@ describe('memory usage', function()
   it('function capture lvars', function()
     local pid = eval('getpid()')
     local before = monitor_memory_usage(pid)
-    local fname = source([[
+    write_file(tmpfile, [[
       if !exists('s:defined_func')
         func s:f()
           let x = l:
@@ -147,18 +155,20 @@ describe('memory usage', function()
         call s:f()
       endfor
     ]])
+    feed_command('source '..tmpfile)
     poke_eventloop()
     local after = monitor_memory_usage(pid)
     for _ = 1, 3 do
-      feed_command('so '..fname)
+      -- TODO: check_result fails if command() is used here. Why? #16064
+      feed_command('source '..tmpfile)
       poke_eventloop()
     end
     local last = monitor_memory_usage(pid)
     -- The usage may be a bit less than the last value, use 80%.
     -- Allow for 20% tolerance at the upper limit. That's very permissive, but
-    -- otherwise the test fails sometimes.  On Sourcehut CI with FreeBSD we need to
-    -- be even much more permissive.
-    local upper_multiplier = uname() == 'freebsd' and 19 or 12
+    -- otherwise the test fails sometimes.  On FreeBSD we need to be even much
+    -- more permissive.
+    local upper_multiplier = is_os('freebsd') and 19 or 12
     local lower = before.last * 8 / 10
     local upper = load_adjust((after.max + (after.last - before.last)) * upper_multiplier / 10)
     check_result({before=before, after=after, last=last},
@@ -168,7 +178,7 @@ describe('memory usage', function()
   end)
 
   it('releases memory when closing windows when folds exist', function()
-    if helpers.is_os('mac') then
+    if is_os('mac') then
       pending('macOS memory compression causes flakiness')
     end
     local pid = eval('getpid()')
@@ -195,10 +205,10 @@ describe('memory usage', function()
     local after = monitor_memory_usage(pid)
     source('bwipe!')
     poke_eventloop()
-    -- Allow for an increase of 5% in memory usage, which accommodates minor fluctuation,
+    -- Allow for an increase of 10% in memory usage, which accommodates minor fluctuation,
     -- but is small enough that if memory were not released (prior to PR #14884), the test
     -- would fail.
-    local upper = before.last * 1.05
+    local upper = before.last * 1.10
     check_result({before=before, after=after}, pcall(ok, after.last <= upper))
   end)
 end)

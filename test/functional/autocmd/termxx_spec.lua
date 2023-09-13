@@ -1,19 +1,44 @@
 local luv = require('luv')
 local helpers = require('test.functional.helpers')(after_each)
 
-local clear, command, nvim, nvim_dir =
-  helpers.clear, helpers.command, helpers.nvim, helpers.nvim_dir
+local clear, command, nvim, testprg =
+  helpers.clear, helpers.command, helpers.nvim, helpers.testprg
 local eval, eq, neq, retry =
   helpers.eval, helpers.eq, helpers.neq, helpers.retry
+local matches = helpers.matches
 local ok = helpers.ok
 local feed = helpers.feed
-local iswin = helpers.iswin
+local pcall_err = helpers.pcall_err
+local assert_alive = helpers.assert_alive
+local skip = helpers.skip
+local is_os = helpers.is_os
 
 describe('autocmd TermClose', function()
   before_each(function()
     clear()
-    nvim('set_option', 'shell', nvim_dir .. '/shell-test')
-    nvim('set_option', 'shellcmdflag', 'EXE')
+    nvim('set_option', 'shell', testprg('shell-test'))
+    command('set shellcmdflag=EXE shellredir= shellpipe= shellquote= shellxquote=')
+  end)
+
+
+  local function test_termclose_delete_own_buf()
+    -- The terminal process needs to keep running so that TermClose isn't triggered immediately.
+    nvim('set_option', 'shell', string.format('"%s" INTERACT', testprg('shell-test')))
+    command('autocmd TermClose * bdelete!')
+    command('terminal')
+    matches('^TermClose Autocommands for "%*": Vim%(bdelete%):E937: Attempt to delete a buffer that is in use: term://',
+            pcall_err(command, 'bdelete!'))
+    assert_alive()
+  end
+
+  -- TODO: fixed after merging patches for `can_unload_buffer`?
+  pending('TermClose deleting its own buffer, altbuf = buffer 1 #10386', function()
+    test_termclose_delete_own_buf()
+  end)
+
+  it('TermClose deleting its own buffer, altbuf NOT buffer 1 #10386', function()
+    command('edit foo1')
+    test_termclose_delete_own_buf()
   end)
 
   it('triggers when fast-exiting terminal job stops', function()
@@ -25,7 +50,8 @@ describe('autocmd TermClose', function()
   end)
 
   it('triggers when long-running terminal job gets stopped', function()
-    nvim('set_option', 'shell', iswin() and 'cmd.exe' or 'sh')
+    skip(is_os('win'))
+    nvim('set_option', 'shell', is_os('win') and 'cmd.exe' or 'sh')
     command('autocmd TermClose * let g:test_termclose = 23')
     command('terminal')
     command('call jobstop(b:terminal_job_id)')
@@ -33,7 +59,7 @@ describe('autocmd TermClose', function()
   end)
 
   it('kills job trapping SIGTERM', function()
-    if iswin() then return end
+    skip(is_os('win'))
     nvim('set_option', 'shell', 'sh')
     nvim('set_option', 'shellcmdflag', '-c')
     command([[ let g:test_job = jobstart('trap "" TERM && echo 1 && sleep 60', { ]]
@@ -53,7 +79,7 @@ describe('autocmd TermClose', function()
   end)
 
   it('kills PTY job trapping SIGHUP and SIGTERM', function()
-    if iswin() then return end
+    skip(is_os('win'))
     nvim('set_option', 'shell', 'sh')
     nvim('set_option', 'shellcmdflag', '-c')
     command([[ let g:test_job = jobstart('trap "" HUP TERM && echo 1 && sleep 60', { ]]
@@ -89,6 +115,17 @@ describe('autocmd TermClose', function()
     command('3bdelete!')
     retry(nil, nil, function() eq('3', eval('g:abuf')) end)
     feed('<c-c>:qa!<cr>')
+  end)
+
+  it('exposes v:event.status', function()
+    command('set shellcmdflag=EXIT')
+    command('autocmd TermClose * let g:status = v:event.status')
+
+    command('terminal 0')
+    retry(nil, nil, function() eq(0, eval('g:status')) end)
+
+    command('terminal 42')
+    retry(nil, nil, function() eq(42, eval('g:status')) end)
   end)
 end)
 

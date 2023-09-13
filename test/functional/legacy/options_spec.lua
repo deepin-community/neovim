@@ -1,4 +1,4 @@
--- See also: src/nvim/testdir/test_options.vim
+-- See also: test/old/testdir/test_options.vim
 local helpers = require('test.functional.helpers')(after_each)
 local command, clear = helpers.command, helpers.clear
 local source, expect = helpers.source, helpers.expect
@@ -82,5 +82,10 @@ describe('set', function()
               Last set from changed window size |
       Press ENTER or type command to continue^   |
     ]])
+  end)
+
+  it('foldcolumn and signcolumn to empty string is disallowed', function()
+    matches('E474: Invalid argument: fdc=', exc_exec('set fdc='))
+    matches('E474: Invalid argument: scl=', exc_exec('set scl='))
   end)
 end)

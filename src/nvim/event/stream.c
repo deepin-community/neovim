@@ -2,16 +2,17 @@
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
 #include <assert.h>
-#include <stdio.h>
 #include <stdbool.h>
-
+#include <stddef.h>
 #include <uv.h>
+#include <uv/version.h>
 
-#include "nvim/log.h"
-#include "nvim/rbuffer.h"
-#include "nvim/macros.h"
+#include "nvim/event/loop.h"
 #include "nvim/event/stream.h"
-#ifdef WIN32
+#include "nvim/log.h"
+#include "nvim/macros.h"
+#include "nvim/rbuffer.h"
+#ifdef MSWIN
 # include "nvim/os/os_win_console.h"
 #endif
 
@@ -19,9 +20,9 @@
 # include "event/stream.c.generated.h"
 #endif
 
-// For compatbility with libuv < 1.19.0 (tested on 1.18.0)
+// For compatibility with libuv < 1.19.0 (tested on 1.18.0)
 #if UV_VERSION_MINOR < 19
-#define uv_stream_get_write_queue_size(stream) stream->write_queue_size
+# define uv_stream_get_write_queue_size(stream) stream->write_queue_size
 #endif
 
 /// Sets the stream associated with `fd` to "blocking" mode.
@@ -61,7 +62,7 @@ void stream_init(Loop *loop, Stream *stream, int fd, uv_stream_t *uvstream)
       stream->uv.idle.data = stream;
     } else {
       assert(type == UV_NAMED_PIPE || type == UV_TTY);
-#ifdef WIN32
+#ifdef MSWIN
       if (type == UV_TTY) {
         uv_tty_init(&loop->uv, &stream->uv.tty, fd, 0);
         uv_tty_set_mode(&stream->uv.tty, UV_TTY_MODE_RAW);
@@ -76,8 +77,8 @@ void stream_init(Loop *loop, Stream *stream, int fd, uv_stream_t *uvstream)
       uv_pipe_init(&loop->uv, &stream->uv.pipe, 0);
       uv_pipe_open(&stream->uv.pipe, fd);
       stream->uvstream = STRUCT_CAST(uv_stream_t, &stream->uv.pipe);
-#ifdef WIN32
-      }
+#ifdef MSWIN
+    }
 #endif
     }
   }
@@ -110,7 +111,7 @@ void stream_close(Stream *stream, stream_close_cb on_stream_close, void *data)
   stream->close_cb = on_stream_close;
   stream->close_cb_data = data;
 
-#ifdef WIN32
+#ifdef MSWIN
   if (UV_TTY == uv_guess_handle(stream->fd)) {
     // Undo UV_TTY_MODE_RAW from stream_init(). #10801
     uv_tty_set_mode(&stream->uv.tty, UV_TTY_MODE_NORMAL);

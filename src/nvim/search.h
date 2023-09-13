@@ -4,14 +4,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "nvim/vim.h"
 #include "nvim/buffer_defs.h"
-#include "nvim/eval/funcs.h"
 #include "nvim/eval/typval.h"
+#include "nvim/eval/typval_defs.h"
 #include "nvim/normal.h"
 #include "nvim/os/time.h"
+#include "nvim/pos.h"
+#include "nvim/types.h"
+#include "nvim/vim.h"
 
-/* Values for the find_pattern_in_path() function args 'type' and 'action': */
+// Values for the find_pattern_in_path() function args 'type' and 'action':
 #define FIND_ANY        1
 #define FIND_DEFINE     2
 #define CHECK_PATH      3
@@ -37,23 +39,26 @@
 #define SEARCH_PEEK  0x800  ///< peek for typed char, cancel search
 #define SEARCH_COL  0x1000  ///< start at specified column instead of zero
 
-/* Values for flags argument for findmatchlimit() */
-#define FM_BACKWARD     0x01    /* search backwards */
-#define FM_FORWARD      0x02    /* search forwards */
-#define FM_BLOCKSTOP    0x04    /* stop at start/end of block */
-#define FM_SKIPCOMM     0x08    /* skip comments */
+// Values for flags argument for findmatchlimit()
+#define FM_BACKWARD     0x01    // search backwards
+#define FM_FORWARD      0x02    // search forwards
+#define FM_BLOCKSTOP    0x04    // stop at start/end of block
+#define FM_SKIPCOMM     0x08    // skip comments
 
-/* Values for sub_cmd and which_pat argument for search_regcomp() */
-/* Also used for which_pat argument for searchit() */
-#define RE_SEARCH       0       /* save/use pat in/from search_pattern */
-#define RE_SUBST        1       /* save/use pat in/from subst_pattern */
-#define RE_BOTH         2       /* save pat in both patterns */
-#define RE_LAST         2       /* use last used pattern if "pat" is NULL */
+// Values for sub_cmd and which_pat argument for search_regcomp()
+// Also used for which_pat argument for searchit()
+#define RE_SEARCH       0       // save/use pat in/from search_pattern
+#define RE_SUBST        1       // save/use pat in/from subst_pattern
+#define RE_BOTH         2       // save pat in both patterns
+#define RE_LAST         2       // use last used pattern if "pat" is NULL
 
 // Values for searchcount()
 #define SEARCH_STAT_DEF_TIMEOUT 40L
 #define SEARCH_STAT_DEF_MAX_COUNT 99
 #define SEARCH_STAT_BUF_LEN 12
+
+/// Maximum number of characters that can be fuzzy matched
+#define MAX_FUZZY_MATCHES 256
 
 /// Structure containing offset definition for the last search pattern
 ///
@@ -68,7 +73,7 @@ typedef struct soffset {
 
 /// Structure containing last search pattern and its attributes.
 typedef struct spat {
-  char_u *pat;          ///< The pattern (in allocated memory) or NULL.
+  char *pat;            ///< The pattern (in allocated memory) or NULL.
   bool magic;           ///< Magicness of the pattern.
   bool no_scs;          ///< No smartcase for this pattern.
   Timestamp timestamp;  ///< Time of the last change.
@@ -78,22 +83,29 @@ typedef struct spat {
 
 /// Optional extra arguments for searchit().
 typedef struct {
-    linenr_T    sa_stop_lnum;  ///< stop after this line number when != 0
-    proftime_T  *sa_tm;        ///< timeout limit or NULL
-    int         sa_timed_out;  ///< set when timed out
-    int         sa_wrapped;    ///< search wrapped around
+  linenr_T sa_stop_lnum;  ///< stop after this line number when != 0
+  proftime_T *sa_tm;        ///< timeout limit or NULL
+  int sa_timed_out;  ///< set when timed out
+  int sa_wrapped;    ///< search wrapped around
 } searchit_arg_T;
 
-typedef struct searchstat
-{
-    int     cur;      // current position of found words
-    int     cnt;      // total count of found words
-    int     exact_match;    // TRUE if matched exactly on specified position
-    int     incomplete;     // 0: search was fully completed
-          // 1: recomputing was timed out
-          // 2: max count exceeded
-    int     last_maxcount;  // the max count of the last search
+typedef struct searchstat {
+  int cur;      // current position of found words
+  int cnt;      // total count of found words
+  bool exact_match;    // true if matched exactly on specified position
+  int incomplete;     // 0: search was fully completed
+  // 1: recomputing was timed out
+  // 2: max count exceeded
+  int last_maxcount;  // the max count of the last search
 } searchstat_T;
+
+/// Fuzzy matched string list item. Used for fuzzy match completion. Items are
+/// usually sorted by "score". The "idx" member is used for stable-sort.
+typedef struct {
+  int idx;
+  char *str;
+  int score;
+} fuzmatch_str_T;
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "search.h.generated.h"

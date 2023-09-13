@@ -12,8 +12,8 @@
 --    2 then interval applies only to first, third, fifth, … character in range.
 --    Fourth value is number that should be added to the codepoint to yield
 --    folded/lower/upper codepoint.
--- 4. emoji_width and emoji_all tables: sorted lists of non-overlapping closed
---    intervals of Emoji characters.  emoji_width contains all the characters
+-- 4. emoji_wide and emoji_all tables: sorted lists of non-overlapping closed
+--    intervals of Emoji characters.  emoji_wide contains all the characters
 --    which don't have ambiguous or double width, and emoji_all has all Emojis.
 if arg[1] == '--help' then
   print('Usage:')
@@ -153,7 +153,8 @@ local build_combining_table = function(ut_fp, dataprops)
   local start = -1
   local end_ = -1
   for _, p in ipairs(dataprops) do
-    if (({Mn=true, Mc=true, Me=true})[p[3]]) then
+    -- The 'Mc' property was removed, it does take up space.
+    if (({Mn=true, Me=true})[p[3]]) then
       local n = tonumber(p[1], 16)
       if start >= 0 and end_ + 1 == n then
         -- Continue with the same range.
@@ -288,7 +289,7 @@ local build_emoji_table = function(ut_fp, emojiprops, doublewidth, ambiwidth)
   end
   ut_fp:write('};\n')
 
-  ut_fp:write('static const struct interval emoji_width[] = {\n')
+  ut_fp:write('static const struct interval emoji_wide[] = {\n')
   for _, p in ipairs(emojiwidth) do
     ut_fp:write(make_range(p[1], p[2]))
   end

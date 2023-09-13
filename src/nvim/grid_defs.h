@@ -10,7 +10,7 @@
 #define MAX_MCO  6  // fixed value for 'maxcombine'
 
 // The characters and attributes drawn on grids.
-typedef char_u schar_T[(MAX_MCO+1) * 4 + 1];
+typedef char schar_T[(MAX_MCO + 1) * 4 + 1];
 typedef int sattr_T;
 
 enum {
@@ -20,7 +20,6 @@ enum {
   kZIndexMessages = 200,
   kZIndexCmdlinePopupMenu = 250,
 };
-
 
 /// ScreenGrid represents a resizable rectuangular grid displayed by UI clients.
 ///
@@ -48,18 +47,18 @@ typedef struct ScreenGrid ScreenGrid;
 struct ScreenGrid {
   handle_T handle;
 
-  schar_T  *chars;
-  sattr_T  *attrs;
-  unsigned *line_offset;
-  char_u   *line_wraps;
+  schar_T *chars;
+  sattr_T *attrs;
+  size_t *line_offset;
+  char *line_wraps;
 
   // last column that was drawn (not cleared with the default background).
   // only used when "throttled" is set. Not allocated by grid_alloc!
   int *dirty_col;
 
   // the size of the allocated grid.
-  int Rows;
-  int Columns;
+  int rows;
+  int cols;
 
   // The state of the grid is valid. Otherwise it needs to be redrawn.
   bool valid;
@@ -86,7 +85,7 @@ struct ScreenGrid {
   int zindex;
 
   // Below is state owned by the compositor. Should generally not be set/read
-  // outside this module, except for specific compatibilty hacks
+  // outside this module, except for specific compatibility hacks
 
   // position of the grid on the composed screen.
   int comp_row;
@@ -110,5 +109,14 @@ struct ScreenGrid {
 #define SCREEN_GRID_INIT { 0, NULL, NULL, NULL, NULL, NULL, 0, 0, false, \
                            false, 0, 0, NULL, false, true, 0, \
                            0, 0, 0, 0, 0,  false }
+
+typedef struct {
+  int args[3];
+  int icell;
+  int ncells;
+  int coloff;
+  int cur_attr;
+  int clear_width;
+} GridLineEvent;
 
 #endif  // NVIM_GRID_DEFS_H

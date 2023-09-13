@@ -289,11 +289,11 @@ In chapter 3 we briefly mentioned the history.  The basics are that you can
 use the <Up> key to recall an older command line.  <Down> then takes you back
 to newer commands.
 
-There are actually four histories.  The ones we will mention here are for ":"
+There are actually five histories.  The ones we will mention here are for ":"
 commands and for "/" and "?" search commands.  The "/" and "?" commands share
-the same history, because they are both search commands.  The two other
-histories are for expressions and input lines for the input() function.
-|cmdline-history|
+the same history, because they are both search commands.  The three other
+histories are for expressions, debug mode commands and input lines for the
+input() function.  |cmdline-history|
 
 Suppose you have done a ":set" command, typed ten more colon commands and then
 want to repeat that ":set" command again.  You could press ":" and then ten
@@ -338,7 +338,7 @@ Open the command line window with this command: >
 
 Vim now opens a (small) window at the bottom.  It contains the command line
 history, and an empty line at the end:
-
+>
 	+-------------------------------------+
 	|other window			      |
 	|~				      |
@@ -353,7 +353,7 @@ history, and an empty line at the end:
 	|command-line=========================|
 	|				      |
 	+-------------------------------------+
-
+<
 You are now in Normal mode.  You can use the "hjkl" keys to move around.  For
 example, move up with "5k" to the ":e config.h.in" line.  Type "$h" to go to
 the "i" of "in" and type "cwout".  Now you have changed the line to:

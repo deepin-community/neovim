@@ -1,0 +1,74 @@
+From: Christian Clason <c.clason@uni-graz.at>
+Date: Thu, 26 Jan 2023 09:42:23 +0100
+X-Dgit-Generated: 0.7.2-7 8b0dfcf859e0db33ed0ba8402c4563fa15de2768
+Subject: fix(treesitter): validate language name
+
+Problem: Some injections (like markdown) allow specifying arbitrary
+language names for code blocks, which may be lead to errors when
+looking for a corresponding parser in runtime path.
+
+Solution: Validate that the language name only contains alphanumeric
+characters and `_` (e.g., for `c_sharp`) and error otherwise.
+
+(cherry picked from commit c032e83b22994332dd8769ef34cb817906a63cac)
+Signed-off-by: James McCoy <jamessan@debian.org>
+
+---
+
+diff --git a/runtime/doc/treesitter.txt b/runtime/doc/treesitter.txt
+index b10bf3498..01d5cbed2 100644
+--- a/runtime/doc/treesitter.txt
++++ b/runtime/doc/treesitter.txt
+@@ -399,6 +399,7 @@ require_language({lang}, {path}, {silent})                *require_language()*
+ 
+                 Parameters: ~
+                     {lang}    The language the parser should parse
++                              (alphanumerical and `_` only)
+                     {path}    Optional path the parser is located at
+                     {silent}  Don't throw an error if language not found
+ 
+diff --git a/runtime/lua/vim/treesitter/language.lua b/runtime/lua/vim/treesitter/language.lua
+index 8b106108d..26162b82d 100644
+--- a/runtime/lua/vim/treesitter/language.lua
++++ b/runtime/lua/vim/treesitter/language.lua
+@@ -6,7 +6,7 @@ local M = {}
+ ---
+ --- Parsers are searched in the `parser` runtime directory.
+ ---
+----@param lang The language the parser should parse
++---@param lang The language the parser should parse (alphanumerical and `_` only)
+ ---@param path Optional path the parser is located at
+ ---@param silent Don't throw an error if language not found
+ function M.require_language(lang, path, silent)
+@@ -14,7 +14,14 @@ function M.require_language(lang, path, silent)
+     return true
+   end
+   if path == nil then
+-    local fname = 'parser/' .. vim.fn.fnameescape(lang) .. '.*'
++    if not (lang and lang:match('[%w_]+') == lang) then
++      if silent then
++        return false
++      end
++      error("'" .. lang .. "' is not a valid language name")
++    end
++
++    local fname = 'parser/' .. lang .. '.*'
+     local paths = a.nvim_get_runtime_file(fname, false)
+     if #paths == 0 then
+       if silent then
+diff --git a/test/functional/treesitter/language_spec.lua b/test/functional/treesitter/language_spec.lua
+index 30585be32..c825a33d5 100644
+--- a/test/functional/treesitter/language_spec.lua
++++ b/test/functional/treesitter/language_spec.lua
+@@ -28,6 +28,11 @@ describe('treesitter API', function()
+        pcall_err(exec_lua, "parser = vim.treesitter.inspect_language('borklang')"))
+   end)
+ 
++  it('shows error for invalid language name', function()
++    eq(".../language.lua:0: '/foo/' is not a valid language name",
++      pcall_err(exec_lua, 'vim.treesitter.require_language("/foo/", nil, false)'))
++  end)
++
+   it('inspects language', function()
+     if pending_c_parser(pending) then return end
+ 

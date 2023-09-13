@@ -1,8 +1,12 @@
 #ifndef NVIM_UGRID_H
 #define NVIM_UGRID_H
 
-#include "nvim/ui.h"
 #include "nvim/globals.h"
+#include "nvim/grid_defs.h"
+#include "nvim/ui.h"
+
+struct ucell;
+struct ugrid;
 
 typedef struct ucell UCell;
 typedef struct ugrid UGrid;

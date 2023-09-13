@@ -1,13 +1,16 @@
 local helpers = require('test.functional.helpers')(after_each)
 local thelpers = require('test.functional.terminal.helpers')
+local assert_alive = helpers.assert_alive
 local clear = helpers.clear
-local feed, nvim = helpers.feed, helpers.nvim
+local feed = helpers.feed
 local feed_command = helpers.feed_command
 local command = helpers.command
 local eq = helpers.eq
 local eval = helpers.eval
-local iswin = helpers.iswin
+local meths = helpers.meths
+local sleep = helpers.sleep
 local retry = helpers.retry
+local is_os = helpers.is_os
 
 describe(':terminal', function()
   local screen
@@ -16,10 +19,10 @@ describe(':terminal', function()
     clear()
     -- set the statusline to a constant value because of variables like pid
     -- and current directory and to improve visibility of splits
-    nvim('set_option', 'statusline', '==========')
-    nvim('command', 'highlight StatusLine cterm=NONE')
-    nvim('command', 'highlight StatusLineNC cterm=NONE')
-    nvim('command', 'highlight VertSplit cterm=NONE')
+    meths.set_option('statusline', '==========')
+    command('highlight StatusLine cterm=NONE')
+    command('highlight StatusLineNC cterm=NONE')
+    command('highlight VertSplit cterm=NONE')
     screen = thelpers.screen_setup(3)
   end)
 
@@ -33,7 +36,7 @@ describe(':terminal', function()
     command('vsplit foo')
     eq(3, eval("winnr('$')"))
     feed('ZQ')  -- Close split, should not crash. #7538
-    eq(2, eval("1+1"))  -- Still alive?
+    assert_alive()
   end)
 
   it('does not change size on WinEnter', function()
@@ -67,12 +70,33 @@ describe(':terminal', function()
     ]])
   end)
 
+  it('does not change size if updated when not visible in any window #19665', function()
+    local channel = meths.buf_get_option(0, 'channel')
+    command('enew')
+    sleep(100)
+    meths.chan_send(channel, 'foo')
+    sleep(100)
+    command('bprevious')
+    screen:expect([[
+      tty ready                                         |
+      ^foo{2: }                                              |
+                                                        |
+                                                        |
+                                                        |
+                                                        |
+                                                        |
+                                                        |
+                                                        |
+                                                        |
+    ]])
+  end)
+
   it('forwards resize request to the program', function()
     feed([[<C-\><C-N>G]])
     local w1, h1 = screen._width - 3, screen._height - 2
     local w2, h2 = w1 - 6, h1 - 3
 
-    if iswin() then
+    if is_os('win') then
       -- win: SIGWINCH is unreliable, use a weaker test. #7506
       retry(3, 30000, function()
         screen:try_resize(w1, h1)
@@ -110,7 +134,7 @@ describe(':terminal', function()
     command('terminal')
     feed('a<Cmd>wincmd j<CR>')
     eq(2, eval("winnr()"))
-    eq('t', eval('mode()'))
+    eq('t', eval('mode(1)'))
   end)
 
 end)

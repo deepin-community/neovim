@@ -1,19 +1,20 @@
 // This is an open source non-commercial project. Dear PVS-Studio, please check
 // it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
-#include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
-
+#include <stdlib.h>
 #include <uv.h>
 
+#include "nvim/event/defs.h"
 #include "nvim/event/loop.h"
-#include "nvim/event/process.h"
 #include "nvim/log.h"
+#include "nvim/memory.h"
+#include "nvim/os/time.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "event/loop.c.generated.h"
 #endif
-
 
 void loop_init(Loop *loop, void *data)
 {
@@ -29,7 +30,47 @@ void loop_init(Loop *loop, void *data)
   uv_signal_init(&loop->uv, &loop->children_watcher);
   uv_timer_init(&loop->uv, &loop->children_kill_timer);
   uv_timer_init(&loop->uv, &loop->poll_timer);
+  uv_timer_init(&loop->uv, &loop->exit_delay_timer);
   loop->poll_timer.data = xmalloc(sizeof(bool));  // "timeout expired" flag
+}
+
+/// Process `Loop.uv` events with a timeout.
+///
+/// @param loop
+/// @param ms  0: non-blocking poll.
+///            > 0: timeout after `ms`.
+///            < 0: wait forever.
+/// @param once  true: process at most one `Loop.uv` event.
+///              false: process until `ms` timeout (only has effect if `ms` > 0).
+/// @return  true if `ms` > 0 and was reached
+bool loop_uv_run(Loop *loop, int64_t ms, bool once)
+{
+  if (loop->recursive++) {
+    abort();  // Should not re-enter uv_run
+  }
+
+  uv_run_mode mode = UV_RUN_ONCE;
+  bool *timeout_expired = loop->poll_timer.data;
+  *timeout_expired = false;
+
+  if (ms > 0) {
+    // This timer ensures UV_RUN_ONCE does not block indefinitely for I/O.
+    uv_timer_start(&loop->poll_timer, timer_cb, (uint64_t)ms, (uint64_t)ms);
+  } else if (ms == 0) {
+    // For ms == 0, do a non-blocking event poll.
+    mode = UV_RUN_NOWAIT;
+  }
+
+  do {  // -V1044
+    uv_run(&loop->uv, mode);
+  } while (ms > 0 && !once && !*timeout_expired);  // -V560
+
+  if (ms > 0) {
+    uv_timer_stop(&loop->poll_timer);
+  }
+
+  loop->recursive--;  // Can re-enter uv_run now
+  return *timeout_expired;
 }
 
 /// Processes one `Loop.uv` event (at most).
@@ -37,36 +78,13 @@ void loop_init(Loop *loop, void *data)
 /// Does NOT process `Loop.events`, that is an application-specific decision.
 ///
 /// @param loop
-/// @param ms   0: non-blocking poll.
-///            >0: timeout after `ms`.
-///            <0: wait forever.
-/// @returns true if `ms` timeout was reached
-bool loop_poll_events(Loop *loop, int ms)
+/// @param ms  0: non-blocking poll.
+///            > 0: timeout after `ms`.
+///            < 0: wait forever.
+/// @return  true if `ms` > 0 and was reached
+bool loop_poll_events(Loop *loop, int64_t ms)
 {
-  if (loop->recursive++) {
-    abort();  // Should not re-enter uv_run
-  }
-
-  uv_run_mode mode = UV_RUN_ONCE;
-  bool timeout_expired = false;
-
-  if (ms > 0) {
-    *((bool *)loop->poll_timer.data) = false;  // reset "timeout expired" flag
-    // Dummy timer to ensure UV_RUN_ONCE does not block indefinitely for I/O.
-    uv_timer_start(&loop->poll_timer, timer_cb, (uint64_t)ms, (uint64_t)ms);
-  } else if (ms == 0) {
-    // For ms == 0, do a non-blocking event poll.
-    mode = UV_RUN_NOWAIT;
-  }
-
-  uv_run(&loop->uv, mode);
-
-  if (ms > 0) {
-    timeout_expired = *((bool *)loop->poll_timer.data);
-    uv_timer_stop(&loop->poll_timer);
-  }
-
-  loop->recursive--;  // Can re-enter uv_run now
+  bool timeout_expired = loop_uv_run(loop, ms, true);
   multiqueue_process_events(loop->fast_events);
   return timeout_expired;
 }
@@ -76,7 +94,7 @@ bool loop_poll_events(Loop *loop, int ms)
 /// @note Event is queued into `fast_events`, which is processed outside of the
 ///       primary `events` queue by loop_poll_events(). For `main_loop`, that
 ///       means `fast_events` is NOT processed in an "editor mode"
-///       (VimState.execute), so redraw and other side-effects are likely to be
+///       (VimState.execute), so redraw and other side effects are likely to be
 ///       skipped.
 /// @see loop_schedule_deferred
 void loop_schedule_fast(Loop *loop, Event event)
@@ -138,13 +156,14 @@ bool loop_close(Loop *loop, bool wait)
   uv_close((uv_handle_t *)&loop->children_watcher, NULL);
   uv_close((uv_handle_t *)&loop->children_kill_timer, NULL);
   uv_close((uv_handle_t *)&loop->poll_timer, timer_close_cb);
+  uv_close((uv_handle_t *)&loop->exit_delay_timer, NULL);
   uv_close((uv_handle_t *)&loop->async, NULL);
   uint64_t start = wait ? os_hrtime() : 0;
   bool didstop = false;
   while (true) {
     // Run the loop to tickle close-callbacks (which should then free memory).
     // Use UV_RUN_NOWAIT to avoid a hang. #11820
-    uv_run(&loop->uv, didstop ? UV_RUN_DEFAULT : UV_RUN_NOWAIT);
+    uv_run(&loop->uv, didstop ? UV_RUN_DEFAULT : UV_RUN_NOWAIT);  // -V547
     if ((uv_loop_close(&loop->uv) != UV_EBUSY) || !wait) {
       break;
     }
