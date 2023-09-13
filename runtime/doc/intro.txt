@@ -55,7 +55,7 @@ Nvim on the interwebs					*internet*
 	Nvim home page:	  https://neovim.io/
 	Nvim FAQ:	  https://github.com/neovim/neovim/wiki/FAQ
 	Downloads:	  https://github.com/neovim/neovim/releases
-	Vim FAQ:	  https://vimhelp.appspot.com/vim_faq.txt.html
+	Vim FAQ:	  https://vimhelp.org/vim_faq.txt.html
 
 
 			*bugs* *bug-report*
@@ -120,7 +120,7 @@ Vim would never have become what it is now, without the help of these people!
 	Daniel Elstner		GTK+ 2 port
 	Eric Fischer		Mac port, 'cindent', and other improvements
 	Benji Fisher		Answering lots of user questions
-	Bill Foster		Athena GUI port
+	Bill Foster		Athena GUI port (later removed)
 	Google			Lets me work on Vim one day a week
 	Loic Grenie		xvim (ideas for multi windows version)
 	Sven Guckes		Vim promoter and previous WWW page maintainer
@@ -312,7 +312,6 @@ notation	meaning		    equivalent	decimal value(s)	~
 <Tab>		tab			CTRL-I	  9	*tab* *Tab*
 							*linefeed*
 <NL>		linefeed		CTRL-J	 10 (used for <Nul>)
-<FF>		formfeed		CTRL-L	 12	*formfeed*
 <CR>		carriage return		CTRL-M	 13	*carriage-return*
 <Return>	same as <CR>				*<Return>*
 <Enter>		same as <CR>				*<Enter>*
@@ -323,7 +322,6 @@ notation	meaning		    equivalent	decimal value(s)	~
 <Bar>		vertical bar		|	124	*<Bar>*
 <Del>		delete				127
 <CSI>		command sequence intro  ALT-Esc 155	*<CSI>*
-<xCSI>		CSI when typed in the GUI		*<xCSI>*
 
 <EOL>		end-of-line (can be <CR>, <NL> or <CR><NL>,
 		depends on system and 'fileformat')	*<EOL>*
@@ -454,9 +452,10 @@ Ex mode			Like Command-line mode, but after entering a command
 			command line.  |Ex-mode|
 
 							*Terminal-mode*
-Terminal mode		In Terminal mode all input (except |c_CTRL-\_CTRL-N|)
-			is sent to the process running in the current
-			|terminal| buffer.
+Terminal mode		In Terminal mode all input (except CTRL-\) is sent to
+			the process running in the current |terminal| buffer.
+			If CTRL-\ is pressed, the next key is sent unless it
+			is CTRL-N (|CTRL-\_CTRL-N|).
 			If the 'showmode' option is on "-- TERMINAL --" is shown
 			at the bottom of the window.
 
@@ -563,8 +562,8 @@ The command CTRL-\ CTRL-G or <C-\><C-G> can be used to go to Insert mode when
 make sure Vim is in the mode indicated by 'insertmode', without knowing in
 what mode Vim currently is.
 
-				*gQ* *Q* *mode-Ex* *Ex-mode* *Ex* *EX* *E501*
-Q or gQ			Switch to Ex mode.  This is like typing ":" commands
+				*gQ* *mode-Ex* *Ex-mode* *Ex* *EX* *E501*
+gQ			Switch to Ex mode.  This is like typing ":" commands
 			one after another, except:
 			- You don't have to keep pressing ":".
 			- The screen doesn't get updated after each command.

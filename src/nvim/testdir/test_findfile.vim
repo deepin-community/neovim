@@ -50,7 +50,7 @@ func Test_findfile()
   set path=.
   call assert_equal('Xdir2/foo',    findfile('foo'))
   call assert_equal('',             findfile('bar'))
-  call assert_equal('Xdir2/foobar', findfile('foobar'))
+  call assert_equal('Xdir2/foobar', 'foobar'->findfile())
 
   " Empty {path} 2nd argument is the same as no 2nd argument.
   call assert_equal('Xdir2/foo', findfile('foo', ''))
@@ -113,7 +113,7 @@ func Test_findfile()
   call assert_match('.*/Xdir1/bar', findfile('bar', '**;', 2))
 
   bwipe!
-  exe 'cd  ' . save_dir
+  call chdir(save_dir)
   call CleanFiles()
   let &path = save_path
   let &shellslash = save_shellslash
@@ -138,7 +138,7 @@ func Test_finddir()
   cd Xdir1
 
   call assert_equal('Xdir2', finddir('Xdir2'))
-  call assert_equal('',      finddir('Xdir3'))
+  call assert_equal('',      'Xdir3'->finddir())
 
   " Files should not be found (findfile() finds them).
   call assert_equal('', finddir('foo'))
@@ -171,7 +171,7 @@ func Test_finddir()
   call assert_match('.*/Xdir1/Xdir2', finddir('Xdir2', '**;', 2))
   call assert_equal('Xdir3',          finddir('Xdir3', '**;', 1))
 
-  exe 'cd  ' . save_dir
+  call chdir(save_dir)
   call CleanFiles()
   let &path = save_path
   let &shellslash = save_shellslash
@@ -224,6 +224,28 @@ func Test_find_cmd()
   call assert_fails('find', 'E471:')
   call assert_fails('sfind', 'E471:')
   call assert_fails('tabfind', 'E471:')
+endfunc
+
+func Test_find_non_existing_path()
+  new
+  let save_path = &path
+  let save_dir = getcwd()
+  call mkdir('dir1/dir2', 'p')
+  call writefile([], 'dir1/file.txt')
+  call writefile([], 'dir1/dir2/base.txt')
+  call chdir('dir1/dir2')
+  e base.txt
+  set path=../include
+
+  call assert_fails(':find file.txt', 'E345:')
+
+  call chdir(save_dir)
+  bw!
+  call delete('dir1/dir2/base.txt', 'rf')
+  call delete('dir1/dir2', 'rf')
+  call delete('dir1/file.txt', 'rf')
+  call delete('dir1', 'rf')
+  let &path = save_path
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

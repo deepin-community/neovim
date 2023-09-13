@@ -11,7 +11,7 @@ describe('vim.lsp.codelens', function()
   after_each(helpers.clear)
 
   it('on_codelens_stores_and_displays_lenses', function()
-    local fake_uri = "file://fake/uri"
+    local fake_uri = "file:///fake/uri"
     local bufnr = exec_lua([[
       fake_uri = ...
       local bufnr = vim.uri_to_bufnr(fake_uri)
@@ -58,5 +58,6 @@ describe('vim.lsp.codelens', function()
     ]], bufnr)
 
     eq({[1] = {'Lens1', 'LspCodeLens'}}, virtual_text_chunks)
+
   end)
 end)

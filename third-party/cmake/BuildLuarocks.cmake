@@ -56,7 +56,7 @@ endif()
 # Defaults to 5.1 for bundled LuaJIT/Lua.
 set(LUA_VERSION "5.1")
 
-if(UNIX OR (MINGW AND CMAKE_CROSSCOMPILING))
+if(UNIX)
 
   if(USE_BUNDLED_LUAJIT)
     list(APPEND LUAROCKS_OPTS
@@ -123,9 +123,6 @@ list(APPEND THIRD_PARTY_DEPS luarocks)
 
 if(USE_BUNDLED_LUAJIT)
   add_dependencies(luarocks luajit)
-  if(MINGW AND CMAKE_CROSSCOMPILING)
-    add_dependencies(luarocks luajit_host)
-  endif()
 elseif(USE_BUNDLED_LUA)
   add_dependencies(luarocks lua)
 endif()
@@ -196,14 +193,16 @@ if(USE_BUNDLED_BUSTED)
   set(LUV_DEPS luacheck)
   if(USE_BUNDLED_LUV)
     list(APPEND LUV_DEPS luv-static lua-compat-5.3)
-    if(MINGW AND CMAKE_CROSSCOMPILING)
-      list(APPEND LUV_DEPS libuv_host)
-    endif()
     set(LUV_ARGS "CFLAGS=-O0 -g3 -fPIC")
     if(USE_BUNDLED_LIBUV)
       list(APPEND LUV_ARGS LIBUV_DIR=${HOSTDEPS_INSTALL_DIR})
+      # workaround for bug introduced in
+      # https://github.com/luarocks/luarocks/commit/83126ba324846b754ffc5e0345341f01262b3f86
+      if(MSVC)
+        list(APPEND LUV_ARGS LIBUV_LIBDIR=${HOSTDEPS_INSTALL_DIR}/lib)
+      endif()
     endif()
-    SET(LUV_PRIVATE_ARGS LUA_COMPAT53_INCDIR=${DEPS_BUILD_DIR}/src/lua-compat-5.3)
+    SET(LUV_PRIVATE_ARGS LUA_COMPAT53_INCDIR=${DEPS_BUILD_DIR}/src/lua-compat-5.3/c-api)
     add_custom_command(OUTPUT ${ROCKS_DIR}/luv
       COMMAND ${LUAROCKS_BINARY}
       ARGS make ${LUAROCKS_BUILDARGS} ${LUV_ARGS} ${LUV_PRIVATE_ARGS}

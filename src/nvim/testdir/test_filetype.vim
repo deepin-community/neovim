@@ -59,7 +59,7 @@ let s:filename_checks = {
     \ 'aml': ['file.aml'],
     \ 'ampl': ['file.run'],
     \ 'ant': ['build.xml'],
-    \ 'apache': ['.htaccess', '/etc/httpd/file.conf', '/etc/apache2/sites-2/file.com', '/etc/apache2/some.config', '/etc/apache2/conf.file/conf', '/etc/apache2/mods-some/file', '/etc/apache2/sites-some/file', '/etc/httpd/conf.d/file.config', '/etc/apache2/conf.file/file', '/etc/apache2/file.conf', '/etc/apache2/file.conf-file', '/etc/apache2/mods-file/file', '/etc/apache2/sites-file/file', '/etc/apache2/sites-file/file.com', '/etc/httpd/conf.d/file.conf', '/etc/httpd/conf.d/file.conf-file', 'access.conf', 'access.conf-file', 'any/etc/apache2/conf.file/file', 'any/etc/apache2/file.conf', 'any/etc/apache2/file.conf-file', 'any/etc/apache2/mods-file/file', 'any/etc/apache2/sites-file/file', 'any/etc/apache2/sites-file/file.com', 'any/etc/httpd/conf.d/file.conf', 'any/etc/httpd/conf.d/file.conf-file', 'any/etc/httpd/file.conf', 'apache.conf', 'apache.conf-file', 'apache2.conf', 'apache2.conf-file', 'httpd.conf', 'httpd.conf-file', 'srm.conf', 'srm.conf-file'],
+    \ 'apache': ['.htaccess', '/etc/httpd/file.conf', '/etc/apache2/sites-2/file.com', '/etc/apache2/some.config', '/etc/apache2/conf.file/conf', '/etc/apache2/mods-some/file', '/etc/apache2/sites-some/file', '/etc/httpd/conf.d/file.config', '/etc/apache2/conf.file/file', '/etc/apache2/file.conf', '/etc/apache2/file.conf-file', '/etc/apache2/mods-file/file', '/etc/apache2/sites-file/file', '/etc/apache2/sites-file/file.com', '/etc/httpd/conf.d/file.conf', '/etc/httpd/conf.d/file.conf-file', 'access.conf', 'access.conf-file', 'any/etc/apache2/conf.file/file', 'any/etc/apache2/file.conf', 'any/etc/apache2/file.conf-file', 'any/etc/apache2/mods-file/file', 'any/etc/apache2/sites-file/file', 'any/etc/apache2/sites-file/file.com', 'any/etc/httpd/conf.d/file.conf', 'any/etc/httpd/conf.d/file.conf-file', 'any/etc/httpd/file.conf', 'apache.conf', 'apache.conf-file', 'apache2.conf', 'apache2.conf-file', 'httpd.conf', 'httpd.conf-file', 'srm.conf', 'srm.conf-file', '/etc/httpd/mods-some/file', '/etc/httpd/sites-some/file', '/etc/httpd/conf.file/conf'],
     \ 'apachestyle': ['/etc/proftpd/file.config,/etc/proftpd/conf.file/file', '/etc/proftpd/conf.file/file', '/etc/proftpd/file.conf', '/etc/proftpd/file.conf-file', 'any/etc/proftpd/conf.file/file', 'any/etc/proftpd/file.conf', 'any/etc/proftpd/file.conf-file', 'proftpd.conf', 'proftpd.conf-file'],
     \ 'applescript': ['file.scpt'],
     \ 'aptconf': ['apt.conf', '/.aptitude/config', 'any/.aptitude/config'],
@@ -76,10 +76,12 @@ let s:filename_checks = {
     \ 'ave': ['file.ave'],
     \ 'awk': ['file.awk', 'file.gawk'],
     \ 'b': ['file.mch', 'file.ref', 'file.imp'],
+    \ 'basic': ['file.bas', 'file.bi', 'file.bm'],
     \ 'bzl': ['file.bazel', 'file.bzl', 'WORKSPACE'],
     \ 'bc': ['file.bc'],
     \ 'bdf': ['file.bdf'],
     \ 'bib': ['file.bib'],
+    \ 'bicep': ['file.bicep'],
     \ 'beancount': ['file.beancount'],
     \ 'bindzone': ['named.root', '/bind/db.file', '/named/db.file', 'any/bind/db.file', 'any/named/db.file'],
     \ 'blank': ['file.bl'],
@@ -97,7 +99,7 @@ let s:filename_checks = {
     \ 'cdrtoc': ['file.toc'],
     \ 'cf': ['file.cfm', 'file.cfi', 'file.cfc'],
     \ 'cfengine': ['cfengine.conf'],
-    \ 'cfg': ['file.cfg', 'file.hgrc', 'filehgrc', 'hgrc', 'some-hgrc'],
+    \ 'cfg': ['file.hgrc', 'filehgrc', 'hgrc', 'some-hgrc'],
     \ 'ch': ['file.chf'],
     \ 'chaiscript': ['file.chai'],
     \ 'chaskell': ['file.chs'],
@@ -112,12 +114,13 @@ let s:filename_checks = {
     \ 'coco': ['file.atg'],
     \ 'conaryrecipe': ['file.recipe'],
     \ 'conf': ['auto.master'],
-    \ 'config': ['configure.in', 'configure.ac', 'Pipfile', '/etc/hostname.file'],
+    \ 'config': ['configure.in', 'configure.ac', '/etc/hostname.file'],
     \ 'context': ['tex/context/any/file.tex', 'file.mkii', 'file.mkiv', 'file.mkvi', 'file.mkxl', 'file.mklx'],
+    \ 'cook': ['file.cook'],
     \ 'cpp': ['file.cxx', 'file.c++', 'file.hh', 'file.hxx', 'file.hpp', 'file.ipp', 'file.moc', 'file.tcc', 'file.inl', 'file.tlh'],
     \ 'crm': ['file.crm'],
     \ 'crontab': ['crontab', 'crontab.file', '/etc/cron.d/file', 'any/etc/cron.d/file'],
-    \ 'cs': ['file.cs'],
+    \ 'cs': ['file.cs', 'file.csx'],
     \ 'csc': ['file.csc'],
     \ 'csdl': ['file.csdl'],
     \ 'csp': ['file.csp', 'file.fdr'],
@@ -130,6 +133,7 @@ let s:filename_checks = {
     \ 'cvs': ['cvs123'],
     \ 'cvsrc': ['.cvsrc'],
     \ 'cynpp': ['file.cyn'],
+    \ 'd': ['file.d'],
     \ 'dart': ['file.dart', 'file.drt'],
     \ 'datascript': ['file.ds'],
     \ 'dcd': ['file.dcd'],
@@ -142,17 +146,17 @@ let s:filename_checks = {
     \ 'desc': ['file.desc'],
     \ 'desktop': ['file.desktop', '.directory', 'file.directory'],
     \ 'dictconf': ['dict.conf', '.dictrc'],
-    \ 'dictdconf': ['dictd.conf'],
+    \ 'dictdconf': ['dictd.conf', 'dictdfile.conf', 'dictd-file.conf'],
     \ 'diff': ['file.diff', 'file.rej'],
     \ 'dircolors': ['.dir_colors', '.dircolors', '/etc/DIR_COLORS', 'any/etc/DIR_COLORS'],
     \ 'dnsmasq': ['/etc/dnsmasq.conf', '/etc/dnsmasq.d/file', 'any/etc/dnsmasq.conf', 'any/etc/dnsmasq.d/file'],
-    \ 'dockerfile': ['Containerfile', 'Dockerfile', 'file.Dockerfile'],
-    \ 'dosbatch': ['file.bat', 'file.sys'],
+    \ 'dockerfile': ['Containerfile', 'Dockerfile', 'file.Dockerfile', 'Dockerfile.debian', 'Containerfile.something'],
+    \ 'dosbatch': ['file.bat'],
     \ 'dosini': ['.editorconfig', '/etc/pacman.conf', '/etc/yum.conf', 'file.ini', 'npmrc', '.npmrc', 'php.ini', 'php.ini-5', 'php.ini-file', '/etc/yum.repos.d/file', 'any/etc/pacman.conf', 'any/etc/yum.conf', 'any/etc/yum.repos.d/file', 'file.wrap'],
     \ 'dot': ['file.dot', 'file.gv'],
     \ 'dracula': ['file.drac', 'file.drc', 'filelvs', 'filelpe', 'drac.file', 'lpe', 'lvs', 'some-lpe', 'some-lvs'],
-    \ 'dsl': ['file.dsl'],
     \ 'dtd': ['file.dtd'],
+    \ 'dtrace': ['/usr/lib/dtrace/io.d'],
     \ 'dts': ['file.dts', 'file.dtsi'],
     \ 'dune': ['jbuild', 'dune', 'dune-project', 'dune-workspace'],
     \ 'dylan': ['file.dylan'],
@@ -165,6 +169,7 @@ let s:filename_checks = {
     \ 'eelixir': ['file.eex', 'file.leex'],
     \ 'elm': ['file.elm'],
     \ 'elmfilt': ['filter-rules'],
+    \ 'elvish': ['file.elv'],
     \ 'epuppet': ['file.epp'],
     \ 'erlang': ['file.erl', 'file.hrl', 'file.yaws'],
     \ 'eruby': ['file.erb', 'file.rhtml'],
@@ -181,49 +186,66 @@ let s:filename_checks = {
     \ 'fennel': ['file.fnl'],
     \ 'fetchmail': ['.fetchmailrc'],
     \ 'fgl': ['file.4gl', 'file.4gh', 'file.m4gl'],
+    \ 'fish': ['file.fish'],
     \ 'focexec': ['file.fex', 'file.focexec'],
-    \ 'forth': ['file.fs', 'file.ft', 'file.fth'],
+    \ 'form': ['file.frm'],
+    \ 'forth': ['file.ft', 'file.fth'],
     \ 'fortran': ['file.f', 'file.for', 'file.fortran', 'file.fpp', 'file.ftn', 'file.f77', 'file.f90', 'file.f95', 'file.f03', 'file.f08'],
     \ 'fpcmake': ['file.fpc'],
     \ 'framescript': ['file.fsl'],
-    \ 'freebasic': ['file.fb', 'file.bi'],
+    \ 'freebasic': ['file.fb'],
+    \ 'fsharp': ['file.fs', 'file.fsi', 'file.fsx'],
     \ 'fstab': ['fstab', 'mtab'],
+    \ 'fusion': ['file.fusion'],
     \ 'fvwm': ['/.fvwm/file', 'any/.fvwm/file'],
-    \ 'gdb': ['.gdbinit'],
+    \ 'gdb': ['.gdbinit', 'gdbinit', 'file.gdb', '.config/gdbearlyinit', '.gdbearlyinit'],
+    \ 'gdresource': ['file.tscn', 'file.tres'],
+    \ 'gdscript': ['file.gd'],
     \ 'gdmo': ['file.mo', 'file.gdmo'],
     \ 'gedcom': ['file.ged', 'lltxxxxx.txt', '/tmp/lltmp', '/tmp/lltmp-file', 'any/tmp/lltmp', 'any/tmp/lltmp-file'],
+    \ 'gemtext': ['file.gmi', 'file.gemini'],
     \ 'gift': ['file.gift'],
-    \ 'gitcommit': ['COMMIT_EDITMSG', 'MERGE_MSG', 'TAG_EDITMSG'],
-    \ 'gitconfig': ['file.git/config', '.gitconfig', '.gitmodules', 'file.git/modules//config', '/.config/git/config', '/etc/gitconfig', '/etc/gitconfig.d/file', '/.gitconfig.d/file', 'any/.config/git/config', 'any/.gitconfig.d/file', 'some.git/config', 'some.git/modules/any/config'],
+    \ 'gitcommit': ['COMMIT_EDITMSG', 'MERGE_MSG', 'TAG_EDITMSG', 'NOTES_EDITMSG', 'EDIT_DESCRIPTION'],
+    \ 'gitconfig': ['file.git/config', 'file.git/config.worktree', 'file.git/worktrees/x/config.worktree', '.gitconfig', '.gitmodules', 'file.git/modules//config', '/.config/git/config', '/etc/gitconfig', '/usr/local/etc/gitconfig', '/etc/gitconfig.d/file', '/.gitconfig.d/file', 'any/.config/git/config', 'any/.gitconfig.d/file', 'some.git/config', 'some.git/modules/any/config'],
     \ 'gitolite': ['gitolite.conf', '/gitolite-admin/conf/file', 'any/gitolite-admin/conf/file'],
     \ 'gitrebase': ['git-rebase-todo'],
     \ 'gitsendemail': ['.gitsendemail.msg.xxxxxx'],
     \ 'gkrellmrc': ['gkrellmrc', 'gkrellmrc_x'],
+    \ 'glsl': ['file.glsl'],
     \ 'gnash': ['gnashrc', '.gnashrc', 'gnashpluginrc', '.gnashpluginrc'],
-    \ 'gnuplot': ['file.gpi'],
+    \ 'gnuplot': ['file.gpi', '.gnuplot'],
     \ 'go': ['file.go'],
+    \ 'gomod': ['go.mod'],
+    \ 'gowork': ['go.work'],
     \ 'gp': ['file.gp', '.gprc'],
     \ 'gpg': ['/.gnupg/options', '/.gnupg/gpg.conf', '/usr/any/gnupg/options.skel', 'any/.gnupg/gpg.conf', 'any/.gnupg/options', 'any/usr/any/gnupg/options.skel'],
     \ 'grads': ['file.gs'],
+    \ 'graphql': ['file.graphql', 'file.graphqls', 'file.gql'],
     \ 'gretl': ['file.gretl'],
     \ 'groovy': ['file.gradle', 'file.groovy'],
     \ 'group': ['any/etc/group', 'any/etc/group-', 'any/etc/group.edit', 'any/etc/gshadow', 'any/etc/gshadow-', 'any/etc/gshadow.edit', 'any/var/backups/group.bak', 'any/var/backups/gshadow.bak', '/etc/group', '/etc/group-', '/etc/group.edit', '/etc/gshadow', '/etc/gshadow-', '/etc/gshadow.edit', '/var/backups/group.bak', '/var/backups/gshadow.bak'],
     \ 'grub': ['/boot/grub/menu.lst', '/boot/grub/grub.conf', '/etc/grub.conf', 'any/boot/grub/grub.conf', 'any/boot/grub/menu.lst', 'any/etc/grub.conf'],
     \ 'gsp': ['file.gsp'],
     \ 'gtkrc': ['.gtkrc', 'gtkrc', '.gtkrc-file', 'gtkrc-file'],
+    \ 'hack': ['file.hack', 'file.hackpartial'],
     \ 'haml': ['file.haml'],
     \ 'hamster': ['file.hsm'],
+    \ 'handlebars': ['file.hbs'],
     \ 'haskell': ['file.hs', 'file.hsc', 'file.hs-boot', 'file.hsig'],
     \ 'haste': ['file.ht'],
     \ 'hastepreproc': ['file.htpp'],
     \ 'hb': ['file.hb'],
+    \ 'hcl': ['file.hcl'],
     \ 'hercules': ['file.vc', 'file.ev', 'file.sum', 'file.errsum'],
+    \ 'heex': ['file.heex'],
     \ 'hex': ['file.hex', 'file.h32'],
     \ 'hgcommit': ['hg-editor-file.txt'],
+    \ 'hjson': ['file.hjson'],
     \ 'hog': ['file.hog', 'snort.conf', 'vision.conf'],
     \ 'hollywood': ['file.hws'],
     \ 'hostconf': ['/etc/host.conf', 'any/etc/host.conf'],
     \ 'hostsaccess': ['/etc/hosts.allow', '/etc/hosts.deny', 'any/etc/hosts.allow', 'any/etc/hosts.deny'],
+    \ 'i3config': ['/home/user/.i3/config', '/home/user/.config/i3/config', '/etc/i3/config', '/etc/xdg/i3/config'],
     \ 'logcheck': ['/etc/logcheck/file.d-some/file', '/etc/logcheck/file.d/file', 'any/etc/logcheck/file.d-some/file', 'any/etc/logcheck/file.d/file'],
     \ 'modula3': ['file.m3', 'file.mg', 'file.i3', 'file.ig'],
     \ 'natural': ['file.NSA', 'file.NSC', 'file.NSG', 'file.NSL', 'file.NSM', 'file.NSN', 'file.NSP', 'file.NSS'],
@@ -254,23 +276,29 @@ let s:filename_checks = {
     \ 'java': ['file.java', 'file.jav'],
     \ 'javacc': ['file.jj', 'file.jjt'],
     \ 'javascript': ['file.js', 'file.javascript', 'file.es', 'file.mjs', 'file.cjs'],
+    \ 'javascript.glimmer': ['file.gjs'],
     \ 'javascriptreact': ['file.jsx'],
     \ 'jess': ['file.clp'],
     \ 'jgraph': ['file.jgr'],
     \ 'jovial': ['file.jov', 'file.j73', 'file.jovial'],
     \ 'jproperties': ['file.properties', 'file.properties_xx', 'file.properties_xx_xx', 'some.properties_xx_xx_file'],
-    \ 'json': ['file.json', 'file.jsonp', 'file.json-patch', 'file.webmanifest', 'Pipfile.lock', 'file.ipynb'],
+    \ 'json': ['file.json', 'file.jsonp', 'file.json-patch', 'file.webmanifest', 'Pipfile.lock', 'file.ipynb', '.babelrc', '.eslintrc', '.prettierrc', '.firebaserc', 'file.slnf'],
+    \ 'json5': ['file.json5'],
+    \ 'jsonc': ['file.jsonc'],
     \ 'jsp': ['file.jsp'],
+    \ 'julia': ['file.jl'],
     \ 'kconfig': ['Kconfig', 'Kconfig.debug', 'Kconfig.file'],
     \ 'kivy': ['file.kv'],
     \ 'kix': ['file.kix'],
     \ 'kotlin': ['file.kt', 'file.ktm', 'file.kts'],
+    \ 'krl': ['file.sub', 'file.Sub', 'file.SUB'],
     \ 'kscript': ['file.ks'],
     \ 'kwt': ['file.k'],
     \ 'lace': ['file.ace', 'file.ACE'],
     \ 'latte': ['file.latte', 'file.lte'],
     \ 'ld': ['file.ld'],
     \ 'ldif': ['file.ldif'],
+    \ 'ledger': ['file.ldg', 'file.ledger', 'file.journal'],
     \ 'less': ['file.less'],
     \ 'lex': ['file.lex', 'file.l', 'file.lxx', 'file.l++'],
     \ 'lftp': ['lftp.conf', '.lftprc', 'anylftp/rc', 'lftp/rc', 'some-lftp/rc'],
@@ -280,7 +308,7 @@ let s:filename_checks = {
     \ 'lilo': ['lilo.conf', 'lilo.conf-file'],
     \ 'limits': ['/etc/limits', '/etc/anylimits.conf', '/etc/anylimits.d/file.conf', '/etc/limits.conf', '/etc/limits.d/file.conf', '/etc/some-limits.conf', '/etc/some-limits.d/file.conf', 'any/etc/limits', 'any/etc/limits.conf', 'any/etc/limits.d/file.conf', 'any/etc/some-limits.conf', 'any/etc/some-limits.d/file.conf'],
     \ 'liquid': ['file.liquid'],
-    \ 'lisp': ['file.lsp', 'file.lisp', 'file.el', 'file.cl', '.emacs', '.sawfishrc', 'sbclrc', '.sbclrc'],
+    \ 'lisp': ['file.lsp', 'file.lisp', 'file.asd', 'file.el', 'file.cl', '.emacs', '.sawfishrc', 'sbclrc', '.sbclrc'],
     \ 'lite': ['file.lite', 'file.lt'],
     \ 'litestep': ['/LiteStep/any/file.rc', 'any/LiteStep/any/file.rc'],
     \ 'loginaccess': ['/etc/login.access', 'any/etc/login.access'],
@@ -293,6 +321,7 @@ let s:filename_checks = {
     \ 'lss': ['file.lss'],
     \ 'lua': ['file.lua', 'file.rockspec', 'file.nse'],
     \ 'lynx': ['lynx.cfg'],
+    \ 'matlab': ['file.m'],
     \ 'm3build': ['m3makefile', 'm3overrides'],
     \ 'm3quake': ['file.quake', 'cm3.cfg'],
     \ 'm4': ['file.at'],
@@ -334,24 +363,29 @@ let s:filename_checks = {
     \ 'msql': ['file.msql'],
     \ 'mupad': ['file.mu'],
     \ 'mush': ['file.mush'],
-    \ 'muttrc': ['Muttngrc', 'Muttrc', '.muttngrc', '.muttngrc-file', '.muttrc', '.muttrc-file', '/.mutt/muttngrc', '/.mutt/muttngrc-file', '/.mutt/muttrc', '/.mutt/muttrc-file', '/.muttng/muttngrc', '/.muttng/muttngrc-file', '/.muttng/muttrc', '/.muttng/muttrc-file', '/etc/Muttrc.d/file', 'Muttngrc-file', 'Muttrc-file', 'any/.mutt/muttngrc', 'any/.mutt/muttngrc-file', 'any/.mutt/muttrc', 'any/.mutt/muttrc-file', 'any/.muttng/muttngrc', 'any/.muttng/muttngrc-file', 'any/.muttng/muttrc', 'any/.muttng/muttrc-file', 'any/etc/Muttrc.d/file', 'muttngrc', 'muttngrc-file', 'muttrc', 'muttrc-file'],
+    \ 'muttrc': ['Muttngrc', 'Muttrc', '.muttngrc', '.muttngrc-file', '.muttrc', '.muttrc-file', '/.mutt/muttngrc', '/.mutt/muttngrc-file', '/.mutt/muttrc', '/.mutt/muttrc-file', '/.muttng/muttngrc', '/.muttng/muttngrc-file', '/.muttng/muttrc', '/.muttng/muttrc-file', '/etc/Muttrc.d/file', '/etc/Muttrc.d/file.rc', 'Muttngrc-file', 'Muttrc-file', 'any/.mutt/muttngrc', 'any/.mutt/muttngrc-file', 'any/.mutt/muttrc', 'any/.mutt/muttrc-file', 'any/.muttng/muttngrc', 'any/.muttng/muttngrc-file', 'any/.muttng/muttrc', 'any/.muttng/muttrc-file', 'any/etc/Muttrc.d/file', 'muttngrc', 'muttngrc-file', 'muttrc', 'muttrc-file'],
     \ 'mysql': ['file.mysql'],
     \ 'n1ql': ['file.n1ql', 'file.nql'],
     \ 'named': ['namedfile.conf', 'rndcfile.conf', 'named-file.conf', 'named.conf', 'rndc-file.conf', 'rndc-file.key', 'rndc.conf', 'rndc.key'],
     \ 'nanorc': ['/etc/nanorc', 'file.nanorc', 'any/etc/nanorc'],
     \ 'ncf': ['file.ncf'],
     \ 'netrc': ['.netrc'],
+    \ 'nginx': ['file.nginx', 'nginxfile.conf', 'filenginx.conf', 'any/etc/nginx/file', 'any/usr/local/nginx/conf/file', 'any/nginx/file.conf'],
     \ 'ninja': ['file.ninja'],
+    \ 'nix': ['file.nix'],
     \ 'nqc': ['file.nqc'],
     \ 'nroff': ['file.tr', 'file.nr', 'file.roff', 'file.tmac', 'file.mom', 'tmac.file'],
     \ 'nsis': ['file.nsi', 'file.nsh'],
     \ 'obj': ['file.obj'],
     \ 'ocaml': ['file.ml', 'file.mli', 'file.mll', 'file.mly', '.ocamlinit', 'file.mlt', 'file.mlp', 'file.mlip', 'file.mli.cppo', 'file.ml.cppo'],
     \ 'occam': ['file.occ'],
+    \ 'octave': ['octaverc', '.octaverc', 'octave.conf'],
     \ 'omnimark': ['file.xom', 'file.xin'],
     \ 'opam': ['opam', 'file.opam', 'file.opam.template'],
     \ 'openroad': ['file.or'],
+    \ 'openscad': ['file.scad'],
     \ 'ora': ['file.ora'],
+    \ 'org': ['file.org', 'file.org_archive'],
     \ 'pamconf': ['/etc/pam.conf', '/etc/pam.d/file', 'any/etc/pam.conf', 'any/etc/pam.d/file'],
     \ 'pamenv': ['/etc/security/pam_env.conf', '/home/user/.pam_environment', '.pam_environment', 'pam_env.conf'],
     \ 'papp': ['file.papp', 'file.pxml', 'file.pxsl'],
@@ -363,7 +397,7 @@ let s:filename_checks = {
     \ 'perl': ['file.plx', 'file.al', 'file.psgi', 'gitolite.rc', '.gitolite.rc', 'example.gitolite.rc'],
     \ 'pf': ['pf.conf'],
     \ 'pfmain': ['main.cf'],
-    \ 'php': ['file.php', 'file.php9', 'file.phtml', 'file.ctp'],
+    \ 'php': ['file.php', 'file.php9', 'file.phtml', 'file.ctp', 'file.phpt'],
     \ 'lpc': ['file.lpc', 'file.ulpc'],
     \ 'pike': ['file.pike', 'file.pmod'],
     \ 'cmod': ['file.cmod'],
@@ -383,6 +417,7 @@ let s:filename_checks = {
     \ 'ppd': ['file.ppd'],
     \ 'ppwiz': ['file.it', 'file.ih'],
     \ 'privoxy': ['file.action'],
+    \ 'prisma': ['file.prisma'],
     \ 'proc': ['file.pc'],
     \ 'procmail': ['.procmail', '.procmailrc'],
     \ 'prolog': ['file.pdb'],
@@ -393,9 +428,12 @@ let s:filename_checks = {
     \ 'ps1xml': ['file.ps1xml'],
     \ 'psf': ['file.psf'],
     \ 'psl': ['file.psl'],
+    \ 'pug': ['file.pug'],
     \ 'puppet': ['file.pp'],
+    \ 'pyret': ['file.arr'],
     \ 'pyrex': ['file.pyx', 'file.pxd'],
     \ 'python': ['file.py', 'file.pyw', '.pythonstartup', '.pythonrc', 'file.ptl', 'file.pyi', 'SConstruct'],
+    \ 'ql': ['file.ql', 'file.qll'],
     \ 'quake': ['anybaseq2/file.cfg', 'anyid1/file.cfg', 'quake3/file.cfg', 'baseq2/file.cfg', 'id1/file.cfg', 'quake1/file.cfg', 'some-baseq2/file.cfg', 'some-id1/file.cfg', 'some-quake1/file.cfg'],
     \ 'radiance': ['file.rad', 'file.mat'],
     \ 'raku': ['file.pm6', 'file.p6', 'file.t6', 'file.pod6', 'file.raku', 'file.rakumod', 'file.rakudoc', 'file.rakutest'],
@@ -406,6 +444,7 @@ let s:filename_checks = {
     \ 'readline': ['.inputrc', 'inputrc'],
     \ 'remind': ['.reminders', 'file.remind', 'file.rem', '.reminders-file'],
     \ 'rego': ['file.rego'],
+    \ 'rescript': ['file.res', 'file.resi'],
     \ 'resolv': ['resolv.conf'],
     \ 'reva': ['file.frt'],
     \ 'rexx': ['file.rex', 'file.orx', 'file.rxo', 'file.rxj', 'file.jrexx', 'file.rexxj', 'file.rexx', 'file.testGroup', 'file.testUnit'],
@@ -413,19 +452,20 @@ let s:filename_checks = {
     \ 'rnc': ['file.rnc'],
     \ 'rng': ['file.rng'],
     \ 'robots': ['robots.txt'],
+    \ 'routeros': ['file.rsc'],
     \ 'rpcgen': ['file.x'],
     \ 'rpl': ['file.rpl'],
     \ 'rst': ['file.rst'],
     \ 'rtf': ['file.rtf'],
-    \ 'ruby': ['.irbrc', 'irbrc', 'file.rb', 'file.rbw', 'file.gemspec', 'file.ru', 'Gemfile', 'file.builder', 'file.rxml', 'file.rjs', 'file.rant', 'file.rake', 'rakefile', 'Rakefile', 'rantfile', 'Rantfile', 'rakefile-file', 'Rakefile-file', 'Puppetfile'],
+    \ 'ruby': ['.irbrc', 'irbrc', 'file.rb', 'file.rbw', 'file.gemspec', 'file.ru', 'Gemfile', 'file.builder', 'file.rxml', 'file.rjs', 'file.rant', 'file.rake', 'rakefile', 'Rakefile', 'rantfile', 'Rantfile', 'rakefile-file', 'Rakefile-file', 'Puppetfile', 'Vagrantfile'],
     \ 'rust': ['file.rs'],
     \ 'samba': ['smb.conf'],
     \ 'sas': ['file.sas'],
     \ 'sass': ['file.sass'],
     \ 'sather': ['file.sa'],
     \ 'sbt': ['file.sbt'],
-    \ 'scala': ['file.scala', 'file.sc'],
-    \ 'scheme': ['file.scm', 'file.ss', 'file.rkt'],
+    \ 'scala': ['file.scala'],
+    \ 'scheme': ['file.scm', 'file.ss', 'file.sld', 'file.rkt', 'file.rktd', 'file.rktl'],
     \ 'scilab': ['file.sci', 'file.sce'],
     \ 'screen': ['.screenrc', 'screenrc'],
     \ 'sexplib': ['file.sexp'],
@@ -434,7 +474,7 @@ let s:filename_checks = {
     \ 'sdc': ['file.sdc'],
     \ 'sdl': ['file.sdl', 'file.pr'],
     \ 'sed': ['file.sed'],
-    \ 'sensors': ['/etc/sensors.conf', '/etc/sensors3.conf', 'any/etc/sensors.conf', 'any/etc/sensors3.conf'],
+    \ 'sensors': ['/etc/sensors.conf', '/etc/sensors3.conf', '/etc/sensors.d/file', 'any/etc/sensors.conf', 'any/etc/sensors3.conf', 'any/etc/sensors.d/file'],
     \ 'services': ['/etc/services', 'any/etc/services'],
     \ 'setserial': ['/etc/serial.conf', 'any/etc/serial.conf'],
     \ 'sh': ['.bashrc', 'file.bash', '/usr/share/doc/bash-completion/filter.sh','/etc/udev/cdsymlinks.conf', 'any/etc/udev/cdsymlinks.conf'],
@@ -445,6 +485,8 @@ let s:filename_checks = {
     \ 'skill': ['file.il', 'file.ils', 'file.cdf'],
     \ 'slang': ['file.sl'],
     \ 'slice': ['file.ice'],
+    \ 'solidity': ['file.sol'],
+    \ 'solution': ['file.sln'],
     \ 'slpconf': ['/etc/slp.conf', 'any/etc/slp.conf'],
     \ 'slpreg': ['/etc/slp.reg', 'any/etc/slp.reg'],
     \ 'slpspi': ['/etc/slp.spi', 'any/etc/slp.spi'],
@@ -466,13 +508,16 @@ let s:filename_checks = {
     \ 'sqlj': ['file.sqlj'],
     \ 'sqr': ['file.sqr', 'file.sqi'],
     \ 'squid': ['squid.conf'],
+    \ 'squirrel': ['file.nut'],
     \ 'srec': ['file.s19', 'file.s28', 'file.s37', 'file.mot', 'file.srec'],
-    \ 'sshconfig': ['ssh_config', '/.ssh/config', '/etc/ssh/ssh_config.d/file.conf', 'any/etc/ssh/ssh_config.d/file.conf', 'any/.ssh/config'],
+    \ 'sshconfig': ['ssh_config', '/.ssh/config', '/etc/ssh/ssh_config.d/file.conf', 'any/etc/ssh/ssh_config.d/file.conf', 'any/.ssh/config', 'any/.ssh/file.conf'],
     \ 'sshdconfig': ['sshd_config', '/etc/ssh/sshd_config.d/file.conf', 'any/etc/ssh/sshd_config.d/file.conf'],
     \ 'st': ['file.st'],
     \ 'stata': ['file.ado', 'file.do', 'file.imata', 'file.mata'],
     \ 'stp': ['file.stp'],
-    \ 'sudoers': ['any/etc/sudoers', 'sudoers.tmp', '/etc/sudoers'],
+    \ 'sudoers': ['any/etc/sudoers', 'sudoers.tmp', '/etc/sudoers', 'any/etc/sudoers.d/file'],
+    \ 'supercollider': ['file.quark'], 
+    \ 'surface': ['file.sface'],
     \ 'svg': ['file.svg'],
     \ 'svn': ['svn-commitfile.tmp', 'svn-commit-file.tmp', 'svn-commit.tmp'],
     \ 'swift': ['file.swift'],
@@ -485,19 +530,22 @@ let s:filename_checks = {
     \ 'tak': ['file.tak'],
     \ 'taskdata': ['pending.data', 'completed.data', 'undo.data'],
     \ 'taskedit': ['file.task'],
-    \ 'tcl': ['file.tcl', 'file.tk', 'file.itcl', 'file.itk', 'file.jacl'],
+    \ 'tcl': ['file.tcl', 'file.tm', 'file.tk', 'file.itcl', 'file.itk', 'file.jacl', '.tclshrc', 'tclsh.rc', '.wishrc'],
+    \ 'teal': ['file.tl'],
     \ 'teraterm': ['file.ttl'],
     \ 'terminfo': ['file.ti'],
+    \ 'terraform': ['file.tfvars'],
     \ 'tex': ['file.latex', 'file.sty', 'file.dtx', 'file.ltx', 'file.bbl'],
     \ 'texinfo': ['file.texinfo', 'file.texi', 'file.txi'],
     \ 'texmf': ['texmf.cnf'],
-    \ 'text': ['file.text', 'README', '/usr/share/doc/bash-completion/AUTHORS'],
+    \ 'text': ['file.text', 'file.txt', 'README', 'LICENSE', 'COPYING', 'AUTHORS', '/usr/share/doc/bash-completion/AUTHORS', '/etc/apt/apt.conf.d/README', '/etc/Muttrc.d/README'],
     \ 'tf': ['file.tf', '.tfrc', 'tfrc'],
     \ 'tidy': ['.tidyrc', 'tidyrc', 'tidy.conf'],
     \ 'tilde': ['file.t.html'],
+    \ 'tla': ['file.tla'],
     \ 'tli': ['file.tli'],
-    \ 'tmux': ['tmuxfile.conf', '.tmuxfile.conf', '.tmux-file.conf', '.tmux.conf', 'tmux-file.conf', 'tmux.conf'],
-    \ 'toml': ['file.toml'],
+    \ 'tmux': ['tmuxfile.conf', '.tmuxfile.conf', '.tmux-file.conf', '.tmux.conf', 'tmux-file.conf', 'tmux.conf', 'tmux.conf.local'],
+    \ 'toml': ['file.toml', 'Gopkg.lock', 'Pipfile', '/home/user/.cargo/config'],
     \ 'tpp': ['file.tpp'],
     \ 'treetop': ['file.treetop'],
     \ 'trustees': ['trustees.conf'],
@@ -506,6 +554,7 @@ let s:filename_checks = {
     \ 'tssgm': ['file.tssgm'],
     \ 'tssop': ['file.tssop'],
     \ 'twig': ['file.twig'],
+    \ 'typescript.glimmer': ['file.gts'],
     \ 'typescriptreact': ['file.tsx'],
     \ 'uc': ['file.uc'],
     \ 'udevconf': ['/etc/udev/udev.conf', 'any/etc/udev/udev.conf'],
@@ -520,6 +569,7 @@ let s:filename_checks = {
     \ 'usserverlog': ['usserver.log', 'USSERVER.LOG', 'usserver.file.log', 'USSERVER.FILE.LOG', 'file.usserver.log', 'FILE.USSERVER.LOG'],
     \ 'usw2kagtlog': ['usw2kagt.log', 'USW2KAGT.LOG', 'usw2kagt.file.log', 'USW2KAGT.FILE.LOG', 'file.usw2kagt.log', 'FILE.USW2KAGT.LOG'],
     \ 'vb': ['file.sba', 'file.vb', 'file.vbs', 'file.dsm', 'file.ctl'],
+    \ 'vala': ['file.vala'],
     \ 'vera': ['file.vr', 'file.vri', 'file.vrh'],
     \ 'verilog': ['file.v'],
     \ 'verilogams': ['file.va', 'file.vams'],
@@ -544,9 +594,10 @@ let s:filename_checks = {
     \ 'xhtml': ['file.xhtml', 'file.xht'],
     \ 'xinetd': ['/etc/xinetd.conf', '/etc/xinetd.d/file', 'any/etc/xinetd.conf', 'any/etc/xinetd.d/file'],
     \ 'xmath': ['file.msc', 'file.msf'],
-    \ 'xml': ['/etc/blkid.tab', '/etc/blkid.tab.old', 'file.xmi', 'file.csproj', 'file.csproj.user', 'file.ui', 'file.tpm', '/etc/xdg/menus/file.menu', 'fglrxrc', 'file.xlf', 'file.xliff', 'file.xul', 'file.wsdl', 'file.wpl', 'any/etc/blkid.tab', 'any/etc/blkid.tab.old', 'any/etc/xdg/menus/file.menu'],
+    \ 'xml': ['/etc/blkid.tab', '/etc/blkid.tab.old', 'file.xmi', 'file.csproj', 'file.csproj.user', 'file.fsproj', 'file.fsproj.user', 'file.vbproj', 'file.vbproj.user', 'file.ui', 'file.tpm', '/etc/xdg/menus/file.menu', 'fglrxrc', 'file.xlf', 'file.xliff', 'file.xul', 'file.wsdl', 'file.wpl', 'any/etc/blkid.tab', 'any/etc/blkid.tab.old', 'any/etc/xdg/menus/file.menu', 'file.atom', 'file.rss', 'file.cdxml', 'file.psc1', 'file.mpd'],
     \ 'xmodmap': ['anyXmodmap', 'Xmodmap', 'some-Xmodmap', 'some-xmodmap', 'some-xmodmap-file', 'xmodmap', 'xmodmap-file'],
     \ 'xf86conf': ['xorg.conf', 'xorg.conf-4'],
+    \ 'xpm': ['file.xpm'],
     \ 'xpm2': ['file.xpm2'],
     \ 'xquery': ['file.xq', 'file.xql', 'file.xqm', 'file.xquery', 'file.xqy'],
     \ 'xs': ['file.xs'],
@@ -554,18 +605,19 @@ let s:filename_checks = {
     \ 'xslt': ['file.xsl', 'file.xslt'],
     \ 'yacc': ['file.yy', 'file.yxx', 'file.y++'],
     \ 'yaml': ['file.yaml', 'file.yml'],
+    \ 'yang': ['file.yang'],
     \ 'raml': ['file.raml'],
     \ 'z8a': ['file.z8a'],
+    \ 'zig': ['file.zig'],
     \ 'zimbu': ['file.zu'],
     \ 'zimbutempl': ['file.zut'],
     \ 'zsh': ['.zprofile', '/etc/zprofile', '.zfbfmarks', 'file.zsh', '.zcompdump', '.zlogin', '.zlogout', '.zshenv', '.zshrc', '.zcompdump-file', '.zlog', '.zlog-file', '.zsh', '.zsh-file', 'any/etc/zprofile', 'zlog', 'zlog-file', 'zsh', 'zsh-file'],
     \
     \ 'help': [$VIMRUNTIME . '/doc/help.txt'],
-    \ 'xpm': ['file.xpm'],
     \ }
 
 let s:filename_case_checks = {
-    \ 'modula2': ['file.DEF', 'file.MOD'],
+    \ 'modula2': ['file.DEF'],
     \ 'bzl': ['file.BUILD', 'BUILD'],
     \ }
 
@@ -638,7 +690,7 @@ let s:script_checks = {
       \                ['#!/path/nodejs'],
       \                ['#!/path/rhino']],
       \ 'bc': [['#!/path/bc']],
-      \ 'sed': [['#!/path/sed']],
+      \ 'sed': [['#!/path/sed'], ['#n'], ['#n comment']],
       \ 'ocaml': [['#!/path/ocaml']],
       \ 'awk': [['#!/path/awk'],
       \         ['#!/path/gawk']],
@@ -652,6 +704,9 @@ let s:script_checks = {
       \ 'yaml': [['%YAML 1.2']],
       \ 'pascal': [['#!/path/instantfpc']],
       \ 'fennel': [['#!/path/fennel']],
+      \ 'routeros': [['#!/path/rsc']],
+      \ 'fish': [['#!/path/fish']],
+      \ 'forth': [['#!/path/gforth']],
       \ }
 
 " Various forms of "env" optional arguments.
@@ -688,82 +743,227 @@ func Test_setfiletype_completion()
   call assert_equal('"setfiletype java javacc javascript javascriptreact', @:)
 endfunc
 
-func Test_hook_file()
+"""""""""""""""""""""""""""""""""""""""""""""""""
+" Tests for specific extentions and filetypes.
+" Keep sorted.
+"""""""""""""""""""""""""""""""""""""""""""""""""
+
+func Test_bas_file()
   filetype on
 
-  call writefile(['[Trigger]', 'this is pacman config'], 'Xfile.hook')
-  split Xfile.hook
-  call assert_equal('dosini', &filetype)
+  call writefile(['looks like BASIC'], 'Xfile.bas')
+  split Xfile.bas
+  call assert_equal('basic', &filetype)
   bwipe!
 
-  call writefile(['not pacman'], 'Xfile.hook')
-  split Xfile.hook
-  call assert_notequal('dosini', &filetype)
+  " Test dist#ft#FTbas()
+
+  let g:filetype_bas = 'freebasic'
+  split Xfile.bas
+  call assert_equal('freebasic', &filetype)
+  bwipe!
+  unlet g:filetype_bas
+
+  " FreeBASIC
+
+  call writefile(["/' FreeBASIC multiline comment '/"], 'Xfile.bas')
+  split Xfile.bas
+  call assert_equal('freebasic', &filetype)
   bwipe!
 
-  call delete('Xfile.hook')
+  call writefile(['#define TESTING'], 'Xfile.bas')
+  split Xfile.bas
+  call assert_equal('freebasic', &filetype)
+  bwipe!
+
+  call writefile(['option byval'], 'Xfile.bas')
+  split Xfile.bas
+  call assert_equal('freebasic', &filetype)
+  bwipe!
+
+  call writefile(['extern "C"'], 'Xfile.bas')
+  split Xfile.bas
+  call assert_equal('freebasic', &filetype)
+  bwipe!
+
+  " QB64
+
+  call writefile(['$LET TESTING = 1'], 'Xfile.bas')
+  split Xfile.bas
+  call assert_equal('qb64', &filetype)
+  bwipe!
+
+  call writefile(['OPTION _EXPLICIT'], 'Xfile.bas')
+  split Xfile.bas
+  call assert_equal('qb64', &filetype)
+  bwipe!
+
+  " Visual Basic
+
+  call writefile(['Attribute VB_NAME = "Testing"'], 'Xfile.bas')
+  split Xfile.bas
+  call assert_equal('vb', &filetype)
+  bwipe!
+
+  call delete('Xfile.bas')
   filetype off
 endfunc
 
-func Test_ts_file()
+" Test dist#ft#FTcfg()
+func Test_cfg_file()
   filetype on
 
-  call writefile(['<?xml version="1.0" encoding="utf-8"?>'], 'Xfile.ts')
-  split Xfile.ts
-  call assert_equal('xml', &filetype)
-  bwipe!
+  " *.cfg defaults to cfg
+  call writefile(['looks like cfg'], 'cfgfile.cfg')
+  split cfgfile.cfg
+  call assert_equal('cfg', &filetype)
 
-  call writefile(['// looks like Typescript'], 'Xfile.ts')
-  split Xfile.ts
-  call assert_equal('typescript', &filetype)
+  let g:filetype_cfg = 'other'
+  edit
+  call assert_equal('other', &filetype)
   bwipe!
+  unlet g:filetype_cfg
 
-  call delete('Xfile.hook')
+  " RAPID cfg
+  let ext = 'cfg'
+  for i in ['EIO', 'MMC', 'MOC', 'PROC', 'SIO', 'SYS']
+    call writefile([i .. ':CFG'], 'cfgfile.' .. ext)
+    execute "split cfgfile." .. ext
+    call assert_equal('rapid', &filetype)
+    bwipe!
+    call delete('cfgfile.' .. ext)
+    " check different case of file extension
+    let ext = substitute(ext, '\(\l\)', '\u\1', '')
+  endfor
+
   filetype off
 endfunc
 
-func Test_ttl_file()
+func Test_d_file()
   filetype on
 
-  call writefile(['@base <http://example.org/> .'], 'Xfile.ttl')
-  split Xfile.ttl
-  call assert_equal('turtle', &filetype)
+  call writefile(['looks like D'], 'Xfile.d')
+  split Xfile.d
+  call assert_equal('d', &filetype)
   bwipe!
 
-  call writefile(['looks like Tera Term Language'], 'Xfile.ttl')
-  split Xfile.ttl
-  call assert_equal('teraterm', &filetype)
+  call writefile(['#!/some/bin/dtrace'], 'Xfile.d')
+  split Xfile.d
+  call assert_equal('dtrace', &filetype)
   bwipe!
 
-  call delete('Xfile.ttl')
+  call writefile(['#pragma  D  option'], 'Xfile.d')
+  split Xfile.d
+  call assert_equal('dtrace', &filetype)
+  bwipe!
+
+  call writefile([':some:thing:'], 'Xfile.d')
+  split Xfile.d
+  call assert_equal('dtrace', &filetype)
+  bwipe!
+
+  call writefile(['module this', '#pragma  D  option'], 'Xfile.d')
+  split Xfile.d
+  call assert_equal('d', &filetype)
+  bwipe!
+
+  call writefile(['import that', '#pragma  D  option'], 'Xfile.d')
+  split Xfile.d
+  call assert_equal('d', &filetype)
+  bwipe!
+
   filetype off
 endfunc
 
-func Test_pp_file()
+func Test_dat_file()
   filetype on
 
-  call writefile(['looks like puppet'], 'Xfile.pp')
-  split Xfile.pp
-  call assert_equal('puppet', &filetype)
+  " KRL header start with "&WORD", but is not always present.
+  call writefile(['&ACCESS'], 'datfile.dat')
+  split datfile.dat
+  call assert_equal('krl', &filetype)
+  bwipe!
+  call delete('datfile.dat')
+
+  " KRL defdat with leading spaces, for KRL file extension is not case
+  " sensitive.
+  call writefile(['  DEFDAT datfile'], 'datfile.Dat')
+  split datfile.Dat
+  call assert_equal('krl', &filetype)
+  bwipe!
+  call delete('datfile.Dat')
+
+  " KRL defdat with embedded spaces, file starts with empty line(s).
+  call writefile(['', 'defdat  datfile  public'], 'datfile.DAT')
+  split datfile.DAT
+  call assert_equal('krl', &filetype)
   bwipe!
 
-  let g:filetype_pp = 'pascal'
-  split Xfile.pp
-  call assert_equal('pascal', &filetype)
+  " User may overrule file inspection
+  let g:filetype_dat = 'dat'
+  split datfile.DAT
+  call assert_equal('dat', &filetype)
+  bwipe!
+  call delete('datfile.DAT')
+  unlet g:filetype_dat
+
+  filetype off
+endfunc
+
+func Test_dep3patch_file()
+  filetype on
+
+  call assert_true(mkdir('debian/patches', 'p'))
+
+  " series files are not patches
+  call writefile(['Description: some awesome patch'], 'debian/patches/series')
+  split debian/patches/series
+  call assert_notequal('dep3patch', &filetype)
   bwipe!
 
-  " Test dist#ft#FTpp()
-  call writefile(['{ pascal comment'], 'Xfile.pp')
-  split Xfile.pp
-  call assert_equal('pascal', &filetype)
+  " diff/patch files without the right headers should still show up as ft=diff
+  call writefile([], 'debian/patches/foo.diff')
+  split debian/patches/foo.diff
+  call assert_equal('diff', &filetype)
   bwipe!
 
-  call writefile(['procedure pascal'], 'Xfile.pp')
-  split Xfile.pp
-  call assert_equal('pascal', &filetype)
+  " Files with the right headers are detected as dep3patch, even if they don't
+  " have a diff/patch extension
+  call writefile(['Subject: dep3patches'], 'debian/patches/bar')
+  split debian/patches/bar
+  call assert_equal('dep3patch', &filetype)
   bwipe!
 
-  call delete('Xfile.pp')
+  " Files in sub-directories are detected
+  call assert_true(mkdir('debian/patches/s390x', 'p'))
+  call writefile(['Subject: dep3patches'], 'debian/patches/s390x/bar')
+  split debian/patches/s390x/bar
+  call assert_equal('dep3patch', &filetype)
+  bwipe!
+
+  " The detection stops when seeing the "header end" marker
+  call writefile(['---', 'Origin: the cloud'], 'debian/patches/baz')
+  split debian/patches/baz
+  call assert_notequal('dep3patch', &filetype)
+  bwipe!
+
+  call delete('debian', 'rf')
+endfunc
+
+func Test_dsl_file()
+  filetype on
+
+  call writefile(['  <!doctype dsssl-spec ['], 'dslfile.dsl')
+  split dslfile.dsl
+  call assert_equal('dsl', &filetype)
+  bwipe!
+
+  call writefile(['workspace {'], 'dslfile.dsl')
+  split dslfile.dsl
+  call assert_equal('structurizr', &filetype)
+  bwipe!
+
+  call delete('dslfile.dsl')
   filetype off
 endfunc
 
@@ -803,5 +1003,679 @@ func Test_ex_file()
   call delete('Xfile.ex')
   filetype off
 endfunc
+
+func Test_foam_file()
+  filetype on
+  call assert_true(mkdir('0', 'p'))
+  call assert_true(mkdir('0.orig', 'p'))
+
+  call writefile(['FoamFile {', '    object something;'], 'Xfile1Dict')
+  split Xfile1Dict
+  call assert_equal('foam', &filetype)
+  bwipe!
+
+  call writefile(['FoamFile {', '    object something;'], 'Xfile1Dict.something')
+  split Xfile1Dict.something
+  call assert_equal('foam', &filetype)
+  bwipe!
+
+  call writefile(['FoamFile {', '    object something;'], 'XfileProperties')
+  split XfileProperties
+  call assert_equal('foam', &filetype)
+  bwipe!
+
+  call writefile(['FoamFile {', '    object something;'], 'XfileProperties.something')
+  split XfileProperties.something
+  call assert_equal('foam', &filetype)
+  bwipe!
+
+  call writefile(['FoamFile {', '    object something;'], 'XfileProperties')
+  split XfileProperties
+  call assert_equal('foam', &filetype)
+  bwipe!
+
+  call writefile(['FoamFile {', '    object something;'], 'XfileProperties.something')
+  split XfileProperties.something
+  call assert_equal('foam', &filetype)
+  bwipe!
+
+  call writefile(['FoamFile {', '    object something;'], '0/Xfile')
+  split 0/Xfile
+  call assert_equal('foam', &filetype)
+  bwipe!
+
+  call writefile(['FoamFile {', '    object something;'], '0.orig/Xfile')
+  split 0.orig/Xfile
+  call assert_equal('foam', &filetype)
+  bwipe!
+
+  call delete('0', 'rf')
+  call delete('0.orig', 'rf')
+  call delete('Xfile1Dict')
+  call delete('Xfile1Dict.something')
+  call delete('XfileProperties')
+  call delete('XfileProperties.something')
+  filetype off
+endfunc
+
+func Test_frm_file()
+  filetype on
+
+  call writefile(['looks like FORM'], 'Xfile.frm')
+  split Xfile.frm
+  call assert_equal('form', &filetype)
+  bwipe!
+
+  " Test dist#ft#FTfrm()
+
+  let g:filetype_frm = 'form'
+  split Xfile.frm
+  call assert_equal('form', &filetype)
+  bwipe!
+  unlet g:filetype_frm
+
+  " Visual Basic
+
+  call writefile(['Begin VB.Form Form1'], 'Xfile.frm')
+  split Xfile.frm
+  call assert_equal('vb', &filetype)
+  bwipe!
+
+  call delete('Xfile.frm')
+  filetype off
+endfunc
+
+func Test_fs_file()
+  filetype on
+
+  call writefile(['looks like F#'], 'Xfile.fs')
+  split Xfile.fs
+  call assert_equal('fsharp', &filetype)
+  bwipe!
+
+  let g:filetype_fs = 'forth'
+  split Xfile.fs
+  call assert_equal('forth', &filetype)
+  bwipe!
+  unlet g:filetype_fs
+
+  " Test dist#ft#FTfs()
+
+  " Forth (Gforth)
+
+  call writefile(['( Forth inline comment )'], 'Xfile.fs')
+  split Xfile.fs
+  call assert_equal('forth', &filetype)
+  bwipe!
+
+  call writefile(['.( Forth displayed inline comment )'], 'Xfile.fs')
+  split Xfile.fs
+  call assert_equal('forth', &filetype)
+  bwipe!
+
+  call writefile(['\ Forth line comment'], 'Xfile.fs')
+  split Xfile.fs
+  call assert_equal('forth', &filetype)
+  bwipe!
+
+  " empty line comment - no space required
+  call writefile(['\'], 'Xfile.fs')
+  split Xfile.fs
+  call assert_equal('forth', &filetype)
+  bwipe!
+
+  call writefile(['\G Forth documentation comment '], 'Xfile.fs')
+  split Xfile.fs
+  call assert_equal('forth', &filetype)
+  bwipe!
+
+  call writefile([': squared ( n -- n^2 )', 'dup * ;'], 'Xfile.fs')
+  split Xfile.fs
+  call assert_equal('forth', &filetype)
+  bwipe!
+
+  call delete('Xfile.fs')
+  filetype off
+endfunc
+
+func Test_git_file()
+  filetype on
+
+  call assert_true(mkdir('Xrepo.git', 'p'))
+
+  call writefile([], 'Xrepo.git/HEAD')
+  split Xrepo.git/HEAD
+  call assert_equal('', &filetype)
+  bwipe!
+
+  call writefile(['0000000000000000000000000000000000000000'], 'Xrepo.git/HEAD')
+  split Xrepo.git/HEAD
+  call assert_equal('git', &filetype)
+  bwipe!
+
+  call writefile(['0000000000000000000000000000000000000000000000000000000000000000'], 'Xrepo.git/HEAD')
+  split Xrepo.git/HEAD
+  call assert_equal('git', &filetype)
+  bwipe!
+
+  call writefile(['ref: refs/heads/master'], 'Xrepo.git/HEAD')
+  split Xrepo.git/HEAD
+  call assert_equal('git', &filetype)
+  bwipe!
+
+  call delete('Xrepo.git', 'rf')
+  filetype off
+endfunc
+
+func Test_hook_file()
+  filetype on
+
+  call writefile(['[Trigger]', 'this is pacman config'], 'Xfile.hook')
+  split Xfile.hook
+  call assert_equal('dosini', &filetype)
+  bwipe!
+
+  call writefile(['not pacman'], 'Xfile.hook')
+  split Xfile.hook
+  call assert_notequal('dosini', &filetype)
+  bwipe!
+
+  call delete('Xfile.hook')
+  filetype off
+endfunc
+
+func Test_m_file()
+  filetype on
+
+  call writefile(['looks like Matlab'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('matlab', &filetype)
+  bwipe!
+
+  let g:filetype_m = 'octave'
+  split Xfile.m
+  call assert_equal('octave', &filetype)
+  bwipe!
+  unlet g:filetype_m
+
+  " Test dist#ft#FTm()
+
+  " Objective-C
+
+  call writefile(['// Objective-C line comment'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('objc', &filetype)
+  bwipe!
+
+  call writefile(['/* Objective-C block comment */'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('objc', &filetype)
+  bwipe!
+
+  call writefile(['#import "test.m"'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('objc', &filetype)
+  bwipe!
+
+  call writefile(['#include <header.h>'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('objc', &filetype)
+  bwipe!
+
+  call writefile(['#define FORTY_TWO'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('objc', &filetype)
+  bwipe!
+
+  " Octave
+
+  call writefile(['# Octave line comment'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('octave', &filetype)
+  bwipe!
+
+  call writefile(['%!test "Octave test"'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('octave', &filetype)
+  bwipe!
+
+  call writefile(['unwind_protect'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('octave', &filetype)
+  bwipe!
+
+  call writefile(['try; 42; end_try_catch'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('octave', &filetype)
+  bwipe!
+
+  " Mathematica
+
+  call writefile(['(* Mathematica comment'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('mma', &filetype)
+  bwipe!
+
+  " MATLAB
+
+  call writefile(['% MATLAB line comment'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('matlab', &filetype)
+  bwipe!
+
+  " Murphi
+
+  call writefile(['-- Murphi comment'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('murphi', &filetype)
+  bwipe!
+
+  call writefile(['/* Murphi block comment */', 'Type'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('murphi', &filetype)
+  bwipe!
+
+  call writefile(['Type'], 'Xfile.m')
+  split Xfile.m
+  call assert_equal('murphi', &filetype)
+  bwipe!
+
+  call delete('Xfile.m')
+  filetype off
+endfunc
+
+func Test_mod_file()
+  filetype on
+
+  " *.mod defaults to Modsim III
+  call writefile(['locks like Modsim III'], 'modfile.mod')
+  split modfile.mod
+  call assert_equal('modsim3', &filetype)
+  bwipe!
+
+  " Users preference set by g:filetype_mod
+  let g:filetype_mod = 'lprolog'
+  split modfile.mod
+  call assert_equal('lprolog', &filetype)
+  unlet g:filetype_mod
+  bwipe!
+
+  " RAPID header start with a line containing only "%%%", 
+  " but is not always present.
+  call writefile(['%%%'], 'modfile.mod')
+  split modfile.mod
+  call assert_equal('rapid', &filetype)
+  bwipe!
+  call delete('modfile.mod')
+
+  " RAPID supports umlauts in module names, leading spaces,
+  " the .mod extension is not case sensitive.
+  call writefile(['  module ÜmlautModule'], 'modfile.Mod')
+  split modfile.Mod
+  call assert_equal('rapid', &filetype)
+  bwipe!
+  call delete('modfile.Mod')
+
+  " RAPID is not case sensitive, embedded spaces, sysmodule, 
+  " file starts with empty line(s).
+  call writefile(['', 'MODULE  rapidmödüle  (SYSMODULE,NOSTEPIN)'], 'modfile.MOD')
+  split modfile.MOD
+  call assert_equal('rapid', &filetype)
+  bwipe!
+
+  " Modula-2 MODULE not start of line
+  call writefile(['IMPLEMENTATION MODULE Module2Mod;'], 'modfile.MOD')
+  split modfile.MOD
+  call assert_equal('modula2', &filetype)
+  bwipe!
+
+  " Modula-2 with comment and empty lines prior MODULE
+  call writefile(['', '(* with',  ' comment *)', '', 'MODULE Module2Mod;'], 'modfile.MOD')
+  split modfile.MOD
+  call assert_equal('modula2', &filetype)
+  bwipe!
+  call delete('modfile.MOD')
+
+  " LambdaProlog module
+  call writefile(['module lpromod.'], 'modfile.mod')
+  split modfile.mod
+  call assert_equal('lprolog', &filetype)
+  bwipe!
+
+  " LambdaProlog with comment and empty lines prior module
+  call writefile(['', '% with',  '% comment', '', 'module lpromod.'], 'modfile.mod')
+  split modfile.mod
+  call assert_equal('lprolog', &filetype)
+  bwipe!
+  call delete('modfile.mod')
+
+  " go.mod
+  call writefile(['module example.com/M'], 'go.mod')
+  split go.mod
+  call assert_equal('gomod', &filetype)
+  bwipe!
+  call delete('go.mod')
+
+  filetype off
+endfunc
+
+func Test_patch_file()
+  filetype on
+
+  call writefile([], 'Xfile.patch')
+  split Xfile.patch
+  call assert_equal('diff', &filetype)
+  bwipe!
+
+  call writefile(['From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001'], 'Xfile.patch')
+  split Xfile.patch
+  call assert_equal('gitsendemail', &filetype)
+  bwipe!
+
+  call writefile(['From 0000000000000000000000000000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001'], 'Xfile.patch')
+  split Xfile.patch
+  call assert_equal('gitsendemail', &filetype)
+  bwipe!
+
+  call delete('Xfile.patch')
+  filetype off
+endfunc
+
+func Test_perl_file()
+  filetype on
+
+  " only tests one case, should do more
+  let lines =<< trim END
+
+    use a
+  END
+  call writefile(lines, "Xfile.t")
+  split Xfile.t
+  call assert_equal('perl', &filetype)
+  bwipe
+
+  call delete('Xfile.t')
+  filetype off
+endfunc
+
+func Test_pp_file()
+  filetype on
+
+  call writefile(['looks like puppet'], 'Xfile.pp')
+  split Xfile.pp
+  call assert_equal('puppet', &filetype)
+  bwipe!
+
+  let g:filetype_pp = 'pascal'
+  split Xfile.pp
+  call assert_equal('pascal', &filetype)
+  bwipe!
+  unlet g:filetype_pp
+
+  " Test dist#ft#FTpp()
+  call writefile(['{ pascal comment'], 'Xfile.pp')
+  split Xfile.pp
+  call assert_equal('pascal', &filetype)
+  bwipe!
+
+  call writefile(['procedure pascal'], 'Xfile.pp')
+  split Xfile.pp
+  call assert_equal('pascal', &filetype)
+  bwipe!
+
+  call delete('Xfile.pp')
+  filetype off
+endfunc
+
+" Test dist#ft#FTprg()
+func Test_prg_file()
+  filetype on
+
+  " *.prg defaults to clipper
+  call writefile(['looks like clipper'], 'prgfile.prg')
+  split prgfile.prg
+  call assert_equal('clipper', &filetype)
+  bwipe!
+
+  " Users preference set by g:filetype_prg
+  let g:filetype_prg = 'eviews'
+  split prgfile.prg
+  call assert_equal('eviews', &filetype)
+  unlet g:filetype_prg
+  bwipe!
+
+  " RAPID header start with a line containing only "%%%", 
+  " but is not always present.
+  call writefile(['%%%'], 'prgfile.prg')
+  split prgfile.prg
+  call assert_equal('rapid', &filetype)
+  bwipe!
+  call delete('prgfile.prg')
+
+  " RAPID supports umlauts in module names, leading spaces,
+  " the .prg extension is not case sensitive.
+  call writefile(['  module ÜmlautModule'], 'prgfile.Prg')
+  split prgfile.Prg
+  call assert_equal('rapid', &filetype)
+  bwipe!
+  call delete('prgfile.Prg')
+
+  " RAPID is not case sensitive, embedded spaces, sysmodule, 
+  " file starts with empty line(s).
+  call writefile(['', 'MODULE  rapidmödüle  (SYSMODULE,NOSTEPIN)'], 'prgfile.PRG')
+  split prgfile.PRG
+  call assert_equal('rapid', &filetype)
+  bwipe!
+  call delete('prgfile.PRG')
+
+  filetype off
+endfunc
+
+" Test dist#ft#FTsc()
+func Test_sc_file()
+  filetype on
+
+  " SC file methods are defined 'Class : Method'
+  call writefile(['SCNvimDocRenderer : SCDocHTMLRenderer {'], 'srcfile.sc')
+  split srcfile.sc
+  call assert_equal('supercollider', &filetype)
+  bwipe!
+  call delete('srcfile.sc')
+
+  " SC classes are defined with '+ Class {}'
+  call writefile(['+ SCNvim {', '*methodArgs {|method|'], 'srcfile.sc')
+  split srcfile.sc
+  call assert_equal('supercollider', &filetype)
+  bwipe!
+  call delete('srcfile.sc')
+
+  " Some SC class files start with comment and define methods many lines later
+  call writefile(['// Query', '//Method','^this {'], 'srcfile.sc')
+  split srcfile.sc
+  call assert_equal('supercollider', &filetype)
+  bwipe!
+  call delete('srcfile.sc')
+
+  " Some SC class files put comments between method declaration after class
+  call writefile(['PingPong {', '//comment','*ar { arg'], 'srcfile.sc')
+  split srcfile.sc
+  call assert_equal('supercollider', &filetype)
+  bwipe!
+  call delete('srcfile.sc')
+
+  filetype off
+endfunc
+
+" Test dist#ft#FTscd()
+func Test_scd_file()
+  filetype on
+
+  call writefile(['ijq(1)'], 'srcfile.scd')
+  split srcfile.scd
+  call assert_equal('scdoc', &filetype)
+  bwipe!
+  call delete('srcfile.scd')
+
+  filetype off
+endfunc
+
+func Test_src_file()
+  filetype on
+
+  " KRL header start with "&WORD", but is not always present.
+  call writefile(['&ACCESS'], 'srcfile.src')
+  split srcfile.src
+  call assert_equal('krl', &filetype)
+  bwipe!
+  call delete('srcfile.src')
+
+  " KRL def with leading spaces, for KRL file extension is not case sensitive.
+  call writefile(['  DEF srcfile()'], 'srcfile.Src')
+  split srcfile.Src
+  call assert_equal('krl', &filetype)
+  bwipe!
+  call delete('srcfile.Src')
+
+  " KRL global def with embedded spaces, file starts with empty line(s).
+  call writefile(['', 'global  def  srcfile()'], 'srcfile.SRC')
+  split srcfile.SRC
+  call assert_equal('krl', &filetype)
+  bwipe!
+
+  " User may overrule file inspection
+  let g:filetype_src = 'src'
+  split srcfile.SRC
+  call assert_equal('src', &filetype)
+  bwipe!
+  call delete('srcfile.SRC')
+  unlet g:filetype_src
+
+  filetype off
+endfunc
+
+func Test_sys_file()
+  filetype on
+
+  " *.sys defaults to Batch file for MSDOS
+  call writefile(['looks like dos batch'], 'sysfile.sys')
+  split sysfile.sys
+  call assert_equal('bat', &filetype)
+  bwipe!
+
+  " Users preference set by g:filetype_sys
+  let g:filetype_sys = 'sys'
+  split sysfile.sys
+  call assert_equal('sys', &filetype)
+  unlet g:filetype_sys
+  bwipe!
+
+  " RAPID header start with a line containing only "%%%", 
+  " but is not always present.
+  call writefile(['%%%'], 'sysfile.sys')
+  split sysfile.sys
+  call assert_equal('rapid', &filetype)
+  bwipe!
+  call delete('sysfile.sys')
+
+  " RAPID supports umlauts in module names, leading spaces,
+  " the .sys extension is not case sensitive.
+  call writefile(['  module ÜmlautModule'], 'sysfile.Sys')
+  split sysfile.Sys
+  call assert_equal('rapid', &filetype)
+  bwipe!
+  call delete('sysfile.Sys')
+
+  " RAPID is not case sensitive, embedded spaces, sysmodule, 
+  " file starts with empty line(s).
+  call writefile(['', 'MODULE  rapidmödüle  (SYSMODULE,NOSTEPIN)'], 'sysfile.SYS')
+  split sysfile.SYS
+  call assert_equal('rapid', &filetype)
+  bwipe!
+  call delete('sysfile.SYS')
+
+  filetype off
+endfunc
+
+func Test_tex_file()
+  filetype on
+
+  " only tests one case, should do more
+  let lines =<< trim END
+      % This is a sentence.
+
+      This is a sentence.
+  END
+  call writefile(lines, "Xfile.tex")
+  split Xfile.tex
+  call assert_equal('plaintex', &filetype)
+  bwipe
+
+  call delete('Xfile.tex')
+  filetype off
+endfunc
+
+func Test_tf_file()
+  filetype on
+
+  call writefile([';;; TF MUD client is super duper cool'], 'Xfile.tf')
+  split Xfile.tf
+  call assert_equal('tf', &filetype)
+  bwipe!
+
+  call writefile(['provider "azurerm" {'], 'Xfile.tf')
+  split Xfile.tf
+  call assert_equal('terraform', &filetype)
+  bwipe!
+
+  call delete('Xfile.tf')
+  filetype off
+endfunc
+
+func Test_ts_file()
+  filetype on
+
+  call writefile(['<?xml version="1.0" encoding="utf-8"?>'], 'Xfile.ts')
+  split Xfile.ts
+  call assert_equal('xml', &filetype)
+  bwipe!
+
+  call writefile(['// looks like Typescript'], 'Xfile.ts')
+  split Xfile.ts
+  call assert_equal('typescript', &filetype)
+  bwipe!
+
+  call delete('Xfile.ts')
+  filetype off
+endfunc
+
+func Test_ttl_file()
+  filetype on
+
+  call writefile(['@base <http://example.org/> .'], 'Xfile.ttl')
+  split Xfile.ttl
+  call assert_equal('turtle', &filetype)
+  bwipe!
+
+  call writefile(['looks like Tera Term Language'], 'Xfile.ttl')
+  split Xfile.ttl
+  call assert_equal('teraterm', &filetype)
+  bwipe!
+
+  call delete('Xfile.ttl')
+  filetype off
+endfunc
+
+func Test_xpm_file()
+  filetype on
+
+  call writefile(['this is XPM2'], 'file.xpm')
+  split file.xpm
+  call assert_equal('xpm2', &filetype)
+  bwipe!
+
+  call delete('file.xpm')
+  filetype off
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

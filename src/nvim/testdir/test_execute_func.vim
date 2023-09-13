@@ -99,7 +99,7 @@ func Test_win_execute()
   if has('textprop')
     let popupwin = popup_create('the popup win', {'line': 2, 'col': 3})
     redraw
-    let line = win_execute(popupwin, 'echo getline(1)')
+    let line = 'echo getline(1)'->win_execute(popupwin)
     call assert_match('the popup win', line)
 
     call popup_close(popupwin)
@@ -107,6 +107,18 @@ func Test_win_execute()
 
   call win_gotoid(otherwin)
   bwipe!
+
+  " check :lcd in another window does not change directory
+  let curid = win_getid()
+  let curdir = getcwd()
+  split Xother
+  lcd ..
+  " Use :pwd to get the actual current directory
+  let otherdir = execute('pwd')
+  call win_execute(curid, 'lcd testdir')
+  call assert_equal(otherdir, execute('pwd'))
+  bwipe!
+  execute 'cd ' .. curdir
 endfunc
 
 func Test_win_execute_update_ruler()
@@ -135,3 +147,30 @@ func Test_win_execute_other_tab()
   tabclose
   unlet xyz
 endfunc
+
+func Test_win_execute_visual_redraw()
+  call setline(1, ['a', 'b', 'c'])
+  new
+  wincmd p
+  " start Visual in current window, redraw in other window with fewer lines
+  call feedkeys("G\<C-V>", 'txn')
+  call win_execute(winnr('#')->win_getid(), 'redraw')
+  call feedkeys("\<Esc>", 'txn')
+  bwipe!
+  bwipe!
+
+  enew
+  new
+  call setline(1, ['a', 'b', 'c'])
+  let winid = win_getid()
+  wincmd p
+  " start Visual in current window, extend it in other window with more lines
+  call feedkeys("\<C-V>", 'txn')
+  call win_execute(winid, 'call feedkeys("G\<C-V>", ''txn'')')
+  redraw
+
+  bwipe!
+  bwipe!
+endfunc
+
+" vim: shiftwidth=2 sts=2 expandtab

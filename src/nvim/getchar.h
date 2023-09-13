@@ -1,10 +1,10 @@
 #ifndef NVIM_GETCHAR_H
 #define NVIM_GETCHAR_H
 
-#include "nvim/os/fileio.h"
-#include "nvim/types.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/ex_cmds_defs.h"
+#include "nvim/os/fileio.h"
+#include "nvim/types.h"
 #include "nvim/vim.h"
 
 /// Values for "noremap" argument of ins_typebuf()
@@ -21,7 +21,7 @@ enum RemapValues {
 typedef enum {
   FLUSH_MINIMAL,
   FLUSH_TYPEAHEAD,  // flush current typebuf contents
-  FLUSH_INPUT       // flush typebuf and inchar() input
+  FLUSH_INPUT,  // flush typebuf and inchar() input
 } flush_buffers_T;
 
 /// All possible |:map-arguments| usable in a |:map| command.
@@ -50,18 +50,22 @@ struct map_arguments {
 
   char_u *rhs;  /// The {rhs} of the mapping.
   size_t rhs_len;
+  LuaRef rhs_lua;  /// lua function as rhs
   bool rhs_is_noop;  /// True when the {orig_rhs} is <nop>.
 
   char_u *orig_rhs;  /// The original text of the {rhs}.
   size_t orig_rhs_len;
+  char *desc;  /// map description
 };
 typedef struct map_arguments MapArguments;
+#define MAP_ARGUMENTS_INIT { false, false, false, false, false, false, false, \
+                             { 0 }, 0, NULL, 0, LUA_NOREF, false, NULL, 0, NULL }
 
-#define KEYLEN_PART_KEY -1  // keylen value for incomplete key-code
-#define KEYLEN_PART_MAP -2  // keylen value for incomplete mapping
+#define KEYLEN_PART_KEY (-1)  // keylen value for incomplete key-code
+#define KEYLEN_PART_MAP (-2)  // keylen value for incomplete mapping
 
 /// Maximum number of streams to read script from
-enum { NSCRIPT = 15 };
+enum { NSCRIPT = 15, };
 
 /// Streams to read script from
 extern FileDescriptor *scriptin[NSCRIPT];

@@ -29,12 +29,11 @@ endfunc
 
 " Test editing line in Ex mode (both Q and gQ)
 func Test_ex_mode()
-  throw 'skipped: TODO: '
+  throw 'Skipped: Nvim only supports Vim Ex mode'
   let encoding_save = &encoding
   set sw=2
 
-  " for e in ['utf8', 'latin1']
-  for e in ['utf8']
+  for e in ['utf8', 'latin1']
     exe 'set encoding=' . e
 
     call assert_equal(['bar', 'bar'],             Ex("foo bar\<C-u>bar"), e)
@@ -52,6 +51,13 @@ func Test_ex_mode()
     call assert_equal(['  foo', '    foo'],       Ex("    foo\<C-d>"), e)
     call assert_equal(['foo', '    foo0'],        Ex("    foo0\<C-d>"), e)
     call assert_equal(['foo', '    foo^'],        Ex("    foo^\<C-d>"), e)
+    call assert_equal(['foo', 'foo'],
+          \ Ex("\<BS>\<C-H>\<Del>\<kDel>foo"), e)
+    " default wildchar <Tab> interferes with this test
+    set wildchar=<c-e>
+    call assert_equal(["a\tb", "a\tb"],           Ex("a\t\t\<C-H>b"), e)
+    call assert_equal(["\t  mn", "\tm\<C-T>n"],        Ex("\tm\<C-T>n"), e)
+    set wildchar&
   endfor
 
   set sw&
@@ -85,7 +91,7 @@ endfunc
 func Test_ex_mode_count_overflow()
   " this used to cause a crash
   let lines =<< trim END
-    call feedkeys("\<Esc>Q\<CR>")
+    call feedkeys("\<Esc>gQ\<CR>")
     v9|9silent! vi|333333233333y32333333%O
     call writefile(['done'], 'Xdidexmode')
     qall!
@@ -97,5 +103,15 @@ func Test_ex_mode_count_overflow()
   call delete('Xdidexmode')
   call delete('Xexmodescript')
 endfunc
+
+func Test_ex_mode_large_indent()
+  new
+  set ts=500 ai
+  call setline(1, "\t")
+  exe "normal gQi\<CR>."
+  set ts=8 noai
+  bwipe!
+endfunc
+
 
 " vim: shiftwidth=2 sts=2 expandtab

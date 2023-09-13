@@ -1,13 +1,8 @@
 local pretty = require 'pl.pretty'
-local global_helpers = require('test.helpers')
 
-local colors
-
-local isWindows = package.config:sub(1,1) == '\\'
-
-if isWindows then
-  colors = setmetatable({}, {__index = function() return function(s) return s end end})
-else
+-- Colors are disabled by default. #15610
+local colors = setmetatable({}, {__index = function() return function(s) return s == nil and '' or tostring(s) end end})
+if os.getenv "TEST_COLORS" then
   colors = require 'term.colors'
 end
 
@@ -196,7 +191,6 @@ return function(options)
     local tests = (testCount == 1 and 'test' or 'tests')
     local files = (fileCount == 1 and 'file' or 'files')
     io.write(globalTeardown)
-    io.write(global_helpers.read_nvim_log(nil, true))
     io.write(suiteEndString:format(testCount, tests, fileCount, files, elapsedTime_ms))
     io.write(getSummaryString())
     io.flush()

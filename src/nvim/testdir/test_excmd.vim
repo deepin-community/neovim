@@ -1,6 +1,8 @@
 " Tests for various Ex commands.
 
 source check.vim
+source shared.vim
+source term_util.vim
 
 func Test_ex_delete()
   new
@@ -122,6 +124,27 @@ func Test_append_cmd()
   close!
 endfunc
 
+func Test_append_cmd_empty_buf()
+  CheckRunVimInTerminal
+  let lines =<< trim END
+    func Timer(timer)
+      append
+    aaaaa
+    bbbbb
+    .
+    endfunc
+    call timer_start(10, 'Timer')
+  END
+  call writefile(lines, 'Xtest_append_cmd_empty_buf')
+  let buf = RunVimInTerminal('-S Xtest_append_cmd_empty_buf', {'rows': 6})
+  call WaitForAssert({-> assert_equal('bbbbb', term_getline(buf, 2))})
+  call WaitForAssert({-> assert_equal('aaaaa', term_getline(buf, 1))})
+
+  " clean up
+  call StopVimInTerminal(buf)
+  call delete('Xtest_append_cmd_empty_buf')
+endfunc
+
 " Test for the :insert command
 func Test_insert_cmd()
   set noautoindent " test assumes noautoindent, but it's on by default in Nvim
@@ -149,6 +172,27 @@ func Test_insert_cmd()
   call assert_true(&autoindent)
   set autoindent&
   close!
+endfunc
+
+func Test_insert_cmd_empty_buf()
+  CheckRunVimInTerminal
+  let lines =<< trim END
+    func Timer(timer)
+      insert
+    aaaaa
+    bbbbb
+    .
+    endfunc
+    call timer_start(10, 'Timer')
+  END
+  call writefile(lines, 'Xtest_insert_cmd_empty_buf')
+  let buf = RunVimInTerminal('-S Xtest_insert_cmd_empty_buf', {'rows': 6})
+  call WaitForAssert({-> assert_equal('bbbbb', term_getline(buf, 2))})
+  call WaitForAssert({-> assert_equal('aaaaa', term_getline(buf, 1))})
+
+  " clean up
+  call StopVimInTerminal(buf)
+  call delete('Xtest_insert_cmd_empty_buf')
 endfunc
 
 " Test for the :change command
@@ -313,6 +357,42 @@ func Test_confirm_write_ro()
   call delete('Xconfirm_write_ro')
 endfunc
 
+func Test_confirm_write_partial_file()
+  CheckNotGui
+  CheckRunVimInTerminal
+
+  call writefile(['a', 'b', 'c', 'd'], 'Xwrite_partial')
+  call writefile(['set nobackup ff=unix cmdheight=2',
+        \         'edit Xwrite_partial'], 'Xscript')
+  let buf = RunVimInTerminal('-S Xscript', {'rows': 20})
+
+  call term_sendkeys(buf, ":confirm 2,3w\n")
+  call WaitForAssert({-> assert_match('^Write partial file? *$',
+        \            term_getline(buf, 19))}, 1000)
+  call WaitForAssert({-> assert_match('^(Y)es, \[N\]o: *$',
+        \            term_getline(buf, 20))}, 1000)
+  call term_sendkeys(buf, 'N')
+  call WaitForAssert({-> assert_match('.* All$', term_getline(buf, 20))}, 1000)
+  call assert_equal(['a', 'b', 'c', 'd'], readfile('Xwrite_partial'))
+  call delete('Xwrite_partial')
+
+  call term_sendkeys(buf, ":confirm 2,3w\n")
+  call WaitForAssert({-> assert_match('^Write partial file? *$',
+        \            term_getline(buf, 19))}, 1000)
+  call WaitForAssert({-> assert_match('^(Y)es, \[N\]o: *$',
+        \            term_getline(buf, 20))}, 1000)
+  call term_sendkeys(buf, 'Y')
+  call WaitForAssert({-> assert_match('^"Xwrite_partial" \[New\] 2L, 4B written *$',
+        \            term_getline(buf, 19))}, 1000)
+  call WaitForAssert({-> assert_match('^Press ENTER or type command to continue *$',
+        \            term_getline(buf, 20))}, 1000)
+  call assert_equal(['b', 'c'], readfile('Xwrite_partial'))
+
+  call StopVimInTerminal(buf)
+  call delete('Xwrite_partial')
+  call delete('Xscript')
+endfunc
+
 " Test for the :winsize command
 func Test_winsize_cmd()
   call assert_fails('winsize 1', 'E465:')
@@ -320,3 +400,27 @@ func Test_winsize_cmd()
   call assert_fails('win_getid(1)', 'E475: Invalid argument: _getid(1)')
   " Actually changing the window size would be flaky.
 endfunc
+
+func Test_not_break_expression_register()
+  call setreg('=', '1+1')
+  if 0
+    put =1
+  endif
+  call assert_equal('1+1', getreg('=', 1))
+endfunc
+
+func Test_address_line_overflow()
+  throw 'Skipped: v:sizeoflong is N/A'  " use legacy/excmd_spec.lua instead
+
+  if v:sizeoflong < 8
+    throw 'Skipped: only works with 64 bit long ints'
+  endif
+  new
+  call setline(1, 'text')
+  call assert_fails('|.44444444444444444444444', 'E1247:')
+  call assert_fails('|.9223372036854775806', 'E1247:')
+  bwipe!
+endfunc
+
+
+" vim: shiftwidth=2 sts=2 expandtab

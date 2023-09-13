@@ -95,7 +95,7 @@ func Test_ins_complete()
   call delete('Xtest11.one')
   call delete('Xtest11.two')
   call delete('Xtestdata')
-  set cpt& cot& def& tags& tagbsearch& hidden&
+  set cpt& cot& def& tags& tagbsearch& nohidden
   cd ..
   call delete('Xdir', 'rf')
 endfunc
@@ -109,7 +109,7 @@ func s:CompleteDone_CompleteFuncNone( findstart, base )
   return v:none
 endfunc
 
-function! s:CompleteDone_CompleteFuncDict( findstart, base )
+func s:CompleteDone_CompleteFuncDict( findstart, base )
   if a:findstart
     return 0
   endif
@@ -126,7 +126,7 @@ function! s:CompleteDone_CompleteFuncDict( findstart, base )
             \ }
           \ ]
         \ }
-endfunction
+endfunc
 
 func s:CompleteDone_CheckCompletedItemNone()
   let s:called_completedone = 1
@@ -341,6 +341,14 @@ func Test_compl_feedkeys()
   set completeopt&
 endfunc
 
+func s:ComplInCmdwin_GlobalCompletion(a, l, p)
+  return 'global'
+endfunc
+
+func s:ComplInCmdwin_LocalCompletion(a, l, p)
+  return 'local'
+endfunc
+
 func Test_compl_in_cmdwin()
   set wildmenu wildchar=<Tab>
   com! -nargs=1 -complete=command GetInput let input = <q-args>
@@ -376,6 +384,47 @@ func Test_compl_in_cmdwin()
   call feedkeys("q::GetInput b:test_\<Tab>\<CR>:q\<CR>", 'tx!')
   call assert_equal('b:test_', input)
 
+
+  " Argument completion of buffer-local command
+  func s:ComplInCmdwin_GlobalCompletionList(a, l, p)
+    return ['global']
+  endfunc
+
+  func s:ComplInCmdwin_LocalCompletionList(a, l, p)
+    return ['local']
+  endfunc
+
+  func s:ComplInCmdwin_CheckCompletion(arg)
+    call assert_equal('local', a:arg)
+  endfunc
+
+  com! -nargs=1 -complete=custom,<SID>ComplInCmdwin_GlobalCompletion
+       \ TestCommand call s:ComplInCmdwin_CheckCompletion(<q-args>)
+  com! -buffer -nargs=1 -complete=custom,<SID>ComplInCmdwin_LocalCompletion
+       \ TestCommand call s:ComplInCmdwin_CheckCompletion(<q-args>)
+  call feedkeys("q:iTestCommand \<Tab>\<CR>", 'tx!')
+
+  com! -nargs=1 -complete=customlist,<SID>ComplInCmdwin_GlobalCompletionList
+       \ TestCommand call s:ComplInCmdwin_CheckCompletion(<q-args>)
+  com! -buffer -nargs=1 -complete=customlist,<SID>ComplInCmdwin_LocalCompletionList
+       \ TestCommand call s:ComplInCmdwin_CheckCompletion(<q-args>)
+
+  call feedkeys("q:iTestCommand \<Tab>\<CR>", 'tx!')
+
+  func! s:ComplInCmdwin_CheckCompletion(arg)
+    call assert_equal('global', a:arg)
+  endfunc
+  new
+  call feedkeys("q:iTestCommand \<Tab>\<CR>", 'tx!')
+  quit
+
+  delfunc s:ComplInCmdwin_GlobalCompletion
+  delfunc s:ComplInCmdwin_LocalCompletion
+  delfunc s:ComplInCmdwin_GlobalCompletionList
+  delfunc s:ComplInCmdwin_LocalCompletionList
+  delfunc s:ComplInCmdwin_CheckCompletion
+
+  delcom -buffer TestCommand
   delcom TestCommand
   delcom GetInput
   unlet w:test_winvar
@@ -445,6 +494,37 @@ func Test_issue_7021()
   set completeslash=
 endfunc
 
+func Test_pum_stopped_by_timer()
+  CheckScreendump
+
+  let lines =<< trim END
+    call setline(1, ['hello', 'hullo', 'heeee', ''])
+    func StartCompl()
+      call timer_start(100, { -> execute('stopinsert') })
+      call feedkeys("Gah\<C-N>")
+    endfunc
+  END
+
+  call writefile(lines, 'Xpumscript')
+  let buf = RunVimInTerminal('-S Xpumscript', #{rows: 12})
+  call term_sendkeys(buf, ":call StartCompl()\<CR>")
+  call TermWait(buf, 200)
+  call term_sendkeys(buf, "k")
+  call VerifyScreenDump(buf, 'Test_pum_stopped_by_timer', {})
+
+  call StopVimInTerminal(buf)
+  call delete('Xpumscript')
+endfunc
+
+func Test_complete_stopinsert_startinsert()
+  nnoremap <F2> <Cmd>startinsert<CR>
+  inoremap <F2> <Cmd>stopinsert<CR>
+  " This just checks if this causes an error
+  call feedkeys("i\<C-X>\<C-N>\<F2>\<F2>", 'x')
+  nunmap <F2>
+  iunmap <F2>
+endfunc
+
 func Test_pum_with_folds_two_tabs()
   CheckScreendump
 
@@ -497,6 +577,133 @@ func Test_ins_compl_tag_sft()
   %bwipe!
 endfunc
 
+" Test for completing special characters
+func Test_complete_special_chars()
+  new
+  call setline(1, 'int .*[-\^$ func float')
+  call feedkeys("oin\<C-X>\<C-P>\<C-X>\<C-P>\<C-X>\<C-P>", 'xt')
+  call assert_equal('int .*[-\^$ func float', getline(2))
+  close!
+endfunc
+
+" Test for completion when text is wrapped across lines.
+func Test_complete_across_line()
+  new
+  call setline(1, ['red green blue', 'one two three'])
+  setlocal textwidth=20
+  exe "normal 2G$a re\<C-X>\<C-P>\<C-X>\<C-P>\<C-X>\<C-P>\<C-X>\<C-P>"
+  call assert_equal(['one two three red', 'green blue one'], getline(2, '$'))
+  close!
+endfunc
+
+" Test for using CTRL-L to add one character when completing matching
+func Test_complete_add_onechar()
+  new
+  call setline(1, ['wool', 'woodwork'])
+  call feedkeys("Gowoo\<C-P>\<C-P>\<C-P>\<C-L>f", 'xt')
+  call assert_equal('woof', getline(3))
+
+  " use 'ignorecase' and backspace to erase characters from the prefix string
+  " and then add letters using CTRL-L
+  %d
+  set ignorecase backspace=2
+  setlocal complete=.
+  call setline(1, ['workhorse', 'workload'])
+  normal Go
+  exe "normal aWOR\<C-P>\<bs>\<bs>\<bs>\<bs>\<bs>\<bs>\<C-L>r\<C-L>\<C-L>"
+  call assert_equal('workh', getline(3))
+  set ignorecase& backspace&
+  close!
+endfunc
+
+" Test insert completion with 'cindent' (adjust the indent)
+func Test_complete_with_cindent()
+  new
+  setlocal cindent
+  call setline(1, ['if (i == 1)', "    j = 2;"])
+  exe "normal Go{\<CR>i\<C-X>\<C-L>\<C-X>\<C-L>\<CR>}"
+  call assert_equal(['{', "\tif (i == 1)", "\t\tj = 2;", '}'], getline(3, '$'))
+
+  %d
+  call setline(1, ['when while', '{', ''])
+  setlocal cinkeys+==while
+  exe "normal Giwh\<C-P> "
+  call assert_equal("\twhile ", getline('$'))
+  close!
+endfunc
+
+" Test for <CTRL-X> <CTRL-V> completion. Complete commands and functions
+func Test_complete_cmdline()
+  new
+  exe "normal icaddb\<C-X>\<C-V>"
+  call assert_equal('caddbuffer', getline(1))
+  exe "normal ocall getqf\<C-X>\<C-V>"
+  call assert_equal('call getqflist(', getline(2))
+  exe "normal oabcxyz(\<C-X>\<C-V>"
+  call assert_equal('abcxyz(', getline(3))
+  com! -buffer TestCommand1 echo 'TestCommand1'
+  com! -buffer TestCommand2 echo 'TestCommand2'
+  write TestCommand1Test
+  write TestCommand2Test
+  " Test repeating <CTRL-X> <CTRL-V> and switching to another CTRL-X mode
+  exe "normal oT\<C-X>\<C-V>\<C-X>\<C-V>\<C-X>\<C-F>\<Esc>"
+  call assert_equal('TestCommand2Test', getline(4))
+  call delete('TestCommand1Test')
+  call delete('TestCommand2Test')
+  delcom TestCommand1
+  delcom TestCommand2
+  close!
+endfunc
+
+" Test for <CTRL-X> <CTRL-Z> stopping completion without changing the match
+func Test_complete_stop()
+  new
+  func Save_mode1()
+    let g:mode1 = mode(1)
+    return ''
+  endfunc
+  func Save_mode2()
+    let g:mode2 = mode(1)
+    return ''
+  endfunc
+  inoremap <F1> <C-R>=Save_mode1()<CR>
+  inoremap <F2> <C-R>=Save_mode2()<CR>
+  call setline(1, ['aaa bbb ccc '])
+  exe "normal A\<C-N>\<C-P>\<F1>\<C-X>\<C-Z>\<F2>\<Esc>"
+  call assert_equal('ic', g:mode1)
+  call assert_equal('i', g:mode2)
+  call assert_equal('aaa bbb ccc ', getline(1))
+  exe "normal A\<C-N>\<Down>\<F1>\<C-X>\<C-Z>\<F2>\<Esc>"
+  call assert_equal('ic', g:mode1)
+  call assert_equal('i', g:mode2)
+  call assert_equal('aaa bbb ccc aaa', getline(1))
+  set completeopt+=noselect
+  exe "normal A \<C-N>\<Down>\<Down>\<C-L>\<C-L>\<F1>\<C-X>\<C-Z>\<F2>\<Esc>"
+  call assert_equal('ic', g:mode1)
+  call assert_equal('i', g:mode2)
+  call assert_equal('aaa bbb ccc aaa bb', getline(1))
+  set completeopt&
+  exe "normal A d\<C-N>\<F1>\<C-X>\<C-Z>\<F2>\<Esc>"
+  call assert_equal('ic', g:mode1)
+  call assert_equal('i', g:mode2)
+  call assert_equal('aaa bbb ccc aaa bb d', getline(1))
+  com! -buffer TestCommand1 echo 'TestCommand1'
+  com! -buffer TestCommand2 echo 'TestCommand2'
+  exe "normal oT\<C-X>\<C-V>\<C-X>\<C-V>\<F1>\<C-X>\<C-Z>\<F2>\<Esc>"
+  call assert_equal('ic', g:mode1)
+  call assert_equal('i', g:mode2)
+  call assert_equal('TestCommand2', getline(2))
+  delcom TestCommand1
+  delcom TestCommand2
+  unlet g:mode1
+  unlet g:mode2
+  iunmap <F1>
+  iunmap <F2>
+  delfunc Save_mode1
+  delfunc Save_mode2
+  close!
+endfunc
+
 " Test to ensure 'Scanning...' messages are not recorded in messages history
 func Test_z1_complete_no_history()
   new
@@ -507,6 +714,25 @@ func Test_z1_complete_no_history()
   exe "normal owh\<C-N>"
   call assert_equal(currmess, execute('messages'))
   close!
+endfunc
+
+func FooBarComplete(findstart, base)
+  if a:findstart
+    return col('.') - 1
+  else
+    return ["Foo", "Bar", "}"]
+  endif
+endfunc
+
+func Test_complete_smartindent()
+  new
+  setlocal smartindent completefunc=FooBarComplete
+
+  exe "norm! o{\<cr>\<c-x>\<c-u>\<c-p>}\<cr>\<esc>"
+  let result = getline(1,'$')
+  call assert_equal(['', '{','}',''], result)
+  bw!
+  delfunction! FooBarComplete
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

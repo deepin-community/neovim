@@ -1,5 +1,3 @@
-include(CMakeParseArguments)
-
 # BuildLibvterm(CONFIGURE_COMMAND ... BUILD_COMMAND ... INSTALL_COMMAND ...)
 # Failing to pass a command argument will result in no command being run
 function(BuildLibvterm)
@@ -49,6 +47,7 @@ if(WIN32)
     COMMAND ${CMAKE_COMMAND} ${DEPS_BUILD_DIR}/src/libvterm
       -DCMAKE_INSTALL_PREFIX=${DEPS_INSTALL_DIR}
       -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
+      -DCMAKE_GENERATOR_PLATFORM=${CMAKE_GENERATOR_PLATFORM}
       "-DCMAKE_C_FLAGS:STRING=${CMAKE_C_COMPILER_ARG1} -fPIC"
       -DCMAKE_GENERATOR=${CMAKE_GENERATOR})
   set(LIBVTERM_BUILD_COMMAND ${CMAKE_COMMAND} --build . --config ${CMAKE_BUILD_TYPE})

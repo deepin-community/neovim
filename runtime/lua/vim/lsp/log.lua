@@ -8,8 +8,8 @@ local log = {}
 -- Log level dictionary with reverse lookup as well.
 --
 -- Can be used to lookup the number from the name or the name from the number.
--- Levels by name: 'trace', 'debug', 'info', 'warn', 'error'
--- Level numbers begin with 'trace' at 0
+-- Levels by name: "TRACE", "DEBUG", "INFO", "WARN", "ERROR"
+-- Level numbers begin with "TRACE" at 0
 log.levels = vim.deepcopy(vim.log.levels)
 
 -- Default log level is warn.
@@ -19,20 +19,31 @@ local format_func = function(arg) return vim.inspect(arg, {newline=''}) end
 
 do
   local path_sep = vim.loop.os_uname().version:match("Windows") and "\\" or "/"
-  --@private
+  ---@private
   local function path_join(...)
     return table.concat(vim.tbl_flatten{...}, path_sep)
   end
   local logfilename = path_join(vim.fn.stdpath('cache'), 'lsp.log')
 
   --- Returns the log filename.
-  --@returns (string) log filename
+  ---@returns (string) log filename
   function log.get_filename()
     return logfilename
   end
 
   vim.fn.mkdir(vim.fn.stdpath('cache'), "p")
   local logfile = assert(io.open(logfilename, "a+"))
+
+  local log_info = vim.loop.fs_stat(logfilename)
+  if log_info and log_info.size > 1e9 then
+    local warn_msg = string.format(
+      "LSP client log is large (%d MB): %s",
+      log_info.size / (1000 * 1000),
+      logfilename
+    )
+    vim.notify(warn_msg)
+  end
+
   -- Start message for logging
   logfile:write(string.format("[START][%s] LSP logging initiated\n", os.date(log_date_format)))
   for level, levelnr in pairs(log.levels) do
@@ -78,7 +89,7 @@ end
 vim.tbl_add_reverse_lookup(log.levels)
 
 --- Sets the current log level.
---@param level (string or number) One of `vim.lsp.log.levels`
+---@param level (string or number) One of `vim.lsp.log.levels`
 function log.set_level(level)
   if type(level) == 'string' then
     current_log_level = assert(log.levels[level:upper()], string.format("Invalid log level: %q", level))
@@ -90,6 +101,7 @@ function log.set_level(level)
 end
 
 --- Gets the current log level.
+---@return string current log level
 function log.get_level()
   return current_log_level
 end
@@ -102,8 +114,8 @@ function log.set_format_func(handle)
 end
 
 --- Checks whether the level is sufficient for logging.
---@param level number log level
---@returns (bool) true if would log, false if not
+---@param level number log level
+---@returns (bool) true if would log, false if not
 function log.should_log(level)
   return level >= current_log_level
 end

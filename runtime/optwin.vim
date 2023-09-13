@@ -1,7 +1,7 @@
 " These commands create the option window.
 "
 " Maintainer:	Bram Moolenaar <Bram@vim.org>
-" Last Change:	2020 Oct 27
+" Last Change:	2022 Apr 07
 
 " If there already is an option window, jump to that one.
 let buf = bufnr('option-window')
@@ -261,6 +261,8 @@ call <SID>OptionG("sect", &sect)
 call append("$", "path\tlist of directory names used for file searching")
 call append("$", "\t(global or local to buffer)")
 call <SID>OptionG("pa", &pa)
+call <SID>AddOption("cdhome", ":cd without argument goes to the home directory")
+call <SID>BinOptionG("cdh", &cdh)
 call append("$", "cdpath\tlist of directory names used for :cd")
 call <SID>OptionG("cd", &cd)
 if exists("+autochdir")
@@ -440,6 +442,9 @@ if has("syntax")
   call append("$", "cursorline\thighlight the screen line of the cursor")
   call append("$", "\t(local to window)")
   call <SID>BinOptionL("cul")
+  call append("$", "cursorlineopt\tspecifies which area 'cursorline' highlights")
+  call append("$", "\t(local to window)")
+  call <SID>OptionL("culopt")
   call append("$", "colorcolumn\tcolumns to highlight")
   call append("$", "\t(local to window)")
   call <SID>OptionL("cc")
@@ -865,6 +870,9 @@ if has("cindent")
   call append("$", "cinwords\tlist of words that cause more C-indent")
   call append("$", "\t(local to buffer)")
   call <SID>OptionL("cinw")
+  call append("$", "cinscopedecls\tlist of scope declaration names used by cino-g")
+  call append("$", "\t(local to buffer)")
+  call <SID>OptionL("cinsd")
   call append("$", "indentexpr\texpression used to obtain the indent of a line")
   call append("$", "\t(local to buffer)")
   call <SID>OptionL("inde")

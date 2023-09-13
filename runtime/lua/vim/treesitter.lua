@@ -11,6 +11,7 @@ local parsers = {}
 local M = vim.tbl_extend("error", query, language)
 
 M.language_version = vim._ts_get_language_version()
+M.minimum_language_version = vim._ts_get_minimum_language_version()
 
 setmetatable(M, {
   __index = function (t, k)
@@ -20,6 +21,9 @@ setmetatable(M, {
       elseif k == "language" then
         t[k] = require"vim.treesitter.language"
         return t[k]
+      elseif k == "query" then
+        t[k] = require"vim.treesitter.query"
+        return t[k]
       end
    end
  })
@@ -28,9 +32,9 @@ setmetatable(M, {
 ---
 --- It is not recommended to use this, use vim.treesitter.get_parser() instead.
 ---
---- @param bufnr The buffer the parser will be tied to
---- @param lang The language of the parser
---- @param opts Options to pass to the created language tree
+---@param bufnr The buffer the parser will be tied to
+---@param lang The language of the parser
+---@param opts Options to pass to the created language tree
 function M._create_parser(bufnr, lang, opts)
   language.require_language(lang)
   if bufnr == 0 then
@@ -69,13 +73,13 @@ end
 --- Gets the parser for this bufnr / ft combination.
 ---
 --- If needed this will create the parser.
---- Unconditionnally attach the provided callback
+--- Unconditionally attach the provided callback
 ---
---- @param bufnr The buffer the parser should be tied to
---- @param lang The filetype of this parser
---- @param opts Options object to pass to the created language tree
+---@param bufnr The buffer the parser should be tied to
+---@param lang The filetype of this parser
+---@param opts Options object to pass to the created language tree
 ---
---- @returns The parser
+---@returns The parser
 function M.get_parser(bufnr, lang, opts)
   opts = opts or {}
 
@@ -86,7 +90,7 @@ function M.get_parser(bufnr, lang, opts)
     lang = a.nvim_buf_get_option(bufnr, "filetype")
   end
 
-  if parsers[bufnr] == nil then
+  if parsers[bufnr] == nil or parsers[bufnr]:lang() ~= lang then
     parsers[bufnr] = M._create_parser(bufnr, lang, opts)
   end
 
@@ -97,9 +101,9 @@ end
 
 --- Gets a string parser
 ---
---- @param str The string to parse
---- @param lang The language of this string
---- @param opts Options to pass to the created language tree
+---@param str The string to parse
+---@param lang The language of this string
+---@param opts Options to pass to the created language tree
 function M.get_string_parser(str, lang, opts)
   vim.validate {
     str = { str, 'string' },

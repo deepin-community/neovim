@@ -1,22 +1,24 @@
 #ifndef NVIM_EXTMARK_H
 #define NVIM_EXTMARK_H
 
-#include "nvim/pos.h"
 #include "nvim/buffer_defs.h"
+#include "nvim/decoration.h"
 #include "nvim/extmark_defs.h"
 #include "nvim/marktree.h"
+#include "nvim/pos.h"
 
 EXTERN int extmark_splice_pending INIT(= 0);
 
-typedef struct
-{
+typedef struct {
   uint64_t ns_id;
   uint64_t mark_id;
   int row;
   colnr_T col;
   int end_row;
   colnr_T end_col;
-  Decoration *decor;
+  bool right_gravity;
+  bool end_right_gravity;
+  Decoration decor;  // TODO(bfredl): CHONKY
 } ExtmarkInfo;
 
 typedef kvec_t(ExtmarkInfo) ExtmarkInfoArray;

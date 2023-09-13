@@ -2,7 +2,9 @@
 #define NVIM_SIGN_H
 
 #include <stdbool.h>
+
 #include "nvim/buffer_defs.h"
+#include "nvim/eval/funcs.h"
 #include "nvim/ex_cmds_defs.h"
 #include "nvim/sign_defs.h"
 

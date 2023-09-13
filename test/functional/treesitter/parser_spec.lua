@@ -167,6 +167,27 @@ void ui_refresh(void)
     eq('variable', ret)
   end)
 
+  it("supports caching queries", function()
+    local long_query = query:rep(100)
+    local first_run = exec_lua ([[
+      local before = vim.loop.hrtime()
+      cquery = vim.treesitter.parse_query("c", ...)
+      local after = vim.loop.hrtime()
+      return after - before
+    ]], long_query)
+
+    local subsequent_runs = exec_lua ([[
+      local before = vim.loop.hrtime()
+      for i=1,100,1 do
+        cquery = vim.treesitter.parse_query("c", ...)
+      end
+      local after = vim.loop.hrtime()
+      return after - before
+    ]], long_query)
+
+    assert.True(1000 * subsequent_runs < first_run)
+  end)
+
   it('support query and iter by capture', function()
     insert(test_text)
 
@@ -227,15 +248,71 @@ void ui_refresh(void)
     }, res)
   end)
 
+  it('supports getting text of multiline node', function()
+    if pending_c_parser(pending) then return end
+    insert(test_text)
+    local res = exec_lua([[
+      local parser = vim.treesitter.get_parser(0, "c")
+      local tree = parser:parse()[1]
+      return vim.treesitter.get_node_text(tree:root(), 0)
+    ]])
+    eq(test_text, res)
+
+    local res2 = exec_lua([[
+      local parser = vim.treesitter.get_parser(0, "c")
+      local root = parser:parse()[1]:root()
+      return vim.treesitter.get_node_text(root:child(0):child(0), 0)
+    ]])
+    eq('void', res2)
+  end)
+
+  it('support getting text where start of node is past EOF', function()
+    local text = [[
+def run
+  a = <<~E
+end]]
+    insert(text)
+    local result = exec_lua([[
+      local fake_node = {}
+      function fake_node:start()
+        return 3, 0, 23
+      end
+      function fake_node:end_()
+        return 3, 0, 23
+      end
+      return vim.treesitter.get_node_text(fake_node, 0) == nil
+    ]])
+    eq(true, result)
+  end)
+
+  it('support getting empty text if node range is zero width', function()
+    local text = [[
+```lua
+{}
+```]]
+    insert(text)
+    local result = exec_lua([[
+      local fake_node = {}
+      function fake_node:start()
+        return 1, 0, 7
+      end
+      function fake_node:end_()
+        return 1, 0, 7
+      end
+      return vim.treesitter.get_node_text(fake_node, 0) == ''
+    ]])
+    eq(true, result)
+  end)
+
   it('can match special regex characters like \\ * + ( with `vim-match?`', function()
     insert('char* astring = "\\n"; (1 + 1) * 2 != 2;')
 
     local res = exec_lua([[
-      cquery = vim.treesitter.parse_query("c", '((_) @plus (vim-match? @plus "^\\\\+$"))'..
-                                               '((_) @times (vim-match? @times "^\\\\*$"))'..
-                                               '((_) @paren (vim-match? @paren "^\\\\($"))'..
-                                               '((_) @escape (vim-match? @escape "^\\\\\\\\n$"))'..
-                                               '((_) @string (vim-match? @string "^\\"\\\\\\\\n\\"$"))')
+      cquery = vim.treesitter.parse_query("c", '([_] @plus (#vim-match? @plus "^\\\\+$"))'..
+                                               '([_] @times (#vim-match? @times "^\\\\*$"))'..
+                                               '([_] @paren (#vim-match? @paren "^\\\\($"))'..
+                                               '([_] @escape (#vim-match? @escape "^\\\\\\\\n$"))'..
+                                               '([_] @string (#vim-match? @string "^\\"\\\\\\\\n\\"$"))')
       parser = vim.treesitter.get_parser(0, "c")
       tree = parser:parse()[1]
       res = {}
@@ -321,7 +398,7 @@ void ui_refresh(void)
     insert('char* astring = "Hello World!";')
 
     local res = exec_lua([[
-      cquery = vim.treesitter.parse_query("c", '((_) @quote (vim-match? @quote "^\\"$")) ((_) @quote (lua-match? @quote "^\\"$"))')
+      cquery = vim.treesitter.parse_query("c", '([_] @quote (#vim-match? @quote "^\\"$")) ([_] @quote (#lua-match? @quote "^\\"$"))')
       parser = vim.treesitter.get_parser(0, "c")
       tree = parser:parse()[1]
       res = {}
@@ -608,6 +685,21 @@ int x = INT_MAX;
                           -- READ_STRING_OK(x, y) (char_u *)read_string((x), (size_t)(y))
         }, get_ranges())
       end)
+
+      it("should not inject bad languages", function()
+        if helpers.pending_win32(pending) then return end
+        exec_lua([=[
+        vim.treesitter.add_directive("inject-bad!", function(match, _, _, pred, metadata)
+          metadata.language = "{"
+          metadata.combined = true
+          metadata.content = pred[2]
+        end)
+
+        parser = vim.treesitter.get_parser(0, "c", {
+          injections = {
+            c = "(preproc_function_def value: ((preproc_arg) @_a (#inject-bad! @_a)))"}})
+        ]=])
+      end)
     end)
 
     describe("when using the offset directive", function()
@@ -627,6 +719,19 @@ int x = INT_MAX;
           {1, 26, 1, 65}, -- READ_STRING(x, y) (char_u *)read_string((x), (size_t)(y))
           {2, 29, 2, 68}  -- READ_STRING_OK(x, y) (char_u *)read_string((x), (size_t)(y))
         }, get_ranges())
+      end)
+      it("should list all directives", function()
+        local res_list = exec_lua[[
+        local query = require'vim.treesitter.query'
+
+        local list = query.list_directives()
+
+        table.sort(list)
+
+        return list
+        ]]
+
+        eq({ 'offset!', 'set!' }, res_list)
       end)
     end)
   end)

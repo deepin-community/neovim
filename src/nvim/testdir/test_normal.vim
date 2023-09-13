@@ -1118,7 +1118,7 @@ func Test_normal20_exmode()
   endif
   call writefile(['1a', 'foo', 'bar', '.', 'w! Xfile2', 'q!'], 'Xscript')
   call writefile(['1', '2'], 'Xfile')
-  call system(v:progpath .' -e -s < Xscript Xfile')
+  call system(GetVimCommand() .. ' -e -s < Xscript Xfile')
   let a=readfile('Xfile2')
   call assert_equal(['1', 'foo', 'bar', '2'], a)
 
@@ -1171,13 +1171,13 @@ func Test_normal22_zet()
   endfor
 
   call writefile(['1', '2'], 'Xfile_Test_normal22_zet')
-  let args = ' --headless -u NONE -N -U NONE -i NONE --noplugins'
-  call system(v:progpath . args . ' -c "%d" -c ":norm! ZZ" Xfile_Test_normal22_zet')
+  let args = ' -N -i NONE --noplugins -X --headless'
+  call system(GetVimCommand() .. args .. ' -c "%d" -c ":norm! ZZ" Xfile_Test_normal22_zet')
   let a = readfile('Xfile_Test_normal22_zet')
   call assert_equal([], a)
   " Test for ZQ
   call writefile(['1', '2'], 'Xfile_Test_normal22_zet')
-  call system(v:progpath . args . ' -c "%d" -c ":norm! ZQ" Xfile_Test_normal22_zet')
+  call system(GetVimCommand() . args . ' -c "%d" -c ":norm! ZQ" Xfile_Test_normal22_zet')
   let a = readfile('Xfile_Test_normal22_zet')
   call assert_equal(['1', '2'], a)
 
@@ -1227,7 +1227,7 @@ func Test_normal23_K()
   set iskeyword-=\|
 
   " Only expect "man" to work on Unix
-  if !has("unix")
+  if !has("unix") || has('nvim')  " Nvim K uses :terminal. #15398
     let &keywordprg = k
     bw!
     return
@@ -1812,7 +1812,15 @@ fun! Test_normal33_g_cmd2()
   call assert_equal(87, col('.'))
   call assert_equal('E', getreg(0))
 
+  " Test for gM with Tab characters
+  call setline('.', "\ta\tb\tc\td\te\tf")
+  norm! gMyl
+  call assert_equal(6, col('.'))
+  call assert_equal("c", getreg(0))
+
   " Test for g Ctrl-G
+  call setline('.', lineC)
+  norm! 60gMyl
   set ff=unix
   let a=execute(":norm! g\<c-g>")
   call assert_match('Col 87 of 144; Line 2 of 2; Word 1 of 1; Byte 88 of 146', a)
@@ -1835,6 +1843,16 @@ fun! Test_normal33_g_cmd2()
   bw!
 endfunc
 
+func Test_normal_ex_substitute()
+  " This was hanging on the substitute prompt.
+  new
+  call setline(1, 'a')
+  exe "normal! gggQs/a/b/c\<CR>"
+  call assert_equal('a', getline(1))
+  bwipe!
+endfunc
+
+" Test for g CTRL-G
 func Test_g_ctrl_g()
   new
 
@@ -2757,6 +2775,39 @@ func Test_normal_count_after_operator()
   call feedkeys("gg!9!\<C-B>\"\<CR>", 'xt')
   call assert_equal('".,$!', @:)
   bw!
+endfunc
+
+func Test_normal_gj_on_extra_wide_char()
+  new | 25vsp
+  let text='1 foooooooo ar e  ins‍zwe1 foooooooo ins‍zwei' .
+         \ ' i drei vier fünf sechs sieben acht un zehn elf zwöfl' .
+         \ ' dreizehn v ierzehn fünfzehn'
+  put =text
+  call cursor(2,1)
+  norm! gj
+  call assert_equal([0,2,25,0], getpos('.'))
+  bw!
+endfunc
+
+func Test_normal_count_out_of_range()
+  new
+  call setline(1, 'text')
+  normal 44444444444|
+  call assert_equal(999999999, v:count)
+  normal 444444444444|
+  call assert_equal(999999999, v:count)
+  normal 4444444444444|
+  call assert_equal(999999999, v:count)
+  normal 4444444444444444444|
+  call assert_equal(999999999, v:count)
+
+  normal 9y99999999|
+  call assert_equal(899999991, v:count)
+  normal 10y99999999|
+  call assert_equal(999999999, v:count)
+  normal 44444444444y44444444444|
+  call assert_equal(999999999, v:count)
+  bwipe!
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

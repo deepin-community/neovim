@@ -10,6 +10,7 @@ set(ENV{VIMRUNTIME} ${WORKING_DIR}/runtime)
 set(ENV{NVIM_RPLUGIN_MANIFEST} ${BUILD_DIR}/Xtest_rplugin_manifest)
 set(ENV{XDG_CONFIG_HOME} ${BUILD_DIR}/Xtest_xdg/config)
 set(ENV{XDG_DATA_HOME} ${BUILD_DIR}/Xtest_xdg/share)
+unset(ENV{XDG_DATA_DIRS})
 
 if(NOT DEFINED ENV{NVIM_LOG_FILE})
   set(ENV{NVIM_LOG_FILE} ${BUILD_DIR}/.nvimlog)
@@ -45,9 +46,16 @@ if(DEFINED ENV{TEST_FILTER} AND NOT "$ENV{TEST_FILTER}" STREQUAL "")
   list(APPEND BUSTED_ARGS --filter $ENV{TEST_FILTER})
 endif()
 
+if(DEFINED ENV{TEST_FILTER_OUT} AND NOT "$ENV{TEST_FILTER_OUT}" STREQUAL "")
+  list(APPEND BUSTED_ARGS --filter-out $ENV{TEST_FILTER_OUT})
+endif()
+
 # TMPDIR: use relative test path (for parallel test runs / isolation).
 set(ENV{TMPDIR} "${BUILD_DIR}/Xtest_tmpdir/${TEST_PATH}")
 execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory $ENV{TMPDIR})
+
+# HISTFILE: do not write into user's ~/.bash_history
+set(ENV{HISTFILE} "/dev/null")
 
 if(NOT DEFINED ENV{TEST_TIMEOUT} OR "$ENV{TEST_TIMEOUT}" STREQUAL "")
   set(ENV{TEST_TIMEOUT} 1200)

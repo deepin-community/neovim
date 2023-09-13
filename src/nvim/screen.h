@@ -3,25 +3,31 @@
 
 #include <stdbool.h>
 
-#include "nvim/types.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/grid_defs.h"
 #include "nvim/pos.h"
+#include "nvim/types.h"
 
-/*
- * flags for update_screen()
- * The higher the value, the higher the priority
- */
-#define VALID                   10  /* buffer not changed, or changes marked
-                                       with b_mod_* */
-#define INVERTED                20  /* redisplay inverted part that changed */
-#define INVERTED_ALL            25  /* redisplay whole inverted part */
-#define REDRAW_TOP              30  /* display first w_upd_rows screen lines */
-#define SOME_VALID              35  /* like NOT_VALID but may scroll */
-#define NOT_VALID               40  /* buffer needs complete redraw */
-#define CLEAR                   50  /* screen messed up, clear it */
+// flags for update_screen()
+// The higher the value, the higher the priority
+#define VALID                   10  // buffer not changed, or changes marked
+                                    // with b_mod_*
+#define INVERTED                20  // redisplay inverted part that changed
+#define INVERTED_ALL            25  // redisplay whole inverted part
+#define REDRAW_TOP              30  // display first w_upd_rows screen lines
+#define SOME_VALID              35  // like NOT_VALID but may scroll
+#define NOT_VALID               40  // buffer needs complete redraw
+#define CLEAR                   50  // screen messed up, clear it
 
-/// By default, all widows are draw on a single rectangular grid, represented by
+/// corner value flags for hsep_connected and vsep_connected
+typedef enum {
+  WC_TOP_LEFT = 0,
+  WC_TOP_RIGHT,
+  WC_BOTTOM_LEFT,
+  WC_BOTTOM_RIGHT
+} WindowCorner;
+
+/// By default, all windows are drawn on a single rectangular grid, represented by
 /// this ScreenGrid instance. In multigrid mode each window will have its own
 /// grid, then this is only used for global screen elements that hasn't been
 /// externalized.
@@ -59,8 +65,8 @@ extern StlClickDefinition *tab_page_click_defs;
 /// Size of the tab_page_click_defs array
 extern long tab_page_click_defs_size;
 
-#define W_ENDCOL(wp)   (wp->w_wincol + wp->w_width)
-#define W_ENDROW(wp)   (wp->w_winrow + wp->w_height)
+#define W_ENDCOL(wp)   ((wp)->w_wincol + (wp)->w_width)
+#define W_ENDROW(wp)   ((wp)->w_winrow + (wp)->w_height)
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "screen.h.generated.h"

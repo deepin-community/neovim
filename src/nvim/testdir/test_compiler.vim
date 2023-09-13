@@ -19,6 +19,9 @@ func Test_compiler()
   call assert_equal('perl', b:current_compiler)
   call assert_fails('let g:current_compiler', 'E121:')
 
+  let verbose_efm = execute('verbose set efm')
+  call assert_match('Last set from .*[/\\]compiler[/\\]perl.vim ', verbose_efm)
+
   call setline(1, ['#!/usr/bin/perl -w', 'use strict;', 'my $foo=1'])
   w!
   call feedkeys(":make\<CR>\<CR>", 'tx')
@@ -38,10 +41,9 @@ func Test_compiler()
 endfunc
 
 func GetCompilerNames()
-  " return glob('$VIMRUNTIME/compiler/*.vim', 0, 1)
-  "      \ ->map({i, v -> substitute(v, '.*[\\/]\([a-zA-Z0-9_\-]*\).vim', '\1', '')})
-  "      \ ->sort()
-  return sort(map(glob('$VIMRUNTIME/compiler/*.vim', 0, 1), {i, v -> substitute(v, '.*[\\/]\([a-zA-Z0-9_\-]*\).vim', '\1', '')}))
+  return glob('$VIMRUNTIME/compiler/*.vim', 0, 1)
+       \ ->map({i, v -> substitute(v, '.*[\\/]\([a-zA-Z0-9_\-]*\).vim', '\1', '')})
+       \ ->sort()
 endfunc
 
 func Test_compiler_without_arg()
@@ -54,8 +56,7 @@ func Test_compiler_without_arg()
 endfunc
 
 func Test_compiler_completion()
-  " let clist = GetCompilerNames()->join(' ')
-  let clist = join(GetCompilerNames(), ' ')
+  let clist = GetCompilerNames()->join(' ')
   call feedkeys(":compiler \<C-A>\<C-B>\"\<CR>", 'tx')
   call assert_match('^"compiler ' .. clist .. '$', @:)
 

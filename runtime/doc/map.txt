@@ -46,6 +46,8 @@ modes.
 			where the map command applies.  The result, including
 			{rhs}, is then further scanned for mappings.  This
 			allows for nested and recursive use of mappings.
+			Note: Trailing spaces are included in the {rhs},
+			because space is a valid Normal mode command.
 
 						*:nore* *:norem*
 :no[remap]  {lhs} {rhs}		|mapmode-nvo|	*:no*  *:noremap* *:nor*
@@ -63,6 +65,8 @@ modes.
 			where the map command applies.  Disallow mapping of
 			{rhs}, to avoid nested and recursive mappings.  Often
 			used to redefine a command.
+			Note: When <Plug> appears in the {rhs} this part is
+			always applied even if remapping is disallowed.
 
 
 :unm[ap]  {lhs}			|mapmode-nvo|		*:unm*  *:unmap*
@@ -79,6 +83,8 @@ modes.
 			Remove the mapping of {lhs} for the modes where the
 			map command applies.  The mapping may remain defined
 			for other modes where it applies.
+			It also works when {lhs} matches the {rhs} of a
+			mapping. This is for when an abbreviation applied.
 			Note: Trailing spaces are included in the {lhs}.  This
 			unmap does NOT work: >
 				:map @@ foo
@@ -153,7 +159,7 @@ type "a", then "bar" will get inserted.
 "<unique>" can be used in any order.  They must appear right after the
 command, before any other arguments.
 
-				*:map-local* *:map-<buffer>* *E224* *E225*
+			*:map-local* *:map-<buffer>* *:map-buffer* *E224* *E225*
 If the first argument to one of these commands is "<buffer>" the mapping will
 be effective in the current buffer only.  Example: >
 	:map <buffer>  ,w  /[.,;]<CR>
@@ -206,7 +212,7 @@ Note: ":map <script>" and ":noremap <script>" do the same thing.  The
 "<script>" overrules the command name.  Using ":noremap <script>" is
 preferred, because it's clearer that remapping is (mostly) disabled.
 
-						*:map-<unique>* *E226* *E227*
+				*:map-<unique>* *:map-unique* *E226* *E227*
 If the first argument to one of these commands is "<unique>" and it is used to
 define a new mapping or abbreviation, the command will fail if the mapping or
 abbreviation already exists.  Example: >
@@ -240,7 +246,7 @@ go through the main loop (e.g. to update the display), return "\<Ignore>".
 This is similar to "nothing" but makes Vim return from the loop that waits for
 input.
 
-Also, keep in mind that the expression may be evaluated when looking for
+Keep in mind that the expression may be evaluated when looking for
 typeahead, before the previous command has been executed.  For example: >
 	func StoreColumn()
 	  let g:column = col('.')
@@ -281,7 +287,7 @@ Here is an example that inserts a list number that increases: >
 
 	func ListItem()
 	  let g:counter += 1
-	  return g:counter . '. '
+	  return g:counter .. '. '
 	endfunc
 
 	func ListReset()
@@ -318,6 +324,8 @@ Note:
 - For the same reason, |keycodes| like <C-R><C-W> are interpreted as plain,
   unmapped keys.
 - The command is not echo'ed, no need for <silent>.
+- The {rhs} is not subject to abbreviations nor to other mappings, even if the
+  mapping is recursive.
 - In Visual mode  you can use `line('v')` and `col('v')` to get one end of the
   Visual area, the cursor is at the other end.
 - In select-mode, |:map| and |:vmap| command mappings are executed in
@@ -496,7 +504,9 @@ Note: When using mappings for Visual mode, you can use the "'<" mark, which
 is the start of the last selected Visual area in the current buffer |'<|.
 
 The |:filter| command can be used to select what mappings to list.  The
-pattern is matched against the {lhs} and {rhs} in the raw form.
+pattern is matched against the {lhs} and {rhs} in the raw form.  If a
+description was added using |nvim_set_keymap()| or |nvim_buf_set_keymap()|
+then the pattern is also matched against it.
 
 							*:map-verbose*
 When 'verbose' is non-zero, listing a key map will also display where it was
@@ -830,8 +840,7 @@ g@{motion}		Call the function set by the 'operatorfunc' option.
 			    "line"	{motion} was |linewise|
 			    "char"	{motion} was |charwise|
 			    "block"	{motion} was |blockwise-visual|
-			Although "block" would rarely appear, since it can
-			only result from Visual mode where "g@" is not useful.
+			The type can be forced, see |forced-motion|.
 
 Here is an example that counts the number of spaces with <F4>: >
 
@@ -876,6 +885,9 @@ mark.
 Also note that the 'clipboard' option is temporarily emptied to avoid
 clobbering the `"*` or `"+` registers, if its value contains the item `unnamed`
 or `unnamedplus`.
+
+The `mode()` function will return the state as it will be after applying the
+operator.
 
 ==============================================================================
 2. Abbreviations			*abbreviations* *Abbreviations*
@@ -1209,7 +1221,7 @@ scripts.
 
 							*:command-verbose*
 When 'verbose' is non-zero, listing a command will also display where it was
-last defined. Example: >
+last defined and any completion argument. Example: >
 
     :verbose command TOhtml
 <	Name	    Args Range Complete  Definition ~
@@ -1233,13 +1245,17 @@ See |:verbose-cmd| for more information.
 :delc[ommand] {cmd}				*:delc* *:delcommand* *E184*
 			Delete the user-defined command {cmd}.
 
+:delc[ommand] -buffer {cmd}					*E1237*
+			Delete the user-defined command {cmd} that was defined
+			for the current buffer.
+
 :comc[lear]						*:comc* *:comclear*
 			Delete all user-defined commands.
 
 
 Command attributes ~
-
-User-defined commands are treated by Vim just like any other Ex commands.  They
+							*command-attributes*
+User-defined commands are treated by Nvim just like any other Ex commands.  They
 can have arguments, or have a range specified.  Arguments are subject to
 completion as filenames, buffers, etc.  Exactly how this works depends upon the
 command's attributes, which are specified when the command is defined.
@@ -1306,6 +1322,7 @@ completion can be enabled:
 	-complete=highlight	highlight groups
 	-complete=history	:history suboptions
 	-complete=locale	locale names (as output of locale -a)
+	-complete=lua		Lua expression
 	-complete=mapclear	buffer argument
 	-complete=mapping	mapping name
 	-complete=menu		menus
@@ -1323,6 +1340,8 @@ completion can be enabled:
 	-complete=custom,{func} custom completion, defined via {func}
 	-complete=customlist,{func} custom completion, defined via {func}
 
+If you specify completion while there is nothing to complete (-nargs=0, the
+default) then you get error *E1208* .
 Note: That some completion methods might expand environment variables.
 
 
@@ -1415,6 +1434,7 @@ Possible values are (second column is the short name used in listing):
 Special cases ~
 					*:command-bang* *:command-bar*
 					*:command-register* *:command-buffer*
+					*:command-keepscript*
 There are some special cases as well:
 
 	-bang	    The command can take a ! modifier (like :q or :w)
@@ -1424,6 +1444,9 @@ There are some special cases as well:
 	-register   The first argument to the command can be an optional
 		    register name (like :del, :put, :yank).
 	-buffer	    The command will only be available in the current buffer.
+	-keepscript Do not use the location of where the user command was
+		    defined for verbose messages, use the location of where
+		    the user command was invoked.
 
 In the cases of the -count and -register attributes, if the optional argument
 is supplied, it is removed from the argument list and is available to the
@@ -1468,12 +1491,12 @@ The valid escape sequences are
 		Examples: >
 		    command! -nargs=+ -complete=file MyEdit
 				\ for f in expand(<q-args>, 0, 1) |
-				\ exe '<mods> split ' . f |
+				\ exe '<mods> split ' .. f |
 				\ endfor
 
 		    function! SpecialEdit(files, mods)
 			for f in expand(a:files, 0, 1)
-			    exe a:mods . ' split ' . f
+			    exe a:mods .. ' split ' .. f
 			endfor
 		    endfunction
 		    command! -nargs=+ -complete=file Sedit
@@ -1549,7 +1572,7 @@ This will invoke: >
    :   let i = 0
    :   while i < argc()
    :	  if filereadable(argv(i))
-   :	     execute "e " . argv(i)
+   :	     execute "e " .. argv(i)
    :	     execute a:command
    :      endif
    :      let i = i + 1

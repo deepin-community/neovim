@@ -1,3 +1,126 @@
+neovim (0.7.2-7) unstable; urgency=medium
+
+  * Validate language name for treesitter injection
+
+ -- James McCoy <jamessan@debian.org>  Fri, 10 Feb 2023 19:50:13 -0500
+
+neovim (0.7.2-6) unstable; urgency=medium
+
+  * Add tzdata as test dependency.
+    Thanks to Santiago Vila for the report (Closes: #1029427)
+
+ -- James McCoy <jamessan@debian.org>  Tue, 24 Jan 2023 17:09:12 -0500
+
+neovim (0.7.2-5) unstable; urgency=medium
+
+  * Add explicit Build-Depends on lua-mpack (Closes: #1027821)
+  * Backport patch to fix flakiness in job_spec's "append environment" tests
+
+ -- James McCoy <jamessan@debian.org>  Mon, 09 Jan 2023 08:24:14 -0500
+
+neovim (0.7.2-4) unstable; urgency=medium
+
+  * Add wl-clipboard to Recommends for Wayland clipboard support
+    (Closes: #1015786)
+  * Bump minimum lua-nvim to 0.2.4-1 (Closes: #1027566)
+  * Backport upstream patches to work with new lua-nvim version
+    - fix(tests): check for EOF on exit of nvim properly
+    - test(mksession_spec): use %bwipeout! instead of qall! to close terminal (#19465)
+    - test: deal with RPC call causing Nvim to exit later
+    - test(let_spec): increase expect_exit() timeout
+  * Remove libkvm-dev Build-Depends now that libuv1-dev properly includes it
+  * Declare compliance with Policy 4.6.2, no changes needed
+  * Adapt lintian overrides to new format
+  * Switch to debhelper-compat and bump to compat 13
+  * Add upstream/metadata file
+  * watch: Use GitHub's tags page to detect new versions
+
+ -- James McCoy <jamessan@debian.org>  Mon, 02 Jan 2023 18:44:00 -0500
+
+neovim (0.7.2-3) unstable; urgency=medium
+
+  * Disable strict aliasing to fix gcc-12 FTBFS (Closes: #1013002)
+  * Always Build-Depend on lua5.1, even when building with luajit
+  * Only generate Lua bytecode for non-LuaJIT builds (Closes: #1014160)
+
+ -- James McCoy <jamessan@debian.org>  Wed, 06 Jul 2022 10:35:11 -0400
+
+neovim (0.7.2-2) unstable; urgency=medium
+
+  * Exclude python3-pynvim Build-Depends on hppa, ia64, and sh4; missing
+    python3-greenlet dependency.
+  * Switch python3-neovim Recommends to python3-pynvim to follow upstream
+    renaming.
+  * Switch to Lua on mips(el) to avoid LuaJIT hangs.
+
+ -- James McCoy <jamessan@debian.org>  Tue, 05 Jul 2022 21:53:40 -0400
+
+neovim (0.7.2-1) unstable; urgency=medium
+
+  * New upstream release (Closes: #1010158)
+    + Breaking changes
+      - Support for Python 2 is dropped
+      - Existing usages of `nvim_buf_set_test` that use negative line numbers
+        will be off-by-one
+      - signature of `vim.highlight.range` was changed
+      - distinguish between some input keys which previously were synonyms.
+        This will break some existing mappings.
+        * `<cr>`, `<tab>` and `<esc>` are no longer considered equivalent to
+          `<c-m>`, `<c-i>` and `<c-[>` respectively. In case the terminal or
+          GUI supports distinguishing these keys, these can now be mapped
+          separately. But even if the terminal only can send one code you
+          might still need to change what variant is used in the config.
+      - $NVIM_LISTEN_ADDRESS is no longer propagated to child processes.  Use
+        $NVIM instead.
+    + Fix incorrect update of terminal title in certain circumstances.
+      (Closes: #1005365)
+  * Declare compliance with Policy 4.6.1, no changes needed
+  * Re-enable testing of python3-neovim at build time
+
+ -- James McCoy <jamessan@debian.org>  Mon, 27 Jun 2022 23:12:44 -0400
+
+neovim (0.6.1-3) unstable; urgency=medium
+
+  * Use 45 minute test timeout for all architectures
+
+ -- James McCoy <jamessan@debian.org>  Sun, 02 Jan 2022 20:17:58 -0500
+
+neovim (0.6.1-2) unstable; urgency=medium
+
+  * rules: Skip flaky memory_usage functionaltest on armhf
+
+ -- James McCoy <jamessan@debian.org>  Sat, 01 Jan 2022 16:26:58 -0500
+
+neovim (0.6.1-1) unstable; urgency=medium
+
+  * New upstream release
+  * Remove backported patches
+  * rules: Extend test timeout to 45 minutes on slower architectures
+
+ -- James McCoy <jamessan@debian.org>  Fri, 31 Dec 2021 15:34:26 -0500
+
+neovim (0.6.0-1) unstable; urgency=medium
+
+  * New upstream release
+    - Ignore sgmrp/sgmlp terminfo attributes for non-xterm compatible
+      terminals which advertise TERM=xterm  (Closes: #999777)
+    - Changed defaults:
+      + 'hidden' is enabled
+      + 'joinspaces' is disabled
+      + 'switchbuf' defaults to "uselast"
+      + 'viewoptions' includes "unix,slash", excludes "options"
+    - Some mappings and autocmds are defined by default, but can be overridden
+      by the user.  See ":help default-mappings" and ":help default-autocmds",
+      respectively.
+  * d/control: Bump minimum CMake to 3.10
+  * d/control: Remove lua-mpack from Build-Depends since it is now vendored
+  * Remove lintian override for file, rgb.txt, removed upstream
+  * Declare compliance with Policy 4.6.0, no changes needed
+  * Add <!nocheck> restriction to locales Build-Depends
+  * Use standard salsa-ci pipeline for CI
+
+ -- James McCoy <jamessan@debian.org>  Fri, 17 Dec 2021 13:42:07 -0500
+
 neovim (0.5.1-1) unstable; urgency=medium
 
   * Upload to unstable

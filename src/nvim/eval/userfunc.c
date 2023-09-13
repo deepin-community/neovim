@@ -5,6 +5,7 @@
 
 #include "nvim/ascii.h"
 #include "nvim/charset.h"
+#include "nvim/debugger.h"
 #include "nvim/edit.h"
 #include "nvim/eval.h"
 #include "nvim/eval/encode.h"
@@ -12,12 +13,10 @@
 #include "nvim/ex_cmds2.h"
 #include "nvim/ex_docmd.h"
 #include "nvim/ex_getln.h"
-#include "nvim/ex_getln.h"
 #include "nvim/fileio.h"
 #include "nvim/getchar.h"
 #include "nvim/globals.h"
 #include "nvim/lua/executor.h"
-#include "nvim/misc1.h"
 #include "nvim/os/input.h"
 #include "nvim/regexp.h"
 #include "nvim/search.h"
@@ -39,7 +38,7 @@
 #define FC_CFUNC    0x800         // C function extension
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
-#include "eval/userfunc.c.generated.h"
+# include "eval/userfunc.c.generated.h"
 #endif
 
 hashtab_T func_hashtab;
@@ -54,26 +53,25 @@ static funccall_T *current_funccal = NULL;
 // item in it is still being used.
 static funccall_T *previous_funccal = NULL;
 
-static char *e_funcexts = N_(
-    "E122: Function %s already exists, add ! to replace it");
+static char *e_funcexts = N_("E122: Function %s already exists, add ! to replace it");
 static char *e_funcdict = N_("E717: Dictionary entry already exists");
 static char *e_funcref = N_("E718: Funcref required");
 static char *e_nofunc = N_("E130: Unknown function: %s");
 
 void func_init(void)
 {
-    hash_init(&func_hashtab);
+  hash_init(&func_hashtab);
 }
 
 /// Get function arguments.
-static int get_function_args(char_u **argp, char_u endchar, garray_T *newargs,
-                             int *varargs, garray_T *default_args, bool skip)
+static int get_function_args(char_u **argp, char_u endchar, garray_T *newargs, int *varargs,
+                             garray_T *default_args, bool skip)
 {
-  bool    mustend = false;
-  char_u  *arg = *argp;
-  char_u  *p = arg;
-  int     c;
-  int     i;
+  bool mustend = false;
+  char_u *arg = *argp;
+  char_u *p = arg;
+  int c;
+  int i;
 
   if (newargs != NULL) {
     ga_init(newargs, (int)sizeof(char_u *), 3);
@@ -104,7 +102,7 @@ static int get_function_args(char_u **argp, char_u endchar, garray_T *newargs,
           || (p - arg == 9 && STRNCMP(arg, "firstline", 9) == 0)
           || (p - arg == 8 && STRNCMP(arg, "lastline", 8) == 0)) {
         if (!skip) {
-          EMSG2(_("E125: Illegal argument: %s"), arg);
+          semsg(_("E125: Illegal argument: %s"), arg);
         }
         break;
       }
@@ -117,7 +115,7 @@ static int get_function_args(char_u **argp, char_u endchar, garray_T *newargs,
         // Check for duplicate argument name.
         for (i = 0; i < newargs->ga_len; i++) {
           if (STRCMP(((char_u **)(newargs->ga_data))[i], arg) == 0) {
-            EMSG2(_("E853: Duplicate argument name: %s"), arg);
+            semsg(_("E853: Duplicate argument name: %s"), arg);
             xfree(arg);
             goto err_ret;
           }
@@ -145,14 +143,14 @@ static int get_function_args(char_u **argp, char_u endchar, garray_T *newargs,
           *p = NUL;
           expr = vim_strsave(expr);
           ((char_u **)(default_args->ga_data))
-            [default_args->ga_len] = expr;
+          [default_args->ga_len] = expr;
           default_args->ga_len++;
           *p = c;
         } else {
           mustend = true;
         }
       } else if (any_default) {
-        EMSG(_("E989: Non-default argument follows default argument"));
+        emsg(_("E989: Non-default argument follows default argument"));
         mustend = true;
       }
       if (*p == ',') {
@@ -164,7 +162,7 @@ static int get_function_args(char_u **argp, char_u endchar, garray_T *newargs,
     p = skipwhite(p);
     if (mustend && *p != endchar) {
       if (!skip) {
-        EMSG2(_(e_invarg2), *argp);
+        semsg(_(e_invarg2), *argp);
       }
       break;
     }
@@ -199,18 +197,18 @@ static void register_closure(ufunc_T *fp)
   current_funccal->fc_refcount++;
   ga_grow(&current_funccal->fc_funcs, 1);
   ((ufunc_T **)current_funccal->fc_funcs.ga_data)
-    [current_funccal->fc_funcs.ga_len++] = fp;
+  [current_funccal->fc_funcs.ga_len++] = fp;
 }
 
 
-/// Get a name for a lambda.  Returned in static memory.
-char_u * get_lambda_name(void)
+/// @return  a name for a lambda.  Returned in static memory.
+char_u *get_lambda_name(void)
 {
-    static char_u   name[30];
-    static int      lambda_no = 0;
+  static char_u name[30];
+  static int lambda_no = 0;
 
-    snprintf((char *)name, sizeof(name), "<lambda>%d", ++lambda_no);
-    return name;
+  snprintf((char *)name, sizeof(name), "<lambda>%d", ++lambda_no);
+  return name;
 }
 
 /// Parse a lambda expression and get a Funcref from "*arg".
@@ -218,16 +216,16 @@ char_u * get_lambda_name(void)
 /// @return OK or FAIL.  Returns NOTDONE for dict or {expr}.
 int get_lambda_tv(char_u **arg, typval_T *rettv, bool evaluate)
 {
-  garray_T   newargs = GA_EMPTY_INIT_VALUE;
-  garray_T   *pnewargs;
-  ufunc_T    *fp = NULL;
+  garray_T newargs = GA_EMPTY_INIT_VALUE;
+  garray_T *pnewargs;
+  ufunc_T *fp = NULL;
   partial_T *pt = NULL;
-  int        varargs;
-  int        ret;
-  char_u     *start = skipwhite(*arg + 1);
-  char_u     *s, *e;
-  bool       *old_eval_lavars = eval_lavars_used;
-  bool       eval_lavars = false;
+  int varargs;
+  int ret;
+  char_u *start = skipwhite(*arg + 1);
+  char_u *s, *e;
+  bool *old_eval_lavars = eval_lavars_used;
+  bool eval_lavars = false;
 
   // First, check if this is a lambda expression. "->" must exists.
   ret = get_function_args(&start, '-', NULL, NULL, NULL, true);
@@ -347,8 +345,7 @@ errret:
 ///                          was not found.
 ///
 /// @return name of the function.
-char_u *deref_func_name(const char *name, int *lenp,
-                               partial_T **const partialp, bool no_autoload)
+char_u *deref_func_name(const char *name, int *lenp, partial_T **const partialp, bool no_autoload)
   FUNC_ATTR_NONNULL_ARG(1, 2)
 {
   if (partialp != NULL) {
@@ -397,57 +394,52 @@ void emsg_funcname(char *ermsg, const char_u *name)
     p = (char_u *)name;
   }
 
-  EMSG2(_(ermsg), p);
+  semsg(_(ermsg), p);
 
   if (p != name) {
     xfree(p);
   }
 }
 
-/*
- * Allocate a variable for the result of a function.
- * Return OK or FAIL.
- */
-int
-get_func_tv(
-    const char_u *name,     // name of the function
-    int len,                // length of "name" or -1 to use strlen()
-    typval_T *rettv,
-    char_u **arg,           // argument, pointing to the '('
-    linenr_T firstline,     // first line of range
-    linenr_T lastline,      // last line of range
-    int *doesrange,         // return: function handled range
-    int evaluate,
-    partial_T *partial,     // for extra arguments
-    dict_T *selfdict        // Dictionary for "self"
-)
+/// Allocate a variable for the result of a function.
+///
+/// @param name  name of the function
+/// @param len  length of "name" or -1 to use strlen()
+/// @param arg  argument, pointing to the '('
+/// @param funcexe  various values
+///
+/// @return  OK or FAIL.
+int get_func_tv(const char_u *name, int len, typval_T *rettv, char_u **arg, funcexe_T *funcexe)
 {
-  char_u      *argp;
+  char_u *argp;
   int ret = OK;
-  typval_T argvars[MAX_FUNC_ARGS + 1];          /* vars for arguments */
-  int argcount = 0;                     /* number of arguments found */
+  typval_T argvars[MAX_FUNC_ARGS + 1];          // vars for arguments
+  int argcount = 0;                     // number of arguments found
 
   /*
    * Get the arguments.
    */
   argp = *arg;
-  while (argcount < MAX_FUNC_ARGS - (partial == NULL ? 0 : partial->pt_argc)) {
+  while (argcount < MAX_FUNC_ARGS
+         - (funcexe->partial == NULL ? 0 : funcexe->partial->pt_argc)) {
     argp = skipwhite(argp + 1);             // skip the '(' or ','
     if (*argp == ')' || *argp == ',' || *argp == NUL) {
       break;
     }
-    if (eval1(&argp, &argvars[argcount], evaluate) == FAIL) {
+    if (eval1(&argp, &argvars[argcount], funcexe->evaluate) == FAIL) {
       ret = FAIL;
       break;
     }
     ++argcount;
-    if (*argp != ',')
+    if (*argp != ',') {
       break;
+    }
   }
-  if (*argp == ')')
+  if (*argp == ')') {
     ++argp;
-  else
+  } else {
     ret = FAIL;
+  }
 
   if (ret == OK) {
     int i = 0;
@@ -463,9 +455,7 @@ get_func_tv(
         ((typval_T **)funcargs.ga_data)[funcargs.ga_len++] = &argvars[i];
       }
     }
-    ret = call_func(name, len, rettv, argcount, argvars, NULL,
-                    firstline, lastline, doesrange, evaluate,
-                    partial, selfdict);
+    ret = call_func(name, len, rettv, argcount, argvars, funcexe);
 
     funcargs.ga_len -= i;
   } else if (!aborting()) {
@@ -517,8 +507,7 @@ static inline bool eval_fname_sid(const char *const name)
 ///
 /// @return transformed name: either `fname_buf` or a pointer to an allocated
 ///         memory.
-static char_u *fname_trans_sid(const char_u *const name,
-                               char_u *const fname_buf,
+static char_u *fname_trans_sid(const char_u *const name, char_u *const fname_buf,
                                char_u **const tofree, int *const error)
   FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
 {
@@ -527,7 +516,7 @@ static char_u *fname_trans_sid(const char_u *const name,
   if (llen > 0) {
     fname_buf[0] = K_SPECIAL;
     fname_buf[1] = KS_EXTRA;
-    fname_buf[2] = (int)KE_SNR;
+    fname_buf[2] = KE_SNR;
     int i = 3;
     if (eval_fname_sid((const char *)name)) {  // "<SID>" or "s:"
       if (current_sctx.sc_sid <= 0) {
@@ -555,34 +544,33 @@ static char_u *fname_trans_sid(const char_u *const name,
 }
 
 /// Find a function by name, return pointer to it in ufuncs.
-/// @return NULL for unknown function.
+///
+/// @return  NULL for unknown function.
 ufunc_T *find_func(const char_u *name)
 {
-  hashitem_T  *hi;
+  hashitem_T *hi;
 
   hi = hash_find(&func_hashtab, name);
-  if (!HASHITEM_EMPTY(hi))
+  if (!HASHITEM_EMPTY(hi)) {
     return HI2UF(hi);
+  }
   return NULL;
 }
 
-/*
- * Copy the function name of "fp" to buffer "buf".
- * "buf" must be able to hold the function name plus three bytes.
- * Takes care of script-local function names.
- */
+/// Copy the function name of "fp" to buffer "buf".
+/// "buf" must be able to hold the function name plus three bytes.
+/// Takes care of script-local function names.
 static void cat_func_name(char_u *buf, ufunc_T *fp)
 {
   if (fp->uf_name[0] == K_SPECIAL) {
     STRCPY(buf, "<SNR>");
     STRCAT(buf, fp->uf_name + 3);
-  } else
+  } else {
     STRCPY(buf, fp->uf_name);
+  }
 }
 
-/*
- * Add a number variable "name" to dict "dp" with value "nr".
- */
+/// Add a number variable "name" to dict "dp" with value "nr".
 static void add_nr_var(dict_T *dp, dictitem_T *v, char *name, varnumber_T nr)
 {
 #ifndef __clang_analyzer__
@@ -595,7 +583,7 @@ static void add_nr_var(dict_T *dp, dictitem_T *v, char *name, varnumber_T nr)
   v->di_tv.vval.v_number = nr;
 }
 
-// Free "fc"
+/// Free "fc"
 static void free_funccal(funccall_T *fc)
 {
   for (int i = 0; i < fc->fc_funcs.ga_len; i++) {
@@ -615,9 +603,9 @@ static void free_funccal(funccall_T *fc)
   xfree(fc);
 }
 
-// Free "fc" and what it contains.
-// Can be called only when "fc" is kept beyond the period of it called,
-// i.e. after cleanup_function_call(fc).
+/// Free "fc" and what it contains.
+/// Can be called only when "fc" is kept beyond the period of it called,
+/// i.e. after cleanup_function_call(fc).
 static void free_funccal_contents(funccall_T *fc)
 {
   // Free all l: variables.
@@ -667,7 +655,6 @@ static void cleanup_function_call(funccall_T *fc)
   if (may_free_fc && fc->l_varlist.lv_refcount   // NOLINT(runtime/deprecated)
       == DO_NOT_FREE_CNT) {
     fc->l_varlist.lv_first = NULL;  // NOLINT(runtime/deprecated)
-
   } else {
     free_fc = false;
 
@@ -767,7 +754,7 @@ static void func_clear_items(ufunc_T *fp)
 /// Free all things that a function contains. Does not free the function
 /// itself, use func_free() for that.
 ///
-/// param[in]        force        When true, we are exiting.
+/// @param[in] force  When true, we are exiting.
 static void func_clear(ufunc_T *fp, bool force)
 {
   if (fp->uf_cleared) {
@@ -783,7 +770,7 @@ static void func_clear(ufunc_T *fp, bool force)
 /// Free a function and remove it from the list of functions. Does not free
 /// what a function contains, call func_clear() first.
 ///
-/// param[in]        fp        The function to free.
+/// @param[in] fp  The function to free.
 static void func_free(ufunc_T *fp)
 {
   // only remove it when not done already, otherwise we would remove a newer
@@ -796,7 +783,7 @@ static void func_free(ufunc_T *fp)
 
 /// Free all things that a function contains and free the function itself.
 ///
-/// param[in]        force        When true, we are exiting.
+/// @param[in] force  When true, we are exiting.
 static void func_clear_free(ufunc_T *fp, bool force)
 {
   func_clear(fp, force);
@@ -805,30 +792,29 @@ static void func_clear_free(ufunc_T *fp, bool force)
 
 /// Call a user function
 ///
-/// @param  fp  Function to call.
-/// @param[in]  argcount  Number of arguments.
-/// @param  argvars  Arguments.
-/// @param[out]  rettv  Return value.
-/// @param[in]  firstline  First line of range.
-/// @param[in]  lastline  Last line of range.
-/// @param  selfdict  Dictionary for "self" for dictionary functions.
-void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars,
-                    typval_T *rettv, linenr_T firstline, linenr_T lastline,
-                    dict_T *selfdict)
+/// @param fp  Function to call.
+/// @param[in] argcount  Number of arguments.
+/// @param argvars  Arguments.
+/// @param[out] rettv  Return value.
+/// @param[in] firstline  First line of range.
+/// @param[in] lastline  Last line of range.
+/// @param selfdict  Dictionary for "self" for dictionary functions.
+void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars, typval_T *rettv,
+                    linenr_T firstline, linenr_T lastline, dict_T *selfdict)
   FUNC_ATTR_NONNULL_ARG(1, 3, 4)
 {
-  char_u      *save_sourcing_name;
+  char_u *save_sourcing_name;
   linenr_T save_sourcing_lnum;
   bool using_sandbox = false;
-  funccall_T  *fc;
+  funccall_T *fc;
   int save_did_emsg;
   static int depth = 0;
-  dictitem_T  *v;
+  dictitem_T *v;
   int fixvar_idx = 0;           // index in fixvar[]
   int ai;
   bool islambda = false;
   char_u numbuf[NUMBUFLEN];
-  char_u      *name;
+  char_u *name;
   typval_T *tv_to_free[MAX_FUNC_ARGS];
   int tv_to_free_len = 0;
   proftime_T wait_start;
@@ -839,7 +825,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars,
 
   // If depth of calling is getting too high, don't execute the function
   if (depth >= p_mfd) {
-    EMSG(_("E132: Function call depth is higher than 'maxfuncdepth'"));
+    emsg(_("E132: Function call depth is higher than 'maxfuncdepth'"));
     rettv->v_type = VAR_NUMBER;
     rettv->vval.v_number = -1;
     return;
@@ -954,7 +940,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars,
         def_rettv.vval.v_number = -1;
 
         default_expr = ((char_u **)(fp->uf_def_args.ga_data))
-          [ai + fp->uf_def_args.ga_len];
+                       [ai + fp->uf_def_args.ga_len];
         if (eval1(&default_expr, &def_rettv, true) == FAIL) {
           default_arg_err = true;
           break;
@@ -1140,7 +1126,7 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars,
     call_start = profile_sub_wait(wait_start, call_start);  // -V614
     fp->uf_tm_total = profile_add(fp->uf_tm_total, call_start);
     fp->uf_tm_self = profile_self(fp->uf_tm_self, call_start,
-        fp->uf_tm_children);
+                                  fp->uf_tm_children);
     if (fc->caller != NULL && fc->caller->func->uf_profiling) {
       fc->caller->func->uf_tm_children =
         profile_add(fc->caller->func->uf_tm_children, call_start);
@@ -1158,19 +1144,19 @@ void call_user_func(ufunc_T *fp, int argcount, typval_T *argvars,
     ++no_wait_return;
     verbose_enter_scroll();
 
-    if (aborting())
+    if (aborting()) {
       smsg(_("%s aborted"), sourcing_name);
-    else if (fc->rettv->v_type == VAR_NUMBER)
+    } else if (fc->rettv->v_type == VAR_NUMBER) {
       smsg(_("%s returning #%" PRId64 ""),
            sourcing_name, (int64_t)fc->rettv->vval.v_number);
-    else {
+    } else {
       char_u buf[MSG_BUF_LEN];
 
       // The value may be very long.  Skip the middle part, so that we
       // have some idea how it starts and ends. smsg() would always
       // truncate it at the end. Don't want errors such as E724 here.
       emsg_off++;
-      char_u *s = (char_u *) encode_tv2string(fc->rettv, NULL);
+      char_u *s = (char_u *)encode_tv2string(fc->rettv, NULL);
       char_u *tofree = s;
       emsg_off--;
       if (s != NULL) {
@@ -1241,8 +1227,8 @@ static bool func_name_refcount(char_u *name)
 
 static funccal_entry_T *funccal_stack = NULL;
 
-// Save the current function call pointer, and set it to NULL.
-// Used when executing autocommands and for ":source".
+/// Save the current function call pointer, and set it to NULL.
+/// Used when executing autocommands and for ":source".
 void save_funccal(funccal_entry_T *entry)
 {
   entry->top_funccal = current_funccal;
@@ -1254,7 +1240,7 @@ void save_funccal(funccal_entry_T *entry)
 void restore_funccal(void)
 {
   if (funccal_stack == NULL) {
-    IEMSG("INTERNAL: restore_funccal()");
+    iemsg("INTERNAL: restore_funccal()");
   } else {
     current_funccal = funccal_stack->top_funccal;
     funccal_stack = funccal_stack->next;
@@ -1274,8 +1260,8 @@ void set_current_funccal(funccall_T *fc)
 #if defined(EXITFREE)
 void free_all_functions(void)
 {
-  hashitem_T  *hi;
-  ufunc_T     *fp;
+  hashitem_T *hi;
+  ufunc_T *fp;
   uint64_t skipped = 0;
   uint64_t todo = 1;
   uint64_t used;
@@ -1362,17 +1348,15 @@ static bool builtin_function(const char *name, int len)
   return p == NULL;
 }
 
-int func_call(char_u *name, typval_T *args, partial_T *partial,
-              dict_T *selfdict, typval_T *rettv)
+int func_call(char_u *name, typval_T *args, partial_T *partial, dict_T *selfdict, typval_T *rettv)
 {
   typval_T argv[MAX_FUNC_ARGS + 1];
   int argc = 0;
-  int dummy;
   int r = 0;
 
   TV_LIST_ITER(args->vval.v_list, item, {
     if (argc == MAX_FUNC_ARGS - (partial == NULL ? 0 : partial->pt_argc)) {
-      EMSG(_("E699: Too many arguments"));
+      emsg(_("E699: Too many arguments"));
       goto func_call_skip_call;
     }
     // Make a copy of each argument.  This is needed to be able to set
@@ -1380,9 +1364,13 @@ int func_call(char_u *name, typval_T *args, partial_T *partial,
     tv_copy(TV_LIST_ITEM_TV(item), &argv[argc++]);
   });
 
-  r = call_func(name, -1, rettv, argc, argv, NULL,
-                curwin->w_cursor.lnum, curwin->w_cursor.lnum,
-                &dummy, true, partial, selfdict);
+  funcexe_T funcexe = FUNCEXE_INIT;
+  funcexe.firstline = curwin->w_cursor.lnum;
+  funcexe.lastline = curwin->w_cursor.lnum;
+  funcexe.evaluate = true;
+  funcexe.partial = partial;
+  funcexe.selfdict = selfdict;
+  r = call_func(name, -1, rettv, argc, argv, &funcexe);
 
 func_call_skip_call:
   // Free the arguments.
@@ -1393,62 +1381,70 @@ func_call_skip_call:
   return r;
 }
 
-// Give an error message for the result of a function.
-// Nothing if "error" is FCERR_NONE.
+/// Give an error message for the result of a function.
+/// Nothing if "error" is FCERR_NONE.
 static void user_func_error(int error, const char_u *name)
   FUNC_ATTR_NONNULL_ALL
 {
   switch (error) {
-    case ERROR_UNKNOWN:
-      emsg_funcname(N_("E117: Unknown function: %s"), name);
-      break;
-    case ERROR_DELETED:
-      emsg_funcname(N_("E933: Function was deleted: %s"), name);
-      break;
-    case ERROR_TOOMANY:
-      emsg_funcname(_(e_toomanyarg), name);
-      break;
-    case ERROR_TOOFEW:
-      emsg_funcname(N_("E119: Not enough arguments for function: %s"),
-          name);
-      break;
-    case ERROR_SCRIPT:
-      emsg_funcname(N_("E120: Using <SID> not in a script context: %s"),
-          name);
-      break;
-    case ERROR_DICT:
-      emsg_funcname(N_("E725: Calling dict function without Dictionary: %s"),
-          name);
-      break;
+  case ERROR_UNKNOWN:
+    emsg_funcname(N_("E117: Unknown function: %s"), name);
+    break;
+  case ERROR_NOTMETHOD:
+    emsg_funcname(N_("E276: Cannot use function as a method: %s"), name);
+    break;
+  case ERROR_DELETED:
+    emsg_funcname(N_("E933: Function was deleted: %s"), name);
+    break;
+  case ERROR_TOOMANY:
+    emsg_funcname(_(e_toomanyarg), name);
+    break;
+  case ERROR_TOOFEW:
+    emsg_funcname(N_("E119: Not enough arguments for function: %s"),
+                  name);
+    break;
+  case ERROR_SCRIPT:
+    emsg_funcname(N_("E120: Using <SID> not in a script context: %s"),
+                  name);
+    break;
+  case ERROR_DICT:
+    emsg_funcname(N_("E725: Calling dict function without Dictionary: %s"),
+                  name);
+    break;
+  }
+}
+
+/// Used by call_func to add a method base (if any) to a function argument list
+/// as the first argument. @see call_func
+static void argv_add_base(typval_T *const basetv, typval_T **const argvars, int *const argcount,
+                          typval_T *const new_argvars, int *const argv_base)
+  FUNC_ATTR_NONNULL_ARG(2, 3, 4, 5)
+{
+  if (basetv != NULL) {
+    // Method call: base->Method()
+    memmove(&new_argvars[1], *argvars, sizeof(typval_T) * (*argcount));
+    new_argvars[0] = *basetv;
+    (*argcount)++;
+    *argvars = new_argvars;
+    *argv_base = 1;
   }
 }
 
 /// Call a function with its resolved parameters
 ///
-/// "argv_func", when not NULL, can be used to fill in arguments only when the
-/// invoked function uses them. It is called like this:
-///   new_argcount = argv_func(current_argcount, argv, called_func_argcount)
+/// @param funcname  name of the function
+/// @param len  length of "name" or -1 to use strlen()
+/// @param rettv  [out] value goes here
+/// @param argcount_in  number of "argvars"
+/// @param argvars_in  vars for arguments, must have "argcount" PLUS ONE elements!
+/// @param funcexe  more arguments
 ///
 /// @return FAIL if function cannot be called, else OK (even if an error
 ///         occurred while executing the function! Set `msg_list` to capture
 ///         the error, see do_cmdline()).
-int
-call_func(
-    const char_u *funcname,         // name of the function
-    int len,                        // length of "name" or -1 to use strlen()
-    typval_T *rettv,                // [out] value goes here
-    int argcount_in,                // number of "argvars"
-    typval_T *argvars_in,           // vars for arguments, must have "argcount"
-                                    // PLUS ONE elements!
-    ArgvFunc argv_func,             // function to fill in argvars
-    linenr_T firstline,             // first line of range
-    linenr_T lastline,              // last line of range
-    int *doesrange,                 // [out] function handled range
-    bool evaluate,
-    partial_T *partial,             // optional, can be NULL
-    dict_T *selfdict_in             // Dictionary for "self"
-)
-  FUNC_ATTR_NONNULL_ARG(1, 3, 5, 9)
+int call_func(const char_u *funcname, int len, typval_T *rettv, int argcount_in,
+              typval_T *argvars_in, funcexe_T *funcexe)
+  FUNC_ATTR_NONNULL_ARG(1, 3, 5, 6)
 {
   int ret = FAIL;
   int error = ERROR_NONE;
@@ -1459,9 +1455,12 @@ call_func(
   char_u *name = NULL;
   int argcount = argcount_in;
   typval_T *argvars = argvars_in;
-  dict_T *selfdict = selfdict_in;
-  typval_T argv[MAX_FUNC_ARGS + 1];  // used when "partial" is not NULL
+  dict_T *selfdict = funcexe->selfdict;
+  typval_T argv[MAX_FUNC_ARGS + 1];  // used when "partial" or
+                                     // "funcexe->basetv" is not NULL
   int argv_clear = 0;
+  int argv_base = 0;
+  partial_T *partial = funcexe->partial;
 
   // Initialize rettv so that it is safe for caller to invoke clear_tv(rettv)
   // even when call_func() returns FAIL.
@@ -1480,14 +1479,15 @@ call_func(
     fname = fname_trans_sid(name, fname_buf, &tofree, &error);
   }
 
-  *doesrange = false;
+  if (funcexe->doesrange != NULL) {
+    *funcexe->doesrange = false;
+  }
 
   if (partial != NULL) {
     // When the function has a partial with a dict and there is a dict
     // argument, use the dict argument. That is backwards compatible.
     // When the dict was bound explicitly use the one from the partial.
-    if (partial->pt_dict != NULL
-        && (selfdict_in == NULL || !partial->pt_auto)) {
+    if (partial->pt_dict != NULL && (selfdict == NULL || !partial->pt_auto)) {
       selfdict = partial->pt_dict;
     }
     if (error == ERROR_NONE && partial->pt_argc > 0) {
@@ -1506,7 +1506,7 @@ call_func(
     }
   }
 
-  if (error == ERROR_NONE && evaluate) {
+  if (error == ERROR_NONE && funcexe->evaluate) {
     char_u *rfname = fname;
 
     // Ignore "g:" before a function name.
@@ -1521,7 +1521,12 @@ call_func(
     if (is_luafunc(partial)) {
       if (len > 0) {
         error = ERROR_NONE;
+        argv_add_base(funcexe->basetv, &argvars, &argcount, argv, &argv_base);
         nlua_typval_call((const char *)funcname, len, argvars, argcount, rettv);
+      } else {
+        // v:lua was called directly; show its name in the emsg
+        XFREE_CLEAR(name);
+        funcname = (const char_u *)"v:lua";
       }
     } else if (fp != NULL || !builtin_function((const char *)rfname, -1)) {
       // User defined function.
@@ -1531,7 +1536,7 @@ call_func(
 
       // Trigger FuncUndefined event, may load the function.
       if (fp == NULL
-          && apply_autocmds(EVENT_FUNCUNDEFINED, rfname, rfname, TRUE, NULL)
+          && apply_autocmds(EVENT_FUNCUNDEFINED, rfname, rfname, true, NULL)
           && !aborting()) {
         // executed an autocommand, search for the function again
         fp = find_func(rfname);
@@ -1549,13 +1554,16 @@ call_func(
         cfunc_T cb = fp->uf_cb;
         error = (*cb)(argcount, argvars, rettv, fp->uf_cb_state);
       } else if (fp != NULL) {
-        if (argv_func != NULL) {
+        if (funcexe->argv_func != NULL) {
           // postponed filling in the arguments, do it now
-          argcount = argv_func(argcount, argvars, argv_clear,
-                               fp->uf_args.ga_len);
+          argcount = funcexe->argv_func(argcount, argvars, argv_clear,
+                                        fp->uf_args.ga_len);
         }
-        if (fp->uf_flags & FC_RANGE) {
-          *doesrange = true;
+
+        argv_add_base(funcexe->basetv, &argvars, &argcount, argv, &argv_base);
+
+        if (fp->uf_flags & FC_RANGE && funcexe->doesrange != NULL) {
+          *funcexe->doesrange = true;
         }
         if (argcount < fp->uf_args.ga_len - fp->uf_def_args.ga_len) {
           error = ERROR_TOOFEW;
@@ -1565,25 +1573,20 @@ call_func(
           error = ERROR_DICT;
         } else {
           // Call the user function.
-          call_user_func(fp, argcount, argvars, rettv, firstline, lastline,
+          call_user_func(fp, argcount, argvars, rettv, funcexe->firstline,
+                         funcexe->lastline,
                          (fp->uf_flags & FC_DICT) ? selfdict : NULL);
           error = ERROR_NONE;
         }
       }
+    } else if (funcexe->basetv != NULL) {
+      // expr->method(): Find the method name in the table, call its
+      // implementation with the base as one of the arguments.
+      error = call_internal_method(fname, argcount, argvars, rettv,
+                                   funcexe->basetv);
     } else {
       // Find the function name in the table, call its implementation.
-      const VimLFuncDef *const fdef = find_internal_func((const char *)fname);
-      if (fdef != NULL) {
-        if (argcount < fdef->min_argc) {
-          error = ERROR_TOOFEW;
-        } else if (argcount > fdef->max_argc) {
-          error = ERROR_TOOMANY;
-        } else {
-          argvars[argcount].v_type = VAR_UNKNOWN;
-          fdef->func(argvars, rettv, fdef->data);
-          error = ERROR_NONE;
-        }
-      }
+      error = call_internal_func(fname, argcount, argvars, rettv);
     }
     /*
      * The function call (or "FuncUndefined" autocommand sequence) might
@@ -1597,8 +1600,9 @@ call_func(
      */
     update_force_abort();
   }
-  if (error == ERROR_NONE)
+  if (error == ERROR_NONE) {
     ret = OK;
+  }
 
 theend:
   // Report an error unless the argument evaluation or function call has been
@@ -1607,9 +1611,11 @@ theend:
     user_func_error(error, (name != NULL) ? name : funcname);
   }
 
+  // clear the copies made from the partial
   while (argv_clear > 0) {
-    tv_clear(&argv[--argv_clear]);
+    tv_clear(&argv[--argv_clear + argv_base]);
   }
+
   xfree(tofree);
   xfree(name);
 
@@ -1624,11 +1630,12 @@ theend:
 static void list_func_head(ufunc_T *fp, int indent, bool force)
 {
   msg_start();
-  if (indent)
-    MSG_PUTS("   ");
-  MSG_PUTS(force ? "function! " : "function ");
+  if (indent) {
+    msg_puts("   ");
+  }
+  msg_puts(force ? "function! " : "function ");
   if (fp->uf_name[0] == K_SPECIAL) {
-    MSG_PUTS_ATTR("<SNR>", HL_ATTR(HLF_8));
+    msg_puts_attr("<SNR>", HL_ATTR(HLF_8));
     msg_puts((const char *)fp->uf_name + 3);
   } else {
     msg_puts((const char *)fp->uf_name);
@@ -1680,39 +1687,37 @@ static void list_func_head(ufunc_T *fp, int indent, bool force)
 /// TFN_NO_DEREF:    do not dereference a Funcref
 /// Advances "pp" to just after the function name (if no error).
 ///
+/// @param skip  only find the end, don't evaluate
+/// @param fdp  return: info about dictionary used
+/// @param partial  return: partial of a FuncRef
+///
 /// @return the function name in allocated memory, or NULL for failure.
-char_u *
-trans_function_name(
-    char_u **pp,
-    bool skip,                     // only find the end, don't evaluate
-    int flags,
-    funcdict_T *fdp,               // return: info about dictionary used
-    partial_T **partial            // return: partial of a FuncRef
-)
+char_u *trans_function_name(char_u **pp, bool skip, int flags, funcdict_T *fdp, partial_T **partial)
   FUNC_ATTR_NONNULL_ARG(1)
 {
-  char_u      *name = NULL;
+  char_u *name = NULL;
   const char_u *start;
   const char_u *end;
   int lead;
   int len;
   lval_T lv;
 
-  if (fdp != NULL)
+  if (fdp != NULL) {
     memset(fdp, 0, sizeof(funcdict_T));
+  }
   start = *pp;
 
-  /* Check for hard coded <SNR>: already translated function ID (from a user
-   * command). */
+  // Check for hard coded <SNR>: already translated function ID (from a user
+  // command).
   if ((*pp)[0] == K_SPECIAL && (*pp)[1] == KS_EXTRA
-      && (*pp)[2] == (int)KE_SNR) {
+      && (*pp)[2] == KE_SNR) {
     *pp += 3;
     len = get_id_len((const char **)pp) + 3;
     return (char_u *)xmemdupz(start, len);
   }
 
-  /* A name starting with "<SID>" or "<SNR>" is local to a script.  But
-   * don't skip over "s:", get_lval() needs it for "s:dict.func". */
+  // A name starting with "<SID>" or "<SNR>" is local to a script.  But
+  // don't skip over "s:", get_lval() needs it for "s:dict.func".
   lead = eval_fname_script((const char *)start);
   if (lead > 2) {
     start += lead;
@@ -1722,8 +1727,9 @@ trans_function_name(
   end = get_lval((char_u *)start, NULL, &lv, false, skip, flags | GLV_READ_ONLY,
                  lead > 2 ? 0 : FNE_CHECK_START);
   if (end == start) {
-    if (!skip)
-      EMSG(_("E129: Function name required"));
+    if (!skip) {
+      emsg(_("E129: Function name required"));
+    }
     goto theend;
   }
   if (end == NULL || (lv.ll_tv != NULL && (lead > 2 || lv.ll_range))) {
@@ -1734,7 +1740,7 @@ trans_function_name(
      */
     if (!aborting()) {
       if (end != NULL) {
-        emsgf(_(e_invarg2), start);
+        semsg(_(e_invarg2), start);
       }
     } else {
       *pp = (char_u *)find_name_end(start, NULL, NULL, FNE_INCL_BR);
@@ -1757,7 +1763,7 @@ trans_function_name(
       if (is_luafunc(lv.ll_tv->vval.v_partial) && *end == '.') {
         len = check_luafunc_name((const char *)end+1, true);
         if (len == 0) {
-          EMSG2(e_invexpr2, "v:lua");
+          semsg(e_invexpr2, "v:lua");
           goto theend;
         }
         name = xmallocz(len);
@@ -1774,7 +1780,7 @@ trans_function_name(
       if (!skip && !(flags & TFN_QUIET) && (fdp == NULL
                                             || lv.ll_dict == NULL
                                             || fdp->fd_newkey == NULL)) {
-        EMSG(_(e_funcref));
+        emsg(_(e_funcref));
       } else {
         *pp = (char_u *)end;
       }
@@ -1789,7 +1795,7 @@ trans_function_name(
     goto theend;
   }
 
-  /* Check if the name is a Funcref.  If so, use the value. */
+  // Check if the name is a Funcref.  If so, use the value.
   if (lv.ll_exp_name != NULL) {
     len = (int)strlen(lv.ll_exp_name);
     name = deref_func_name(lv.ll_exp_name, &len, partial,
@@ -1808,11 +1814,11 @@ trans_function_name(
   if (name != NULL) {
     name = vim_strsave(name);
     *pp = (char_u *)end;
-    if (strncmp((char *)name, "<SNR>", 5) == 0) {
+    if (STRNCMP(name, "<SNR>", 5) == 0) {
       // Change "<SNR>" to the byte sequence.
       name[0] = K_SPECIAL;
       name[1] = KS_EXTRA;
-      name[2] = (int)KE_SNR;
+      name[2] = KE_SNR;
       memmove(name + 3, name + 5, strlen((char *)name + 5) + 1);
     }
     goto theend;
@@ -1852,7 +1858,7 @@ trans_function_name(
         || eval_fname_sid((const char *)(*pp))) {
       // It's "s:" or "<SID>".
       if (current_sctx.sc_sid <= 0) {
-        EMSG(_(e_usingsid));
+        emsg(_(e_usingsid));
         goto theend;
       }
       sid_buf_len = snprintf(sid_buf, sizeof(sid_buf),
@@ -1861,7 +1867,7 @@ trans_function_name(
     }
   } else if (!(flags & TFN_INT)
              && builtin_function(lv.ll_name, lv.ll_name_len)) {
-    EMSG2(_("E128: Function name must start with a capital or \"s:\": %s"),
+    semsg(_("E128: Function name must start with a capital or \"s:\": %s"),
           start);
     goto theend;
   }
@@ -1870,7 +1876,7 @@ trans_function_name(
     char_u *cp = xmemrchr(lv.ll_name, ':', lv.ll_name_len);
 
     if (cp != NULL && cp < end) {
-      EMSG2(_("E884: Function name cannot contain a colon: %s"), start);
+      semsg(_("E884: Function name cannot contain a colon: %s"), start);
       goto theend;
     }
   }
@@ -1879,7 +1885,7 @@ trans_function_name(
   if (!skip && lead > 0) {
     name[0] = K_SPECIAL;
     name[1] = KS_EXTRA;
-    name[2] = (int)KE_SNR;
+    name[2] = KE_SNR;
     if (sid_buf_len > 0) {  // If it's "<SID>"
       memcpy(name + 3, sid_buf, sid_buf_len);
     }
@@ -1893,36 +1899,34 @@ theend:
   return name;
 }
 
-/*
- * ":function"
- */
+/// ":function"
 void ex_function(exarg_T *eap)
 {
-  char_u      *theline;
-  char_u      *line_to_free = NULL;
+  char_u *theline;
+  char_u *line_to_free = NULL;
   int c;
   int saved_did_emsg;
-  int saved_wait_return = need_wait_return;
-  char_u      *name = NULL;
-  char_u      *p;
-  char_u      *arg;
-  char_u      *line_arg = NULL;
+  bool saved_wait_return = need_wait_return;
+  char_u *name = NULL;
+  char_u *p;
+  char_u *arg;
+  char_u *line_arg = NULL;
   garray_T newargs;
   garray_T default_args;
   garray_T newlines;
   int varargs = false;
   int flags = 0;
-  ufunc_T     *fp;
+  ufunc_T *fp;
   bool overwrite = false;
   int indent;
   int nesting;
-  dictitem_T  *v;
+  dictitem_T *v;
   funcdict_T fudi;
   static int func_nr = 0;           // number for nameless function
   int paren;
-  hashtab_T   *ht;
+  hashtab_T *ht;
   int todo;
-  hashitem_T  *hi;
+  hashitem_T *hi;
   linenr_T sourcing_lnum_off;
   linenr_T sourcing_lnum_top;
   bool is_heredoc = false;
@@ -1975,15 +1979,17 @@ void ex_function(exarg_T *eap)
             --todo;
             fp = HI2UF(hi);
             if (!isdigit(*fp->uf_name)
-                && vim_regexec(&regmatch, fp->uf_name, 0))
+                && vim_regexec(&regmatch, fp->uf_name, 0)) {
               list_func_head(fp, false, false);
+            }
           }
         }
         vim_regfree(regmatch.regprog);
       }
     }
-    if (*p == '/')
+    if (*p == '/') {
       ++p;
+    }
     eap->nextcmd = check_nextcmd(p);
     return;
   }
@@ -2013,16 +2019,17 @@ void ex_function(exarg_T *eap)
      */
     if (!aborting()) {
       if (fudi.fd_newkey != NULL) {
-        EMSG2(_(e_dictkey), fudi.fd_newkey);
+        semsg(_(e_dictkey), fudi.fd_newkey);
       }
       xfree(fudi.fd_newkey);
       return;
-    } else
+    } else {
       eap->skip = TRUE;
+    }
   }
 
-  /* An error in a function call during evaluation of an expression in magic
-   * braces should not cause the function not to be defined. */
+  // An error in a function call during evaluation of an expression in magic
+  // braces should not cause the function not to be defined.
   saved_did_emsg = did_emsg;
   did_emsg = FALSE;
 
@@ -2034,12 +2041,13 @@ void ex_function(exarg_T *eap)
   //
   if (!paren) {
     if (!ends_excmd(*skipwhite(p))) {
-      EMSG(_(e_trailing));
+      emsg(_(e_trailing));
       goto ret_free;
     }
     eap->nextcmd = check_nextcmd(p);
-    if (eap->nextcmd != NULL)
+    if (eap->nextcmd != NULL) {
       *p = NUL;
+    }
     if (!eap->skip && !got_int) {
       fp = find_func(name);
       if (fp != NULL) {
@@ -2066,8 +2074,9 @@ void ex_function(exarg_T *eap)
           msg_putchar('\n');
           msg_puts(eap->forceit ? "endfunction" : "   endfunction");
         }
-      } else
+      } else {
         emsg_funcname(N_("E123: Undefined function: %s"), name);
+      }
     }
     goto ret_free;
   }
@@ -2078,7 +2087,7 @@ void ex_function(exarg_T *eap)
   p = skipwhite(p);
   if (*p != '(') {
     if (!eap->skip) {
-      EMSG2(_("E124: Missing '(': %s"), eap->arg);
+      semsg(_("E124: Missing '(': %s"), eap->arg);
       goto ret_free;
     }
     // attempt to continue by skipping some text
@@ -2092,23 +2101,26 @@ void ex_function(exarg_T *eap)
   ga_init(&newlines, (int)sizeof(char_u *), 3);
 
   if (!eap->skip) {
-    /* Check the name of the function.  Unless it's a dictionary function
-     * (that we are overwriting). */
-    if (name != NULL)
+    // Check the name of the function.  Unless it's a dictionary function
+    // (that we are overwriting).
+    if (name != NULL) {
       arg = name;
-    else
+    } else {
       arg = fudi.fd_newkey;
+    }
     if (arg != NULL && (fudi.fd_di == NULL || !tv_is_func(fudi.fd_di->di_tv))) {
       int j = (*arg == K_SPECIAL) ? 3 : 0;
       while (arg[j] != NUL && (j == 0 ? eval_isnamec1(arg[j])
-                               : eval_isnamec(arg[j])))
+                                      : eval_isnamec(arg[j]))) {
         ++j;
-      if (arg[j] != NUL)
+      }
+      if (arg[j] != NUL) {
         emsg_funcname((char *)e_invarg2, arg);
+      }
     }
     // Disallow using the g: dict.
     if (fudi.fd_dict != NULL && fudi.fd_dict->dv_scope == VAR_DEF_SCOPE) {
-      EMSG(_("E862: Cannot use g: here"));
+      emsg(_("E862: Cannot use g: here"));
     }
   }
 
@@ -2123,7 +2135,7 @@ void ex_function(exarg_T *eap)
   }
 
   // find extra arguments "range", "dict", "abort" and "closure"
-  for (;; ) {
+  for (;;) {
     p = skipwhite(p);
     if (STRNCMP(p, "range", 5) == 0) {
       flags |= FC_RANGE;
@@ -2139,7 +2151,7 @@ void ex_function(exarg_T *eap)
       p += 7;
       if (current_funccal == NULL) {
         emsg_funcname(N_
-                      ("E932: Closure function should not be at top level: %s"),
+                        ("E932: Closure function should not be at top level: %s"),
                       name == NULL ? (char_u *)"" : name);
         goto erret;
       }
@@ -2148,30 +2160,32 @@ void ex_function(exarg_T *eap)
     }
   }
 
-  /* When there is a line break use what follows for the function body.
-   * Makes 'exe "func Test()\n...\nendfunc"' work. */
+  // When there is a line break use what follows for the function body.
+  // Makes 'exe "func Test()\n...\nendfunc"' work.
   if (*p == '\n') {
     line_arg = p + 1;
   } else if (*p != NUL && *p != '"' && !eap->skip && !did_emsg) {
-    EMSG(_(e_trailing));
+    emsg(_(e_trailing));
   }
 
   /*
    * Read the body of the function, until ":endfunction" is found.
    */
   if (KeyTyped) {
-    /* Check if the function already exists, don't let the user type the
-     * whole function before telling him it doesn't work!  For a script we
-     * need to skip the body to be able to find what follows. */
+    // Check if the function already exists, don't let the user type the
+    // whole function before telling him it doesn't work!  For a script we
+    // need to skip the body to be able to find what follows.
     if (!eap->skip && !eap->forceit) {
-      if (fudi.fd_dict != NULL && fudi.fd_newkey == NULL)
-        EMSG(_(e_funcdict));
-      else if (name != NULL && find_func(name) != NULL)
+      if (fudi.fd_dict != NULL && fudi.fd_newkey == NULL) {
+        emsg(_(e_funcdict));
+      } else if (name != NULL && find_func(name) != NULL) {
         emsg_funcname(e_funcexts, name);
+      }
     }
 
-    if (!eap->skip && did_emsg)
+    if (!eap->skip && did_emsg) {
       goto erret;
+    }
 
     if (!ui_has(kUICmdline)) {
       msg_putchar('\n');              // don't overwrite the function name
@@ -2184,7 +2198,7 @@ void ex_function(exarg_T *eap)
 
   indent = 2;
   nesting = 0;
-  for (;; ) {
+  for (;;) {
     if (KeyTyped) {
       msg_scroll = true;
       saved_wait_return = false;
@@ -2195,9 +2209,9 @@ void ex_function(exarg_T *eap)
       // Use eap->arg, split up in parts by line breaks.
       theline = line_arg;
       p = vim_strchr(theline, '\n');
-      if (p == NULL)
+      if (p == NULL) {
         line_arg += STRLEN(line_arg);
-      else {
+      } else {
         *p = NUL;
         line_arg = p + 1;
       }
@@ -2214,7 +2228,7 @@ void ex_function(exarg_T *eap)
       lines_left = Rows - 1;
     }
     if (theline == NULL) {
-      EMSG(_("E126: Missing :endfunction"));
+      emsg(_("E126: Missing :endfunction"));
       goto erret;
     }
     if (show_block) {
@@ -2225,7 +2239,7 @@ void ex_function(exarg_T *eap)
     // Detect line continuation: sourcing_lnum increased more than one.
     sourcing_lnum_off = get_sourced_lnum(eap->getline, eap->cookie);
     if (sourcing_lnum < sourcing_lnum_off) {
-        sourcing_lnum_off -= sourcing_lnum;
+      sourcing_lnum_off -= sourcing_lnum;
     } else {
       sourcing_lnum_off = 0;
     }
@@ -2287,15 +2301,16 @@ void ex_function(exarg_T *eap)
         break;
       }
 
-      /* Increase indent inside "if", "while", "for" and "try", decrease
-       * at "end". */
-      if (indent > 2 && STRNCMP(p, "end", 3) == 0)
+      // Increase indent inside "if", "while", "for" and "try", decrease
+      // at "end".
+      if (indent > 2 && STRNCMP(p, "end", 3) == 0) {
         indent -= 2;
-      else if (STRNCMP(p, "if", 2) == 0
-               || STRNCMP(p, "wh", 2) == 0
-               || STRNCMP(p, "for", 3) == 0
-               || STRNCMP(p, "try", 3) == 0)
+      } else if (STRNCMP(p, "if", 2) == 0
+                 || STRNCMP(p, "wh", 2) == 0
+                 || STRNCMP(p, "for", 3) == 0
+                 || STRNCMP(p, "try", 3) == 0) {
         indent += 2;
+      }
 
       // Check for defining a function inside this function.
       if (checkforcmd(&p, "function", 2)) {
@@ -2328,7 +2343,7 @@ void ex_function(exarg_T *eap)
 
       // heredoc: Check for ":python <<EOF", ":lua <<EOF", etc.
       arg = skipwhite(skiptowhite(p));
-      if (arg[0] == '<' && arg[1] =='<'
+      if (arg[0] == '<' && arg[1] == '<'
           && ((p[0] == 'p' && p[1] == 'y'
                && (!ASCII_ISALNUM(p[2]) || p[2] == 't'
                    || ((p[2] == '3' || p[2] == 'x')
@@ -2345,10 +2360,11 @@ void ex_function(exarg_T *eap)
                   && (!ASCII_ISALPHA(p[2]) || p[2] == 's')))) {
         // ":python <<" continues until a dot, like ":append"
         p = skipwhite(arg + 2);
-        if (*p == NUL)
+        if (*p == NUL) {
           skip_until = vim_strsave((char_u *)".");
-        else
+        } else {
           skip_until = vim_strsave(p);
+        }
       }
 
       // Check for ":let v =<< [trim] EOF"
@@ -2361,7 +2377,7 @@ void ex_function(exarg_T *eap)
         arg = skipwhite(skiptowhite(arg));
         if (arg[0] == '='
             && arg[1] == '<'
-            && arg[2] =='<'
+            && arg[2] == '<'
             && (p[0] == 'l'
                 && p[1] == 'e'
                 && (!ASCII_ISALNUM(p[2])
@@ -2383,16 +2399,17 @@ void ex_function(exarg_T *eap)
     // Add the line to the function.
     ga_grow(&newlines, 1 + sourcing_lnum_off);
 
-    /* Copy the line to newly allocated memory.  get_one_sourceline()
-     * allocates 250 bytes per line, this saves 80% on average.  The cost
-     * is an extra alloc/free. */
+    // Copy the line to newly allocated memory.  get_one_sourceline()
+    // allocates 250 bytes per line, this saves 80% on average.  The cost
+    // is an extra alloc/free.
     p = vim_strsave(theline);
     ((char_u **)(newlines.ga_data))[newlines.ga_len++] = p;
 
-    /* Add NULL lines for continuation lines, so that the line count is
-     * equal to the index in the growarray.   */
-    while (sourcing_lnum_off-- > 0)
+    // Add NULL lines for continuation lines, so that the line count is
+    // equal to the index in the growarray.
+    while (sourcing_lnum_off-- > 0) {
       ((char_u **)(newlines.ga_data))[newlines.ga_len++] = NULL;
+    }
 
     // Check for end of eap->arg.
     if (line_arg != NULL && *line_arg == NUL) {
@@ -2400,10 +2417,11 @@ void ex_function(exarg_T *eap)
     }
   }
 
-  /* Don't define the function when skipping commands or when an error was
-   * detected. */
-  if (eap->skip || did_emsg)
+  // Don't define the function when skipping commands or when an error was
+  // detected.
+  if (eap->skip || did_emsg) {
     goto erret;
+  }
 
   /*
    * If there are no errors, add the function
@@ -2412,7 +2430,7 @@ void ex_function(exarg_T *eap)
     v = find_var((const char *)name, STRLEN(name), &ht, false);
     if (v != NULL && v->di_tv.v_type == VAR_FUNC) {
       emsg_funcname(N_("E707: Function name conflicts with variable: %s"),
-          name);
+                    name);
       goto erret;
     }
 
@@ -2428,7 +2446,7 @@ void ex_function(exarg_T *eap)
       }
       if (fp->uf_calls > 0) {
         emsg_funcname(N_("E127: Cannot redefine function %s: It is in use"),
-            name);
+                      name);
         goto erret;
       }
       if (fp->uf_refcount > 1) {
@@ -2451,7 +2469,7 @@ void ex_function(exarg_T *eap)
 
     fp = NULL;
     if (fudi.fd_newkey == NULL && !eap->forceit) {
-      EMSG(_(e_funcdict));
+      emsg(_(e_funcdict));
       goto erret;
     }
     if (fudi.fd_di == NULL) {
@@ -2466,8 +2484,8 @@ void ex_function(exarg_T *eap)
       goto erret;
     }
 
-    /* Give the function a sequential number.  Can only be used with a
-     * Funcref! */
+    // Give the function a sequential number.  Can only be used with a
+    // Funcref!
     xfree(name);
     sprintf(numbuf, "%d", ++func_nr);
     name = vim_strsave((char_u *)numbuf);
@@ -2476,7 +2494,7 @@ void ex_function(exarg_T *eap)
   if (fp == NULL) {
     if (fudi.fd_dict == NULL && vim_strchr(name, AUTOLOAD_CHAR) != NULL) {
       int slen, plen;
-      char_u  *scriptname;
+      char_u *scriptname;
 
       // Check that the autoload name matches the script name.
       int j = FAIL;
@@ -2486,14 +2504,14 @@ void ex_function(exarg_T *eap)
         plen = (int)STRLEN(p);
         slen = (int)STRLEN(sourcing_name);
         if (slen > plen && fnamecmp(p,
-                sourcing_name + slen - plen) == 0)
+                                    sourcing_name + slen - plen) == 0) {
           j = OK;
+        }
         xfree(scriptname);
       }
       if (j == FAIL) {
-        EMSG2(_(
-                "E746: Function name does not match script file name: %s"),
-            name);
+        semsg(_("E746: Function name does not match script file name: %s"),
+              name);
         goto erret;
       }
     }
@@ -2550,6 +2568,7 @@ void ex_function(exarg_T *eap)
   fp->uf_calls = 0;
   fp->uf_script_ctx = current_sctx;
   fp->uf_script_ctx.sc_lnum += sourcing_lnum_top;
+  nlua_set_sctx(&fp->uf_script_ctx);
 
   goto ret_free;
 
@@ -2571,11 +2590,9 @@ ret_free:
   }
 }  // NOLINT(readability/fn_size)
 
-/*
- * Return 5 if "p" starts with "<SID>" or "<SNR>" (ignoring case).
- * Return 2 if "p" starts with "s:".
- * Return 0 otherwise.
- */
+/// @return  5 if "p" starts with "<SID>" or "<SNR>" (ignoring case).
+///          2 if "p" starts with "s:".
+///          0 otherwise.
 int eval_fname_script(const char *const p)
 {
   // Use mb_strnicmp() because in Turkish comparing the "I" may not work with
@@ -2601,10 +2618,10 @@ bool translated_function_exists(const char *name)
 
 /// Check whether function with the given name exists
 ///
-/// @param[in]  name  Function name.
-/// @param[in]  no_deref  Whether to dereference a Funcref.
+/// @param[in] name  Function name.
+/// @param[in] no_deref  Whether to dereference a Funcref.
 ///
-/// @return True if it exists, false otherwise.
+/// @return  true if it exists, false otherwise.
 bool function_exists(const char *const name, bool no_deref)
 {
   const char_u *nm = (const char_u *)name;
@@ -2618,8 +2635,8 @@ bool function_exists(const char *const name, bool no_deref)
                                               NULL);
   nm = skipwhite(nm);
 
-  /* Only accept "funcname", "funcname ", "funcname (..." and
-   * "funcname(...", not "funcname!...". */
+  // Only accept "funcname", "funcname ", "funcname (..." and
+  // "funcname(...", not "funcname!...".
   if (p != NULL && (*nm == NUL || *nm == '(')) {
     n = translated_function_exists(p);
   }
@@ -2627,15 +2644,13 @@ bool function_exists(const char *const name, bool no_deref)
   return n;
 }
 
-/*
- * Function given to ExpandGeneric() to obtain the list of user defined
- * function names.
- */
+/// Function given to ExpandGeneric() to obtain the list of user defined
+/// function names.
 char_u *get_user_func_name(expand_T *xp, int idx)
 {
   static size_t done;
-  static hashitem_T   *hi;
-  ufunc_T             *fp;
+  static hashitem_T *hi;
+  ufunc_T *fp;
 
   if (idx == 0) {
     done = 0;
@@ -2643,10 +2658,12 @@ char_u *get_user_func_name(expand_T *xp, int idx)
   }
   assert(hi);
   if (done < func_hashtab.ht_used) {
-    if (done++ > 0)
+    if (done++ > 0) {
       ++hi;
-    while (HASHITEM_EMPTY(hi))
+    }
+    while (HASHITEM_EMPTY(hi)) {
       ++hi;
+    }
     fp = HI2UF(hi);
 
     if ((fp->uf_flags & FC_DICT)
@@ -2661,8 +2678,9 @@ char_u *get_user_func_name(expand_T *xp, int idx)
     cat_func_name(IObuff, fp);
     if (xp->xp_context != EXPAND_USER_FUNC) {
       STRCAT(IObuff, "(");
-      if (!fp->uf_varargs && GA_EMPTY(&fp->uf_args))
+      if (!fp->uf_varargs && GA_EMPTY(&fp->uf_args)) {
         STRCAT(IObuff, ")");
+      }
     }
     return IObuff;
   }
@@ -2672,48 +2690,51 @@ char_u *get_user_func_name(expand_T *xp, int idx)
 /// ":delfunction {name}"
 void ex_delfunction(exarg_T *eap)
 {
-  ufunc_T     *fp = NULL;
-  char_u      *p;
-  char_u      *name;
+  ufunc_T *fp = NULL;
+  char_u *p;
+  char_u *name;
   funcdict_T fudi;
 
   p = eap->arg;
   name = trans_function_name(&p, eap->skip, 0, &fudi, NULL);
   xfree(fudi.fd_newkey);
   if (name == NULL) {
-    if (fudi.fd_dict != NULL && !eap->skip)
-      EMSG(_(e_funcref));
+    if (fudi.fd_dict != NULL && !eap->skip) {
+      emsg(_(e_funcref));
+    }
     return;
   }
   if (!ends_excmd(*skipwhite(p))) {
     xfree(name);
-    EMSG(_(e_trailing));
+    emsg(_(e_trailing));
     return;
   }
   eap->nextcmd = check_nextcmd(p);
-  if (eap->nextcmd != NULL)
+  if (eap->nextcmd != NULL) {
     *p = NUL;
+  }
 
-  if (!eap->skip)
+  if (!eap->skip) {
     fp = find_func(name);
+  }
   xfree(name);
 
   if (!eap->skip) {
     if (fp == NULL) {
       if (!eap->forceit) {
-        EMSG2(_(e_nofunc), eap->arg);
+        semsg(_(e_nofunc), eap->arg);
       }
       return;
     }
     if (fp->uf_calls > 0) {
-      EMSG2(_("E131: Cannot delete function %s: It is in use"), eap->arg);
+      semsg(_("E131: Cannot delete function %s: It is in use"), eap->arg);
       return;
     }
     // check `uf_refcount > 2` because deleting a function should also reduce
     // the reference count, and 1 is the initial refcount.
     if (fp->uf_refcount > 2) {
-      EMSG2(_("Cannot delete function %s: It is being used internally"),
-          eap->arg);
+      semsg(_("Cannot delete function %s: It is being used internally"),
+            eap->arg);
       return;
     }
 
@@ -2741,10 +2762,8 @@ void ex_delfunction(exarg_T *eap)
   }
 }
 
-/*
- * Unreference a Function: decrement the reference count and free it when it
- * becomes zero.
- */
+/// Unreference a Function: decrement the reference count and free it when it
+/// becomes zero.
 void func_unref(char_u *name)
 {
   ufunc_T *fp = NULL;
@@ -2761,8 +2780,8 @@ void func_unref(char_u *name)
       abort();
     }
 #else
-      internal_error("func_unref()");
-      abort();
+    internal_error("func_unref()");
+    abort();
 #endif
   }
   func_ptr_unref(fp);
@@ -2838,22 +2857,21 @@ static int can_free_funccal(funccall_T *fc, int copyID)
          && fc->fc_copyID != copyID;
 }
 
-/*
- * ":return [expr]"
- */
+/// ":return [expr]"
 void ex_return(exarg_T *eap)
 {
-  char_u      *arg = eap->arg;
+  char_u *arg = eap->arg;
   typval_T rettv;
   int returning = FALSE;
 
   if (current_funccal == NULL) {
-    EMSG(_("E133: :return not inside a function"));
+    emsg(_("E133: :return not inside a function"));
     return;
   }
 
-  if (eap->skip)
+  if (eap->skip) {
     ++emsg_skip;
+  }
 
   eap->nextcmd = NULL;
   if ((*arg != NUL && *arg != '|' && *arg != '\n')
@@ -2874,34 +2892,33 @@ void ex_return(exarg_T *eap)
     }
   }
 
-  /* When skipping or the return gets pending, advance to the next command
-   * in this line (!returning).  Otherwise, ignore the rest of the line.
-   * Following lines will be ignored by get_func_line(). */
+  // When skipping or the return gets pending, advance to the next command
+  // in this line (!returning).  Otherwise, ignore the rest of the line.
+  // Following lines will be ignored by get_func_line().
   if (returning) {
     eap->nextcmd = NULL;
   } else if (eap->nextcmd == NULL) {          // no argument
     eap->nextcmd = check_nextcmd(arg);
   }
 
-  if (eap->skip)
+  if (eap->skip) {
     --emsg_skip;
+  }
 }
 
 // TODO(ZyX-I): move to eval/ex_cmds
 
-/*
- * ":1,25call func(arg1, arg2)"	function call.
- */
+/// ":1,25call func(arg1, arg2)" function call.
 void ex_call(exarg_T *eap)
 {
-  char_u      *arg = eap->arg;
-  char_u      *startarg;
-  char_u      *name;
-  char_u      *tofree;
+  char_u *arg = eap->arg;
+  char_u *startarg;
+  char_u *name;
+  char_u *tofree;
   int len;
   typval_T rettv;
   linenr_T lnum;
-  int doesrange;
+  bool doesrange;
   bool failed = false;
   funcdict_T fudi;
   partial_T *partial = NULL;
@@ -2921,7 +2938,7 @@ void ex_call(exarg_T *eap)
   tofree = trans_function_name(&arg, false, TFN_INT, &fudi, &partial);
   if (fudi.fd_newkey != NULL) {
     // Still need to give an error message for missing key.
-    EMSG2(_(e_dictkey), fudi.fd_newkey);
+    semsg(_(e_dictkey), fudi.fd_newkey);
     xfree(fudi.fd_newkey);
   }
   if (tofree == NULL) {
@@ -2947,7 +2964,7 @@ void ex_call(exarg_T *eap)
   rettv.v_type = VAR_UNKNOWN;  // tv_clear() uses this.
 
   if (*startarg != '(') {
-    EMSG2(_("E107: Missing parentheses: %s"), eap->arg);
+    semsg(_(e_missingparen), eap->arg);
     goto end;
   }
 
@@ -2957,7 +2974,7 @@ void ex_call(exarg_T *eap)
       if (lnum > curbuf->b_ml.ml_line_count) {
         // If the function deleted lines or switched to another buffer
         // the line number may become invalid.
-        EMSG(_(e_invrange));
+        emsg(_(e_invrange));
         break;
       }
       curwin->w_cursor.lnum = lnum;
@@ -2965,15 +2982,22 @@ void ex_call(exarg_T *eap)
       curwin->w_cursor.coladd = 0;
     }
     arg = startarg;
-    if (get_func_tv(name, -1, &rettv, &arg,
-                    eap->line1, eap->line2, &doesrange,
-                    true, partial, fudi.fd_dict) == FAIL) {
+
+    funcexe_T funcexe = FUNCEXE_INIT;
+    funcexe.firstline = eap->line1;
+    funcexe.lastline = eap->line2;
+    funcexe.doesrange = &doesrange;
+    funcexe.evaluate = true;
+    funcexe.partial = partial;
+    funcexe.selfdict = fudi.fd_dict;
+    if (get_func_tv(name, -1, &rettv, &arg, &funcexe) == FAIL) {
       failed = true;
       break;
     }
 
     // Handle a function returning a Funcref, Dictionary or List.
-    if (handle_subscript((const char **)&arg, &rettv, true, true)
+    if (handle_subscript((const char **)&arg, &rettv, true, true,
+                         (const char_u *)name, (const char_u **)&name)
         == FAIL) {
       failed = true;
       break;
@@ -2993,13 +3017,14 @@ void ex_call(exarg_T *eap)
     }
   }
 
-  // When inside :try we need to check for following "| catch".
-  if (!failed || eap->cstack->cs_trylevel > 0) {
+  // When inside :try we need to check for following "| catch" or "| endtry".
+  // Not when there was an error, but do check if an exception was thrown.
+  if ((!aborting() || current_exception != NULL) && (!failed || eap->cstack->cs_trylevel > 0)) {
     // Check for trailing illegal characters and a following command.
     if (!ends_excmd(*arg)) {
-      if (!failed) {
+      if (!failed && !aborting()) {
         emsg_severe = true;
-        EMSG(_(e_trailing));
+        emsg(_(e_trailing));
       }
     } else {
       eap->nextcmd = check_nextcmd(arg);
@@ -3011,14 +3036,16 @@ end:
   xfree(tofree);
 }
 
-/*
- * Return from a function.  Possibly makes the return pending.  Also called
- * for a pending return at the ":endtry" or after returning from an extra
- * do_cmdline().  "reanimate" is used in the latter case.  "is_cmd" is set
- * when called due to a ":return" command.  "rettv" may point to a typval_T
- * with the return rettv.  Returns TRUE when the return can be carried out,
- * FALSE when the return gets pending.
- */
+/// Return from a function.  Possibly makes the return pending.  Also called
+/// for a pending return at the ":endtry" or after returning from an extra
+/// do_cmdline().  "reanimate" is used in the latter case.
+///
+/// @param reanimate  used after returning from an extra do_cmdline().
+/// @param is_cmd     set when called due to a ":return" command.
+/// @param rettv      may point to a typval_T with the return rettv.
+///
+/// @return  TRUE when the return can be carried out,
+///          FALSE when the return gets pending.
 int do_return(exarg_T *eap, int reanimate, int is_cmd, void *rettv)
 {
   int idx;
@@ -3029,24 +3056,22 @@ int do_return(exarg_T *eap, int reanimate, int is_cmd, void *rettv)
     current_funccal->returned = false;
   }
 
-  /*
-   * Cleanup (and inactivate) conditionals, but stop when a try conditional
-   * not in its finally clause (which then is to be executed next) is found.
-   * In this case, make the ":return" pending for execution at the ":endtry".
-   * Otherwise, return normally.
-   */
-  idx = cleanup_conditionals(eap->cstack, 0, TRUE);
+  // Cleanup (and deactivate) conditionals, but stop when a try conditional
+  // not in its finally clause (which then is to be executed next) is found.
+  // In this case, make the ":return" pending for execution at the ":endtry".
+  // Otherwise, return normally.
+  idx = cleanup_conditionals(eap->cstack, 0, true);
   if (idx >= 0) {
     cstack->cs_pending[idx] = CSTP_RETURN;
 
-    if (!is_cmd && !reanimate)
-      /* A pending return again gets pending.  "rettv" points to an
-       * allocated variable with the rettv of the original ":return"'s
-       * argument if present or is NULL else. */
+    if (!is_cmd && !reanimate) {
+      // A pending return again gets pending.  "rettv" points to an
+      // allocated variable with the rettv of the original ":return"'s
+      // argument if present or is NULL else.
       cstack->cs_rettv[idx] = rettv;
-    else {
-      /* When undoing a return in order to make it pending, get the stored
-       * return rettv. */
+    } else {
+      // When undoing a return in order to make it pending, get the stored
+      // return rettv.
       if (reanimate) {
         assert(current_funccal->rettv);
         rettv = current_funccal->rettv;
@@ -3056,13 +3081,14 @@ int do_return(exarg_T *eap, int reanimate, int is_cmd, void *rettv)
         // Store the value of the pending return.
         cstack->cs_rettv[idx] = xcalloc(1, sizeof(typval_T));
         *(typval_T *)cstack->cs_rettv[idx] = *(typval_T *)rettv;
-      } else
+      } else {
         cstack->cs_rettv[idx] = NULL;
+      }
 
       if (reanimate) {
-        /* The pending return value could be overwritten by a ":return"
-         * without argument in a finally clause; reset the default
-         * return value. */
+        // The pending return value could be overwritten by a ":return"
+        // without argument in a finally clause; reset the default
+        // return value.
         current_funccal->rettv->v_type = VAR_NUMBER;
         current_funccal->rettv->vval.v_number = 0;
       }
@@ -3071,31 +3097,30 @@ int do_return(exarg_T *eap, int reanimate, int is_cmd, void *rettv)
   } else {
     current_funccal->returned = TRUE;
 
-    /* If the return is carried out now, store the return value.  For
-     * a return immediately after reanimation, the value is already
-     * there. */
+    // If the return is carried out now, store the return value.  For
+    // a return immediately after reanimation, the value is already
+    // there.
     if (!reanimate && rettv != NULL) {
       tv_clear(current_funccal->rettv);
       *current_funccal->rettv = *(typval_T *)rettv;
-      if (!is_cmd)
+      if (!is_cmd) {
         xfree(rettv);
+      }
     }
   }
 
   return idx < 0;
 }
 
-/*
- * Generate a return command for producing the value of "rettv".  The result
- * is an allocated string.  Used by report_pending() for verbose messages.
- */
+/// Generate a return command for producing the value of "rettv".  The result
+/// is an allocated string.  Used by report_pending() for verbose messages.
 char_u *get_return_cmd(void *rettv)
 {
   char_u *s = NULL;
   char_u *tofree = NULL;
 
   if (rettv != NULL) {
-    tofree = s = (char_u *) encode_tv2echo((typval_T *) rettv, NULL);
+    tofree = s = (char_u *)encode_tv2echo((typval_T *)rettv, NULL);
   }
   if (s == NULL) {
     s = (char_u *)"";
@@ -3103,32 +3128,33 @@ char_u *get_return_cmd(void *rettv)
 
   STRCPY(IObuff, ":return ");
   STRLCPY(IObuff + 8, s, IOSIZE - 8);
-  if (STRLEN(s) + 8 >= IOSIZE)
+  if (STRLEN(s) + 8 >= IOSIZE) {
     STRCPY(IObuff + IOSIZE - 4, "...");
+  }
   xfree(tofree);
   return vim_strsave(IObuff);
 }
 
-/*
- * Get next function line.
- * Called by do_cmdline() to get the next line.
- * Returns allocated string, or NULL for end of function.
- */
+/// Get next function line.
+/// Called by do_cmdline() to get the next line.
+///
+/// @return  allocated string, or NULL for end of function.
 char_u *get_func_line(int c, void *cookie, int indent, bool do_concat)
 {
-  funccall_T  *fcp = (funccall_T *)cookie;
-  ufunc_T     *fp = fcp->func;
-  char_u      *retval;
-  garray_T    *gap;    // growarray with function lines
+  funccall_T *fcp = (funccall_T *)cookie;
+  ufunc_T *fp = fcp->func;
+  char_u *retval;
+  garray_T *gap;    // growarray with function lines
 
   // If breakpoints have been added/deleted need to check for it.
   if (fcp->dbg_tick != debug_tick) {
     fcp->breakpoint = dbg_find_breakpoint(FALSE, fp->uf_name,
-        sourcing_lnum);
+                                          sourcing_lnum);
     fcp->dbg_tick = debug_tick;
   }
-  if (do_profiling == PROF_YES)
+  if (do_profiling == PROF_YES) {
     func_line_end(cookie);
+  }
 
   gap = &fp->uf_lines;
   if (((fp->uf_flags & FC_ABORT) && did_emsg && !aborted_in_try())
@@ -3145,8 +3171,9 @@ char_u *get_func_line(int c, void *cookie, int indent, bool do_concat)
     } else {
       retval = vim_strsave(((char_u **)(gap->ga_data))[fcp->linenr++]);
       sourcing_lnum = fcp->linenr;
-      if (do_profiling == PROF_YES)
+      if (do_profiling == PROF_YES) {
         func_line_start(cookie);
+      }
     }
   }
 
@@ -3162,23 +3189,19 @@ char_u *get_func_line(int c, void *cookie, int indent, bool do_concat)
   return retval;
 }
 
-/*
- * Return TRUE if the currently active function should be ended, because a
- * return was encountered or an error occurred.  Used inside a ":while".
- */
+/// @return  TRUE if the currently active function should be ended, because a
+///          return was encountered or an error occurred.  Used inside a ":while".
 int func_has_ended(void *cookie)
 {
-  funccall_T  *fcp = (funccall_T *)cookie;
+  funccall_T *fcp = (funccall_T *)cookie;
 
-  /* Ignore the "abort" flag if the abortion behavior has been changed due to
-   * an error inside a try conditional. */
+  // Ignore the "abort" flag if the abortion behavior has been changed due to
+  // an error inside a try conditional.
   return ((fcp->func->uf_flags & FC_ABORT) && did_emsg && !aborted_in_try())
          || fcp->returned;
 }
 
-/*
- * return TRUE if cookie indicates a function which "abort"s on errors.
- */
+/// @return  TRUE if cookie indicates a function which "abort"s on errors.
 int func_has_abort(void *cookie)
 {
   return ((funccall_T *)cookie)->func->uf_flags & FC_ABORT;
@@ -3245,41 +3268,31 @@ void make_partial(dict_T *const selfdict, typval_T *const rettv)
   }
 }
 
-/*
- * Return the name of the executed function.
- */
+/// @return  the name of the executed function.
 char_u *func_name(void *cookie)
 {
   return ((funccall_T *)cookie)->func->uf_name;
 }
 
-/*
- * Return the address holding the next breakpoint line for a funccall cookie.
- */
+/// @return  the address holding the next breakpoint line for a funccall cookie.
 linenr_T *func_breakpoint(void *cookie)
 {
   return &((funccall_T *)cookie)->breakpoint;
 }
 
-/*
- * Return the address holding the debug tick for a funccall cookie.
- */
+/// @return  the address holding the debug tick for a funccall cookie.
 int *func_dbg_tick(void *cookie)
 {
   return &((funccall_T *)cookie)->dbg_tick;
 }
 
-/*
- * Return the nesting level for a funccall cookie.
- */
+/// @return  the nesting level for a funccall cookie.
 int func_level(void *cookie)
 {
   return ((funccall_T *)cookie)->level;
 }
 
-/*
- * Return TRUE when a function was ended by a ":return" command.
- */
+/// @return  TRUE when a function was ended by a ":return" command.
 int current_func_returned(void)
 {
   return current_funccal->returned;
@@ -3328,8 +3341,8 @@ funccall_T *get_funccal(void)
   return funccal;
 }
 
-/// Return the hashtable used for local variables in the current funccal.
-/// Return NULL if there is no current funccal.
+/// @return  hashtable used for local variables in the current funccal or
+///          NULL if there is no current funccal.
 hashtab_T *get_funccal_local_ht(void)
 {
   if (current_funccal == NULL) {
@@ -3338,8 +3351,8 @@ hashtab_T *get_funccal_local_ht(void)
   return &get_funccal()->l_vars.dv_hashtab;
 }
 
-/// Return the l: scope variable.
-/// Return NULL if there is no current funccal.
+/// @return   the l: scope variable or
+///           NULL if there is no current funccal.
 dictitem_T *get_funccal_local_var(void)
 {
   if (current_funccal == NULL) {
@@ -3348,8 +3361,8 @@ dictitem_T *get_funccal_local_var(void)
   return (dictitem_T *)&get_funccal()->l_vars_var;
 }
 
-/// Return the hashtable used for argument in the current funccal.
-/// Return NULL if there is no current funccal.
+/// @return  the hashtable used for argument in the current funccal or
+///          NULL if there is no current funccal.
 hashtab_T *get_funccal_args_ht(void)
 {
   if (current_funccal == NULL) {
@@ -3358,8 +3371,8 @@ hashtab_T *get_funccal_args_ht(void)
   return &get_funccal()->l_avars.dv_hashtab;
 }
 
-/// Return the a: scope variable.
-/// Return NULL if there is no current funccal.
+/// @return  the a: scope variable or
+///          NULL if there is no current funccal.
 dictitem_T *get_funccal_args_var(void)
 {
   if (current_funccal == NULL) {
@@ -3368,9 +3381,7 @@ dictitem_T *get_funccal_args_var(void)
   return (dictitem_T *)&current_funccal->l_avars_var;
 }
 
-/*
- * List function variables, if there is a function.
- */
+/// List function variables, if there is a function.
 void list_func_vars(int *first)
 {
   if (current_funccal != NULL) {
@@ -3379,9 +3390,8 @@ void list_func_vars(int *first)
   }
 }
 
-/// If "ht" is the hashtable for local variables in the current funccal, return
-/// the dict that contains it.
-/// Otherwise return NULL.
+/// @return  if "ht" is the hashtable for local variables in the current
+///          funccal, return the dict that contains it. Otherwise return NULL.
 dict_T *get_current_funccal_dict(hashtab_T *ht)
 {
   if (current_funccal != NULL && ht == &current_funccal->l_vars.dv_hashtab) {
@@ -3424,8 +3434,7 @@ hashitem_T *find_hi_in_scoped_ht(const char *name, hashtab_T **pht)
 }
 
 /// Search variable in parent scope.
-dictitem_T *find_var_in_scoped_ht(const char *name, const size_t namelen,
-                                  int no_autoload)
+dictitem_T *find_var_in_scoped_ht(const char *name, const size_t namelen, int no_autoload)
 {
   if (current_funccal == NULL || current_funccal->func->uf_scoped == NULL) {
     return NULL;
@@ -3459,54 +3468,54 @@ dictitem_T *find_var_in_scoped_ht(const char *name, const size_t namelen,
 /// Set "copyID + 1" in previous_funccal and callers.
 bool set_ref_in_previous_funccal(int copyID)
 {
-  bool abort = false;
-
-  for (funccall_T *fc = previous_funccal; !abort && fc != NULL;
+  for (funccall_T *fc = previous_funccal; fc != NULL;
        fc = fc->caller) {
     fc->fc_copyID = copyID + 1;
-    abort = abort
-      || set_ref_in_ht(&fc->l_vars.dv_hashtab, copyID + 1, NULL)
-      || set_ref_in_ht(&fc->l_avars.dv_hashtab, copyID + 1, NULL)
-      || set_ref_in_list(&fc->l_varlist, copyID + 1, NULL);
+    if (set_ref_in_ht(&fc->l_vars.dv_hashtab, copyID + 1, NULL)
+        || set_ref_in_ht(&fc->l_avars.dv_hashtab, copyID + 1, NULL)
+        || set_ref_in_list(&fc->l_varlist, copyID + 1, NULL)) {
+      return true;
+    }
   }
-  return abort;
+  return false;
 }
 
 static bool set_ref_in_funccal(funccall_T *fc, int copyID)
 {
-  bool abort = false;
-
   if (fc->fc_copyID != copyID) {
     fc->fc_copyID = copyID;
-    abort = abort
-      || set_ref_in_ht(&fc->l_vars.dv_hashtab, copyID, NULL)
-      || set_ref_in_ht(&fc->l_avars.dv_hashtab, copyID, NULL)
-      || set_ref_in_list(&fc->l_varlist, copyID, NULL)
-      || set_ref_in_func(NULL, fc->func, copyID);
+    if (set_ref_in_ht(&fc->l_vars.dv_hashtab, copyID, NULL)
+        || set_ref_in_ht(&fc->l_avars.dv_hashtab, copyID, NULL)
+        || set_ref_in_list(&fc->l_varlist, copyID, NULL)
+        || set_ref_in_func(NULL, fc->func, copyID)) {
+      return true;
+    }
   }
-  return abort;
+  return false;
 }
 
 /// Set "copyID" in all local vars and arguments in the call stack.
 bool set_ref_in_call_stack(int copyID)
 {
-  bool abort = false;
-
-  for (funccall_T *fc = current_funccal; !abort && fc != NULL;
+  for (funccall_T *fc = current_funccal; fc != NULL;
        fc = fc->caller) {
-    abort = abort || set_ref_in_funccal(fc, copyID);
-  }
-
-  // Also go through the funccal_stack.
-  for (funccal_entry_T *entry = funccal_stack; !abort && entry != NULL;
-       entry = entry->next) {
-    for (funccall_T *fc = entry->top_funccal; !abort && fc != NULL;
-         fc = fc->caller) {
-      abort = abort || set_ref_in_funccal(fc, copyID);
+    if (set_ref_in_funccal(fc, copyID)) {
+      return true;
     }
   }
 
-  return abort;
+  // Also go through the funccal_stack.
+  for (funccal_entry_T *entry = funccal_stack; entry != NULL;
+       entry = entry->next) {
+    for (funccall_T *fc = entry->top_funccal; fc != NULL;
+         fc = fc->caller) {
+      if (set_ref_in_funccal(fc, copyID)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /// Set "copyID" in all functions available by name.
@@ -3514,7 +3523,6 @@ bool set_ref_in_functions(int copyID)
 {
   int todo;
   hashitem_T *hi = NULL;
-  bool abort = false;
   ufunc_T *fp;
 
   todo = (int)func_hashtab.ht_used;
@@ -3522,31 +3530,32 @@ bool set_ref_in_functions(int copyID)
     if (!HASHITEM_EMPTY(hi)) {
       todo--;
       fp = HI2UF(hi);
-      if (!func_name_refcount(fp->uf_name)) {
-        abort = abort || set_ref_in_func(NULL, fp, copyID);
+      if (!func_name_refcount(fp->uf_name)
+          && set_ref_in_func(NULL, fp, copyID)) {
+        return true;
       }
     }
   }
-  return abort;
+  return false;
 }
 
 /// Set "copyID" in all function arguments.
 bool set_ref_in_func_args(int copyID)
 {
-  bool abort = false;
-
   for (int i = 0; i < funcargs.ga_len; i++) {
-    abort = abort || set_ref_in_item(((typval_T **)funcargs.ga_data)[i],
-                                     copyID, NULL, NULL);
+    if (set_ref_in_item(((typval_T **)funcargs.ga_data)[i],
+                        copyID, NULL, NULL)) {
+      return true;
+    }
   }
-  return abort;
+  return false;
 }
 
 /// Mark all lists and dicts referenced through function "name" with "copyID".
 /// "list_stack" is used to add lists to be marked.  Can be NULL.
 /// "ht_stack" is used to add hashtabs to be marked.  Can be NULL.
 ///
-/// @return true if setting references failed somehow.
+/// @return  true if setting references failed somehow.
 bool set_ref_in_func(char_u *name, ufunc_T *fp_in, int copyID)
 {
   ufunc_T *fp = fp_in;

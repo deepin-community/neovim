@@ -17,7 +17,7 @@ local source = helpers.source
 local poke_eventloop = helpers.poke_eventloop
 local nvim = helpers.nvim
 local sleep = helpers.sleep
-local nvim_dir = helpers.nvim_dir
+local testprg = helpers.testprg
 local assert_alive = helpers.assert_alive
 
 local default_text = [[
@@ -293,6 +293,70 @@ describe(":substitute, 'inccommand' preserves", function()
     end)
   end
 
+  for _, case in ipairs({'', 'split', 'nosplit'}) do
+    it('previous substitute string ~ (inccommand='..case..') #12109', function()
+      local screen = Screen.new(30,10)
+      common_setup(screen, case, default_text)
+
+      feed(':%s/Inc/SUB<CR>')
+      expect([[
+        SUB substitution on
+        two lines
+        ]])
+
+      feed(':%s/line/')
+      poke_eventloop()
+      feed('~')
+      poke_eventloop()
+      feed('<CR>')
+      expect([[
+        SUB substitution on
+        two SUBs
+        ]])
+
+      feed(':%s/sti/')
+      poke_eventloop()
+      feed('~')
+      poke_eventloop()
+      feed('B')
+      poke_eventloop()
+      feed('<CR>')
+      expect([[
+        SUB subSUBBtution on
+        two SUBs
+        ]])
+
+      feed(':%s/ion/NEW<CR>')
+      expect([[
+        SUB subSUBBtutNEW on
+        two SUBs
+        ]])
+
+      feed(':%s/two/')
+      poke_eventloop()
+      feed('N')
+      poke_eventloop()
+      feed('~')
+      poke_eventloop()
+      feed('<CR>')
+      expect([[
+        SUB subSUBBtutNEW on
+        NNEW SUBs
+        ]])
+
+      feed(':%s/bS/')
+      poke_eventloop()
+      feed('~')
+      poke_eventloop()
+      feed('W')
+      poke_eventloop()
+      feed('<CR>')
+      expect([[
+        SUB suNNEWWUBBtutNEW on
+        NNEW SUBs
+        ]])
+    end)
+  end
 end)
 
 describe(":substitute, 'inccommand' preserves undo", function()
@@ -2731,7 +2795,7 @@ it(':substitute with inccommand during :terminal activity', function()
     clear()
 
     command("set cmdwinheight=3")
-    feed([[:terminal "]]..nvim_dir..[[/shell-test" REP 5000 xxx<cr>]])
+    feed(([[:terminal "%s" REP 5000 xxx<cr>]]):format(testprg('shell-test')))
     command('file term')
     feed('G')  -- Follow :terminal output.
     command('new')

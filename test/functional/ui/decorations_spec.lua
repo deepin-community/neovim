@@ -437,6 +437,8 @@ describe('extmark decorations', function()
       [22] = {foreground = tonumber('0xb20000'), background = tonumber('0xf13f3f')};
       [23] = {foreground = Screen.colors.Magenta1, background = Screen.colors.LightGrey};
       [24] = {bold = true};
+      [25] = {background = Screen.colors.LightRed};
+      [26] = {background=Screen.colors.DarkGrey, foreground=Screen.colors.LightGrey};
     }
 
     ns = meths.create_namespace 'test'
@@ -456,6 +458,31 @@ for _,item in ipairs(items) do
     end
 end]]
 
+  it('empty virtual text at eol should not break colorcolumn #17860', function()
+    insert(example_text)
+    feed('gg')
+    command('set colorcolumn=40')
+    screen:expect([[
+      ^for _,item in ipairs(items) do         {25: }          |
+          local text, hl_id_cell, count = unp{25:a}ck(item)  |
+          if hl_id_cell ~= nil then          {25: }          |
+              hl_id = hl_id_cell             {25: }          |
+          end                                {25: }          |
+          for _ = 1, (count or 1) do         {25: }          |
+              local cell = line[colpos]      {25: }          |
+              cell.text = text               {25: }          |
+              cell.hl_id = hl_id             {25: }          |
+              colpos = colpos+1              {25: }          |
+          end                                {25: }          |
+      end                                    {25: }          |
+      {1:~                                                 }|
+      {1:~                                                 }|
+                                                        |
+    ]])
+    meths.buf_set_extmark(0, ns, 4, 0, { virt_text={{''}}, virt_text_pos='eol'})
+    screen:expect_unchanged()
+  end)
+
   it('can have virtual text of overlay position', function()
     insert(example_text)
     feed 'gg'
@@ -471,7 +498,9 @@ end]]
     -- can "float" beyond end of line
     meths.buf_set_extmark(0, ns, 5, 28, { virt_text={{'loopy', 'ErrorMsg'}}, virt_text_pos='overlay'})
     -- bound check: right edge of window
-    meths.buf_set_extmark(0, ns, 2, 26, { virt_text={{'bork bork bork ' }, {'bork bork bork', 'ErrorMsg'}}, virt_text_pos='overlay'})
+    meths.buf_set_extmark(0, ns, 2, 26, { virt_text={{'bork bork bork '}, {'bork bork bork', 'ErrorMsg'}}, virt_text_pos='overlay'})
+    -- empty virt_text should not change anything
+    meths.buf_set_extmark(0, ns, 6, 16, { virt_text={{''}}, virt_text_pos='overlay'})
 
     screen:expect{grid=[[
       ^for _,item in ipairs(items) do                    |
@@ -562,7 +591,7 @@ end]]
           {5:l}{8:blen}{7:dy}{10:e}{7:text}{10:h}{7:-}{10:_}{7:here}ell, count = unpack(item)  |
           {5:i}{12:c}{11:ombining color} {13:nil} {5:then}                     |
            {11:replacing color}d_cell                        |
-          {5:e}{8:bl}{14:endy}{15:i}{14:text}{15:o}{14:-}{15:o}{14:h}{7:ere}                           |
+          {5:e}{8:bl}{7:endy}{10: }{7:text}{10: }{7:-}{10: }{7:here}                           |
           {5:f}{12:co}{11:mbini}{16:n}{11:g color}t {5:or} {13:1}) {5:do}                    |
            {11:replacing color} line[colpos]                 |
               cell.text = text                          |
@@ -621,6 +650,8 @@ end]]
     meths.buf_set_extmark(0, ns, 2, 10, { virt_text={{'Much', 'ErrorMsg'}},   virt_text_win_col=31, hl_mode='blend'})
     meths.buf_set_extmark(0, ns, 3, 15, { virt_text={{'Error', 'ErrorMsg'}}, virt_text_win_col=31, hl_mode='blend'})
     meths.buf_set_extmark(0, ns, 7, 21, { virt_text={{'-', 'NonText'}}, virt_text_win_col=4, hl_mode='blend'})
+    -- empty virt_text should not change anything
+    meths.buf_set_extmark(0, ns, 8, 0, { virt_text={{''}}, virt_text_win_col=14, hl_mode='blend'})
 
     screen:expect{grid=[[
       ^for _,item in ipairs(items) do                    |
@@ -697,6 +728,52 @@ end]]
                                                         |
     ]]}
   end)
+
+  it('can have virtual text which combines foreground and background groups', function()
+    screen:set_default_attr_ids {
+      [1] = {bold=true, foreground=Screen.colors.Blue};
+      [2] = {background = tonumber('0x123456'), foreground = tonumber('0xbbbbbb')};
+      [3] = {background = tonumber('0x123456'), foreground = tonumber('0xcccccc')};
+      [4] = {background = tonumber('0x234567'), foreground = tonumber('0xbbbbbb')};
+      [5] = {background = tonumber('0x234567'), foreground = tonumber('0xcccccc')};
+      [6] = {bold = true, foreground = tonumber('0xcccccc'), background = tonumber('0x234567')};
+    }
+
+    exec [[
+      hi BgOne guibg=#123456
+      hi BgTwo guibg=#234567
+      hi FgEin guifg=#bbbbbb
+      hi FgZwei guifg=#cccccc
+      hi VeryBold gui=bold
+    ]]
+
+    meths.buf_set_extmark(0, ns, 0, 0, { virt_text={
+      {'a', {'BgOne', 'FgEin'}};
+      {'b', {'BgOne', 'FgZwei'}};
+      {'c', {'BgTwo', 'FgEin'}};
+      {'d', {'BgTwo', 'FgZwei'}};
+      {'X', {'BgTwo', 'FgZwei', 'VeryBold'}};
+    }})
+
+    screen:expect{grid=[[
+      ^ {2:a}{3:b}{4:c}{5:d}{6:X}                                            |
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+                                                        |
+    ]]}
+  end)
+
   it('does not crash when deleting a cleared buffer #15212', function()
     exec_lua [[
       ns = vim.api.nvim_create_namespace("myplugin")
@@ -743,4 +820,980 @@ end]]
     ]]}
     helpers.assert_alive()
   end)
+
+  it('conceal #19007', function()
+    screen:try_resize(50, 5)
+    insert('foo\n')
+    command('let &conceallevel=2')
+    meths.buf_set_extmark(0, ns, 0, 0, {end_col=0, end_row=2, conceal='X'})
+    screen:expect([[
+        {26:X}                                                 |
+        ^                                                  |
+        {1:~                                                 }|
+        {1:~                                                 }|
+                                                          |
+      ]])
+  end)
+end)
+
+describe('decorations: virtual lines', function()
+  local screen, ns
+  before_each(function()
+    clear()
+    screen = Screen.new(50, 12)
+    screen:attach()
+    screen:set_default_attr_ids {
+      [1] = {bold=true, foreground=Screen.colors.Blue};
+      [2] = {foreground = Screen.colors.Cyan4};
+      [3] = {background = Screen.colors.Yellow1};
+      [4] = {bold = true};
+      [5] = {background = Screen.colors.Yellow, foreground = Screen.colors.Blue};
+      [6] = {foreground = Screen.colors.Blue};
+      [7] = {foreground = Screen.colors.SlateBlue};
+      [8] = {background = Screen.colors.WebGray, foreground = Screen.colors.DarkBlue};
+      [9] = {foreground = Screen.colors.Brown};
+    }
+
+    ns = meths.create_namespace 'test'
+  end)
+
+  local example_text = [[
+if (h->n_buckets < new_n_buckets) { // expand
+  khkey_t *new_keys = (khkey_t *)krealloc((void *)h->keys, new_n_buckets * sizeof(khkey_t));
+  h->keys = new_keys;
+  if (kh_is_map && val_size) {
+    char *new_vals = krealloc( h->vals_buf, new_n_buckets * val_size);
+    h->vals_buf = new_vals;
+  }
+}]]
+
+  it('works with one line', function()
+    insert(example_text)
+    feed 'gg'
+    meths.buf_set_extmark(0, ns, 1, 33, {
+      virt_lines={ {{">> ", "NonText"}, {"krealloc", "Identifier"}, {": change the size of an allocation"}}};
+      virt_lines_above=true;
+    })
+
+    screen:expect{grid=[[
+      ^if (h->n_buckets < new_n_buckets) { // expand     |
+      {1:>> }{2:krealloc}: change the size of an allocation     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+                                                        |
+    ]]}
+
+    feed '/krealloc<cr>'
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+      {1:>> }{2:krealloc}: change the size of an allocation     |
+        khkey_t *new_keys = (khkey_t *){3:^krealloc}((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = {3:krealloc}( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+      /krealloc                                         |
+    ]]}
+
+    -- virtual line remains anchored to the extmark
+    feed 'i<cr>'
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)                 |
+      {1:>> }{2:krealloc}: change the size of an allocation     |
+      {3:^krealloc}((void *)h->keys, new_n_buckets * sizeof(k|
+      hkey_t));                                         |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = {3:krealloc}( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      {4:-- INSERT --}                                      |
+    ]]}
+
+    feed '<esc>3+'
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)                 |
+      {1:>> }{2:krealloc}: change the size of an allocation     |
+      {3:krealloc}((void *)h->keys, new_n_buckets * sizeof(k|
+      hkey_t));                                         |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          ^char *new_vals = {3:krealloc}( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+                                                        |
+    ]]}
+
+    meths.buf_set_extmark(0, ns, 5, 0, {
+      virt_lines = { {{"^^ REVIEW:", "Todo"}, {" new_vals variable seems unneccesary?", "Comment"}} };
+    })
+    -- TODO: what about the cursor??
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)                 |
+      {1:>> }{2:krealloc}: change the size of an allocation     |
+      {3:krealloc}((void *)h->keys, new_n_buckets * sizeof(k|
+      hkey_t));                                         |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          ^char *new_vals = {3:krealloc}( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+      {5:^^ REVIEW:}{6: new_vals variable seems unneccesary?}   |
+          h->vals_buf = new_vals;                       |
+                                                        |
+    ]]}
+
+    meths.buf_clear_namespace(0, ns, 0, -1)
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)                 |
+      {3:krealloc}((void *)h->keys, new_n_buckets * sizeof(k|
+      hkey_t));                                         |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = {3:krealloc}( h->vals_buf, new_n_|
+      buck^ets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+                                                        |
+    ]]}
+  end)
+
+
+  it('works with text at the beginning of the buffer', function()
+    insert(example_text)
+    feed 'gg'
+
+    screen:expect{grid=[[
+      ^if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+      {1:~                                                 }|
+                                                        |
+    ]]}
+
+    meths.buf_set_extmark(0, ns, 0, 0, {
+      virt_lines={
+        {{"refactor(khash): ", "Special"}, {"take size of values as parameter"}};
+        {{"Author: Dev Devsson, "}, {"Tue Aug 31 10:13:37 2021", "Comment"}};
+      };
+      virt_lines_above=true;
+      right_gravity=false;
+    })
+
+    -- placing virt_text on topline does not automatically cause a scroll
+    screen:expect{grid=[[
+      ^if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+      {1:~                                                 }|
+                                                        |
+    ]], unchanged=true}
+
+    feed '<c-b>'
+    screen:expect{grid=[[
+      {7:refactor(khash): }take size of values as parameter |
+      Author: Dev Devsson, {6:Tue Aug 31 10:13:37 2021}     |
+      ^if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+                                                        |
+    ]]}
+  end)
+
+  it('works with text at the end of the buffer', function()
+    insert(example_text)
+    feed 'G'
+
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      ^}                                                 |
+      {1:~                                                 }|
+                                                        |
+    ]]}
+
+    local id = meths.buf_set_extmark(0, ns, 7, 0, {
+      virt_lines={{{"Grugg"}}};
+      right_gravity=false;
+    })
+
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      ^}                                                 |
+      Grugg                                             |
+                                                        |
+    ]]}
+
+    screen:try_resize(50, 11)
+    feed('gg')
+    screen:expect{grid=[[
+      ^if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+                                                        |
+    ]]}
+
+    feed('G<C-E>')
+    screen:expect{grid=[[
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      ^}                                                 |
+      Grugg                                             |
+                                                        |
+    ]]}
+
+    feed('gg')
+    screen:expect{grid=[[
+      ^if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+                                                        |
+    ]]}
+
+    screen:try_resize(50, 12)
+    feed('G')
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      ^}                                                 |
+      Grugg                                             |
+                                                        |
+    ]]}
+
+    meths.buf_del_extmark(0, ns, id)
+    screen:expect{grid=[[
+      if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      ^}                                                 |
+      {1:~                                                 }|
+                                                        |
+    ]]}
+  end)
+
+  it('does not cause syntax ml_get error at the end of a buffer #17816', function()
+    command([[syntax region foo keepend start='^foo' end='^$']])
+    command('syntax sync minlines=100')
+    insert('foo')
+    meths.buf_set_extmark(0, ns, 0, 0, {virt_lines = {{{'bar', 'Comment'}}}})
+    screen:expect([[
+      fo^o                                               |
+      {6:bar}                                               |
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+      {1:~                                                 }|
+                                                        |
+    ]])
+  end)
+
+  it('works with a block scrolling up', function()
+    screen:try_resize(30, 7)
+    insert("aa\nbb\ncc\ndd\nee\nff\ngg\nhh")
+    feed 'gg'
+
+    meths.buf_set_extmark(0, ns, 6, 0, {
+      virt_lines={
+        {{"they see me"}};
+        {{"scrolling", "Special"}};
+        {{"they"}};
+        {{"hatin'", "Special"}};
+      };
+    })
+
+    screen:expect{grid=[[
+      ^aa                            |
+      bb                            |
+      cc                            |
+      dd                            |
+      ee                            |
+      ff                            |
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      ^bb                            |
+      cc                            |
+      dd                            |
+      ee                            |
+      ff                            |
+      gg                            |
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      ^cc                            |
+      dd                            |
+      ee                            |
+      ff                            |
+      gg                            |
+      they see me                   |
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      ^dd                            |
+      ee                            |
+      ff                            |
+      gg                            |
+      they see me                   |
+      {7:scrolling}                     |
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      ^ee                            |
+      ff                            |
+      gg                            |
+      they see me                   |
+      {7:scrolling}                     |
+      they                          |
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      ^ff                            |
+      gg                            |
+      they see me                   |
+      {7:scrolling}                     |
+      they                          |
+      {7:hatin'}                        |
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      ^gg                            |
+      they see me                   |
+      {7:scrolling}                     |
+      they                          |
+      {7:hatin'}                        |
+      hh                            |
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      they see me                   |
+      {7:scrolling}                     |
+      they                          |
+      {7:hatin'}                        |
+      ^hh                            |
+      {1:~                             }|
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      {7:scrolling}                     |
+      they                          |
+      {7:hatin'}                        |
+      ^hh                            |
+      {1:~                             }|
+      {1:~                             }|
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      they                          |
+      {7:hatin'}                        |
+      ^hh                            |
+      {1:~                             }|
+      {1:~                             }|
+      {1:~                             }|
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      {7:hatin'}                        |
+      ^hh                            |
+      {1:~                             }|
+      {1:~                             }|
+      {1:~                             }|
+      {1:~                             }|
+                                    |
+    ]]}
+
+    feed '<c-e>'
+    screen:expect{grid=[[
+      ^hh                            |
+      {1:~                             }|
+      {1:~                             }|
+      {1:~                             }|
+      {1:~                             }|
+      {1:~                             }|
+                                    |
+    ]]}
+  end)
+
+  it('works with sign and numbercolumns', function()
+    insert(example_text)
+    feed 'gg'
+    command 'set number signcolumn=yes'
+    screen:expect{grid=[[
+      {8:  }{9:  1 }^if (h->n_buckets < new_n_buckets) { // expan|
+      {8:  }{9:    }d                                           |
+      {8:  }{9:  2 }  khkey_t *new_keys = (khkey_t *)krealloc((v|
+      {8:  }{9:    }oid *)h->keys, new_n_buckets * sizeof(khkey_|
+      {8:  }{9:    }t));                                        |
+      {8:  }{9:  3 }  h->keys = new_keys;                       |
+      {8:  }{9:  4 }  if (kh_is_map && val_size) {              |
+      {8:  }{9:  5 }    char *new_vals = krealloc( h->vals_buf, |
+      {8:  }{9:    }new_n_buckets * val_size);                  |
+      {8:  }{9:  6 }    h->vals_buf = new_vals;                 |
+      {8:  }{9:  7 }  }                                         |
+                                                        |
+    ]]}
+
+    local markid = meths.buf_set_extmark(0, ns, 2, 0, {
+      virt_lines={
+        {{"Some special", "Special"}};
+        {{"remark about codes", "Comment"}};
+      };
+    })
+
+    screen:expect{grid=[[
+      {8:  }{9:  1 }^if (h->n_buckets < new_n_buckets) { // expan|
+      {8:  }{9:    }d                                           |
+      {8:  }{9:  2 }  khkey_t *new_keys = (khkey_t *)krealloc((v|
+      {8:  }{9:    }oid *)h->keys, new_n_buckets * sizeof(khkey_|
+      {8:  }{9:    }t));                                        |
+      {8:  }{9:  3 }  h->keys = new_keys;                       |
+      {8:  }{9:    }{7:Some special}                                |
+      {8:  }{9:    }{6:remark about codes}                          |
+      {8:  }{9:  4 }  if (kh_is_map && val_size) {              |
+      {8:  }{9:  5 }    char *new_vals = krealloc( h->vals_buf, |
+      {8:  }{9:    }new_n_buckets * val_size);                  |
+                                                        |
+    ]]}
+
+    meths.buf_set_extmark(0, ns, 2, 0, {
+      virt_lines={
+        {{"Some special", "Special"}};
+        {{"remark about codes", "Comment"}};
+      };
+      virt_lines_leftcol=true;
+      id=markid;
+    })
+    screen:expect{grid=[[
+      {8:  }{9:  1 }^if (h->n_buckets < new_n_buckets) { // expan|
+      {8:  }{9:    }d                                           |
+      {8:  }{9:  2 }  khkey_t *new_keys = (khkey_t *)krealloc((v|
+      {8:  }{9:    }oid *)h->keys, new_n_buckets * sizeof(khkey_|
+      {8:  }{9:    }t));                                        |
+      {8:  }{9:  3 }  h->keys = new_keys;                       |
+      {7:Some special}                                      |
+      {6:remark about codes}                                |
+      {8:  }{9:  4 }  if (kh_is_map && val_size) {              |
+      {8:  }{9:  5 }    char *new_vals = krealloc( h->vals_buf, |
+      {8:  }{9:    }new_n_buckets * val_size);                  |
+                                                        |
+    ]]}
+  end)
+
+
+  it('works with hard tabs', function()
+    insert(example_text)
+    feed 'gg'
+    meths.buf_set_extmark(0, ns, 1, 0, {
+      virt_lines={ {{">>", "NonText"}, {"\tvery\ttabby", "Identifier"}, {"text\twith\ttabs"}}};
+    })
+    screen:expect{grid=[[
+      ^if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+      {1:>>}{2:      very    tabby}text       with    tabs      |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+                                                        |
+    ]]}
+
+    command 'set tabstop=4'
+    screen:expect{grid=[[
+      ^if (h->n_buckets < new_n_buckets) { // expand     |
+        khkey_t *new_keys = (khkey_t *)krealloc((void *)|
+      h->keys, new_n_buckets * sizeof(khkey_t));        |
+      {1:>>}{2:  very    tabby}text   with    tabs              |
+        h->keys = new_keys;                             |
+        if (kh_is_map && val_size) {                    |
+          char *new_vals = krealloc( h->vals_buf, new_n_|
+      buckets * val_size);                              |
+          h->vals_buf = new_vals;                       |
+        }                                               |
+      }                                                 |
+                                                        |
+    ]]}
+  end)
+
+end)
+
+describe('decorations: signs', function()
+  local screen, ns
+  before_each(function()
+    clear()
+    screen = Screen.new(50, 10)
+    screen:attach()
+    screen:set_default_attr_ids {
+      [1] = {foreground = Screen.colors.Blue4, background = Screen.colors.Grey};
+      [2] = {foreground = Screen.colors.Blue1, bold = true};
+      [3] = {background = Screen.colors.Yellow1, foreground = Screen.colors.Blue1};
+    }
+
+    ns = meths.create_namespace 'test'
+    meths.win_set_option(0, 'signcolumn', 'auto:9')
+  end)
+
+  local example_text = [[
+l1
+l2
+l3
+l4
+l5
+]]
+
+  it('can add a single sign (no end row)', function()
+    insert(example_text)
+    feed 'gg'
+
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S'})
+
+    screen:expect{grid=[[
+      {1:  }^l1                                              |
+      S l2                                              |
+      {1:  }l3                                              |
+      {1:  }l4                                              |
+      {1:  }l5                                              |
+      {1:  }                                                |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+
+  end)
+
+  it('can add a single sign (with end row)', function()
+    insert(example_text)
+    feed 'gg'
+
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S', end_row=1})
+
+    screen:expect{grid=[[
+      {1:  }^l1                                              |
+      S l2                                              |
+      {1:  }l3                                              |
+      {1:  }l4                                              |
+      {1:  }l5                                              |
+      {1:  }                                                |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+
+  end)
+
+  it('can add multiple signs (single extmark)', function()
+    pending('TODO(lewis6991): Support ranged signs')
+    insert(example_text)
+    feed 'gg'
+
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S', end_row = 2})
+
+    screen:expect{grid=[[
+      {1:  }^l1                                              |
+      S l2                                              |
+      S l3                                              |
+      {1:  }l4                                              |
+      {1:  }l5                                              |
+      {1:  }                                                |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+
+  end)
+
+  it('can add multiple signs (multiple extmarks)', function()
+    pending('TODO(lewis6991): Support ranged signs')
+    insert(example_text)
+    feed'gg'
+
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S1'})
+    meths.buf_set_extmark(0, ns, 3, -1, {sign_text='S2', end_row = 4})
+
+    screen:expect{grid=[[
+      {1:  }^l1                                              |
+      S1l2                                              |
+      {1:  }l3                                              |
+      S2l4                                              |
+      S2l5                                              |
+      {1:  }                                                |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+
+  end)
+
+  it('can add multiple signs (multiple extmarks) 2', function()
+    insert(example_text)
+    feed 'gg'
+
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S1'})
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S2'})
+
+    screen:expect{grid=[[
+      {1:    }^l1                                            |
+      S2S1l2                                            |
+      {1:    }l3                                            |
+      {1:    }l4                                            |
+      {1:    }l5                                            |
+      {1:    }                                              |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+
+    -- TODO(lewis6991): Support ranged signs
+    -- meths.buf_set_extmark(1, ns, 1, -1, {sign_text='S3', end_row = 2})
+
+    -- screen:expect{grid=[[
+    --   {1:      }^l1                                          |
+    --   S3S2S1l2                                          |
+    --   S3{1:    }l3                                          |
+    --   {1:      }l4                                          |
+    --   {1:      }l5                                          |
+    --   {1:      }                                            |
+    --   {2:~                                                 }|
+    --   {2:~                                                 }|
+    --   {2:~                                                 }|
+    --                                                     |
+    -- ]]}
+
+  end)
+
+  it('can add multiple signs (multiple extmarks) 3', function()
+    pending('TODO(lewis6991): Support ranged signs')
+
+    insert(example_text)
+    feed 'gg'
+
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S1', end_row=2})
+    meths.buf_set_extmark(0, ns, 2, -1, {sign_text='S2', end_row=3})
+
+    screen:expect{grid=[[
+      {1:    }^l1                                            |
+      S1{1:  }l2                                            |
+      S2S1l3                                            |
+      S2{1:  }l4                                            |
+      {1:    }l5                                            |
+      {1:    }                                              |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+  end)
+
+  it('can add multiple signs (multiple extmarks) 4', function()
+    insert(example_text)
+    feed 'gg'
+
+    meths.buf_set_extmark(0, ns, 0, -1, {sign_text='S1', end_row=0})
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S2', end_row=1})
+
+    screen:expect{grid=[[
+      S1^l1                                              |
+      S2l2                                              |
+      {1:  }l3                                              |
+      {1:  }l4                                              |
+      {1:  }l5                                              |
+      {1:  }                                                |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+  end)
+
+  it('works with old signs', function()
+    insert(example_text)
+    feed 'gg'
+
+    helpers.command('sign define Oldsign text=x')
+    helpers.command([[exe 'sign place 42 line=2 name=Oldsign buffer=' . bufnr('')]])
+
+    meths.buf_set_extmark(0, ns, 0, -1, {sign_text='S1'})
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S2'})
+    meths.buf_set_extmark(0, ns, 0, -1, {sign_text='S4'})
+    meths.buf_set_extmark(0, ns, 2, -1, {sign_text='S5'})
+
+    screen:expect{grid=[[
+      S4S1^l1                                            |
+      S2x l2                                            |
+      S5{1:  }l3                                            |
+      {1:    }l4                                            |
+      {1:    }l5                                            |
+      {1:    }                                              |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+  end)
+
+  it('works with old signs (with range)', function()
+    pending('TODO(lewis6991): Support ranged signs')
+    insert(example_text)
+    feed 'gg'
+
+    helpers.command('sign define Oldsign text=x')
+    helpers.command([[exe 'sign place 42 line=2 name=Oldsign buffer=' . bufnr('')]])
+
+    meths.buf_set_extmark(0, ns, 0, -1, {sign_text='S1'})
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='S2'})
+    meths.buf_set_extmark(0, ns, 0, -1, {sign_text='S3', end_row = 4})
+    meths.buf_set_extmark(0, ns, 0, -1, {sign_text='S4'})
+    meths.buf_set_extmark(0, ns, 2, -1, {sign_text='S5'})
+
+    screen:expect{grid=[[
+      S3S4S1^l1                                          |
+      S2S3x l2                                          |
+      S5S3{1:  }l3                                          |
+      S3{1:    }l4                                          |
+      S3{1:    }l5                                          |
+      {1:      }                                            |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+  end)
+
+  it('can add a ranged sign (with start out of view)', function()
+    pending('TODO(lewis6991): Support ranged signs')
+
+    insert(example_text)
+    command 'set signcolumn=yes:2'
+    feed 'gg'
+    feed '2<C-e>'
+
+    meths.buf_set_extmark(0, ns, 1, -1, {sign_text='X', end_row=3})
+
+    screen:expect{grid=[[
+      X {1:  }^l3                                            |
+      X {1:  }l4                                            |
+      {1:    }l5                                            |
+      {1:    }                                              |
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+      {2:~                                                 }|
+                                                        |
+    ]]}
+
+  end)
+
+  it('can add lots of signs', function()
+    screen:try_resize(40, 10)
+    command 'normal 10oa b c d e f g h'
+
+    for i = 1, 10 do
+      meths.buf_set_extmark(0, ns, i,  0, { end_col =  1, hl_group='Todo' })
+      meths.buf_set_extmark(0, ns, i,  2, { end_col =  3, hl_group='Todo' })
+      meths.buf_set_extmark(0, ns, i,  4, { end_col =  5, hl_group='Todo' })
+      meths.buf_set_extmark(0, ns, i,  6, { end_col =  7, hl_group='Todo' })
+      meths.buf_set_extmark(0, ns, i,  8, { end_col =  9, hl_group='Todo' })
+      meths.buf_set_extmark(0, ns, i, 10, { end_col = 11, hl_group='Todo' })
+      meths.buf_set_extmark(0, ns, i, 12, { end_col = 13, hl_group='Todo' })
+      meths.buf_set_extmark(0, ns, i, 14, { end_col = 15, hl_group='Todo' })
+      meths.buf_set_extmark(0, ns, i, -1, { sign_text='W' })
+      meths.buf_set_extmark(0, ns, i, -1, { sign_text='X' })
+      meths.buf_set_extmark(0, ns, i, -1, { sign_text='Y' })
+      meths.buf_set_extmark(0, ns, i, -1, { sign_text='Z' })
+    end
+
+    screen:expect{grid=[[
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:h}                 |
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:h}                 |
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:h}                 |
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:h}                 |
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:h}                 |
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:h}                 |
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:h}                 |
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:h}                 |
+      X Y Z W {3:a} {3:b} {3:c} {3:d} {3:e} {3:f} {3:g} {3:^h}                 |
+                                              |
+    ]]}
+  end)
+
+end)
+
+describe('decorations: virt_text', function()
+  local screen
+
+  before_each(function()
+    clear()
+    screen = Screen.new(50, 10)
+    screen:attach()
+    screen:set_default_attr_ids {
+      [1] = {foreground = Screen.colors.Brown};
+      [2] = {foreground = Screen.colors.Fuchsia};
+      [3] = {bold = true, foreground = Screen.colors.Blue1};
+    }
+  end)
+
+  it('avoids regression in #17638', function()
+    exec_lua[[
+      vim.wo.number = true
+      vim.wo.relativenumber = true
+    ]]
+
+    command 'normal 4ohello'
+    command 'normal aVIRTUAL'
+
+    local ns = meths.create_namespace('test')
+
+    meths.buf_set_extmark(0, ns, 2, 0, {
+      virt_text = {{"hello", "String"}},
+      virt_text_win_col = 20,
+    })
+
+    screen:expect{grid=[[
+      {1:  4 }                                              |
+      {1:  3 }hello                                         |
+      {1:  2 }hello               {2:hello}                     |
+      {1:  1 }hello                                         |
+      {1:5   }helloVIRTUA^L                                  |
+      {3:~                                                 }|
+      {3:~                                                 }|
+      {3:~                                                 }|
+      {3:~                                                 }|
+                                                        |
+    ]]}
+
+    -- Trigger a screen update
+    feed('k')
+
+    screen:expect{grid=[[
+      {1:  3 }                                              |
+      {1:  2 }hello                                         |
+      {1:  1 }hello               {2:hello}                     |
+      {1:4   }hell^o                                         |
+      {1:  1 }helloVIRTUAL                                  |
+      {3:~                                                 }|
+      {3:~                                                 }|
+      {3:~                                                 }|
+      {3:~                                                 }|
+                                                        |
+    ]]}
+  end)
+
 end)
