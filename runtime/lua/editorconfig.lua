@@ -1,5 +1,6 @@
 local M = {}
 
+--- @type table<string,fun(bufnr: integer, val: string, opts?: table)>
 M.properties = {}
 
 --- Modified version of the builtin assert that does not include error position information
@@ -19,7 +20,7 @@ end
 ---
 ---@private
 local function warn(msg, ...)
-  vim.notify(string.format(msg, ...), vim.log.levels.WARN, {
+  vim.notify_once(string.format(msg, ...), vim.log.levels.WARN, {
     title = 'editorconfig',
   })
 end
@@ -111,7 +112,20 @@ end
 function M.properties.insert_final_newline(bufnr, val)
   assert(val == 'true' or val == 'false', 'insert_final_newline must be either "true" or "false"')
   vim.bo[bufnr].fixendofline = val == 'true'
-  vim.bo[bufnr].endofline = val == 'true'
+
+  -- 'endofline' can be read to detect if the file contains a final newline,
+  -- so only change 'endofline' right before writing the file
+  local endofline = val == 'true'
+  if vim.bo[bufnr].endofline ~= endofline then
+    vim.api.nvim_create_autocmd('BufWritePre', {
+      group = 'editorconfig',
+      buffer = bufnr,
+      once = true,
+      callback = function()
+        vim.bo[bufnr].endofline = endofline
+      end,
+    })
+  end
 end
 
 --- Modified version of |glob2regpat()| that does not match path separators on *.
@@ -168,12 +182,12 @@ end
 ---
 ---@param filepath string File path of the file to apply EditorConfig settings to
 ---@param dir string Current directory
----@return table Table of options to apply to the given file
+---@return table<string,string|boolean> Table of options to apply to the given file
 ---
 ---@private
 local function parse(filepath, dir)
-  local pat = nil
-  local opts = {}
+  local pat --- @type vim.regex?
+  local opts = {} --- @type table<string,string|boolean>
   local f = io.open(dir .. '/.editorconfig')
   if f then
     for line in f:lines() do
@@ -189,6 +203,7 @@ local function parse(filepath, dir)
         end
       elseif key ~= nil and val ~= nil then
         if key == 'root' then
+          assert(val == 'true' or val == 'false', 'root must be either "true" or "false"')
           opts.root = val == 'true'
         elseif pat and pat:match_str(filepath) then
           opts[key] = val
@@ -207,12 +222,16 @@ end
 ---@private
 function M.config(bufnr)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(bufnr) then
+    return
+  end
+
   local path = vim.fs.normalize(vim.api.nvim_buf_get_name(bufnr))
   if vim.bo[bufnr].buftype ~= '' or not vim.bo[bufnr].modifiable or path == '' then
     return
   end
 
-  local opts = {}
+  local opts = {} --- @type table<string,string|boolean>
   for parent in vim.fs.parents(path) do
     for k, v in pairs(parse(path, parent)) do
       if opts[k] == nil then
@@ -225,7 +244,7 @@ function M.config(bufnr)
     end
   end
 
-  local applied = {}
+  local applied = {} --- @type table<string,string|boolean>
   for opt, val in pairs(opts) do
     if val ~= 'unset' then
       local func = M.properties[opt]

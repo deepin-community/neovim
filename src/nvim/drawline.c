@@ -679,7 +679,7 @@ static void get_statuscol_str(win_T *wp, linenr_T lnum, int virtnum, statuscol_T
   int width = build_statuscol_str(wp, lnum, relnum, stcp);
   // Force a redraw in case of error or when truncated
   if (*wp->w_p_stc == NUL || (stcp->truncate > 0 && wp->w_nrwidth < MAX_NUMBERWIDTH)) {
-    if (stcp->truncate) {  // Avoid truncating 'statuscolumn'
+    if (stcp->truncate > 0) {  // Avoid truncating 'statuscolumn'
       wp->w_nrwidth = MIN(MAX_NUMBERWIDTH, wp->w_nrwidth + stcp->truncate);
       wp->w_nrwidth_width = wp->w_nrwidth;
     } else {  // 'statuscolumn' reset due to error
@@ -729,6 +729,11 @@ static void get_statuscol_display_info(statuscol_T *stcp, winlinevars_T *wlv)
     }
     // Skip over empty highlight sections
   } while (wlv->n_extra == 0 && stcp->textp < stcp->text_end);
+  if (wlv->n_extra > 0) {
+    static char transbuf[(MAX_NUMBERWIDTH + 9 + 9 * 2) * MB_MAXBYTES + 1];
+    wlv->n_extra = (int)transstr_buf(wlv->p_extra, wlv->n_extra, transbuf, sizeof transbuf, true);
+    wlv->p_extra = transbuf;
+  }
 }
 
 static void handle_breakindent(win_T *wp, winlinevars_T *wlv)
@@ -2780,9 +2785,12 @@ int win_line(win_T *wp, linenr_T lnum, int startrow, int endrow, bool nochange, 
       wlv.char_attr = hl_combine_attr(wlv.line_attr_lowprio, wlv.char_attr);
     }
 
+    if (wlv.draw_state == WL_LINE) {
+      vcol_prev = wlv.vcol;
+    }
+
     // Store character to be displayed.
     // Skip characters that are left of the screen for 'nowrap'.
-    vcol_prev = wlv.vcol;
     if (wlv.draw_state < WL_LINE || n_skip <= 0) {
       //
       // Store the character.

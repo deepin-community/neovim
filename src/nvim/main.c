@@ -175,7 +175,6 @@ bool event_teardown(void)
 /// Needed for unit tests. Must be called after `time_init()`.
 void early_init(mparm_T *paramp)
 {
-  env_init();
   estack_init();
   cmdline_init();
   eval_init();          // init global variables
@@ -304,6 +303,16 @@ int main(int argc, char **argv)
     }
   }
 
+  if (GARGCOUNT > 0) {
+    fname = get_fname(&params, cwd);
+  }
+
+  // Recovery mode without a file name: List swap files.
+  // In this case, no UI is needed.
+  if (recoverymode && fname == NULL) {
+    headless_mode = true;
+  }
+
 #ifdef MSWIN
   // on windows we use CONIN special file, thus we don't know this yet.
   bool has_term = true;
@@ -333,16 +342,6 @@ int main(int argc, char **argv)
       getout(1);
     }
     ui_client_channel_id = rv;
-  }
-
-  if (GARGCOUNT > 0) {
-    fname = get_fname(&params, cwd);
-  }
-
-  // Recovery mode without a file name: List swap files.
-  // In this case, no UI is needed.
-  if (recoverymode && fname == NULL) {
-    headless_mode = true;
   }
 
   TIME_MSG("expanding arguments");
@@ -629,6 +628,8 @@ int main(int argc, char **argv)
   }
 
   if (params.luaf != NULL) {
+    // Like "--cmd", "+", "-c" and "-S", don't truncate messages.
+    msg_scroll = true;
     bool lua_ok = nlua_exec_file(params.luaf);
     TIME_MSG("executing Lua -l script");
     getout(lua_ok ? 0 : 1);
@@ -950,7 +951,7 @@ static void remote_request(mparm_T *params, int remote_args, char *server_addr, 
   TriState tabbed = kNone;
 
   for (size_t i = 0; i < rvobj.data.dictionary.size; i++) {
-    if (strcmp(rvobj.data.dictionary.items[i].key.data, "errmsg") == 0) {
+    if (strequal(rvobj.data.dictionary.items[i].key.data, "errmsg")) {
       if (rvobj.data.dictionary.items[i].value.type != kObjectTypeString) {
         os_errmsg("vim._cs_remote returned an unexpected type for 'errmsg'\n");
         os_exit(2);
@@ -958,13 +959,19 @@ static void remote_request(mparm_T *params, int remote_args, char *server_addr, 
       os_errmsg(rvobj.data.dictionary.items[i].value.data.string.data);
       os_errmsg("\n");
       os_exit(2);
-    } else if (strcmp(rvobj.data.dictionary.items[i].key.data, "tabbed") == 0) {
+    } else if (strequal(rvobj.data.dictionary.items[i].key.data, "result")) {
+      if (rvobj.data.dictionary.items[i].value.type != kObjectTypeString) {
+        os_errmsg("vim._cs_remote returned an unexpected type for 'result'\n");
+        os_exit(2);
+      }
+      os_msg(rvobj.data.dictionary.items[i].value.data.string.data);
+    } else if (strequal(rvobj.data.dictionary.items[i].key.data, "tabbed")) {
       if (rvobj.data.dictionary.items[i].value.type != kObjectTypeBoolean) {
         os_errmsg("vim._cs_remote returned an unexpected type for 'tabbed'\n");
         os_exit(2);
       }
       tabbed = rvobj.data.dictionary.items[i].value.data.boolean ? kTrue : kFalse;
-    } else if (strcmp(rvobj.data.dictionary.items[i].key.data, "should_exit") == 0) {
+    } else if (strequal(rvobj.data.dictionary.items[i].key.data, "should_exit")) {
       if (rvobj.data.dictionary.items[i].value.type != kObjectTypeBoolean) {
         os_errmsg("vim._cs_remote returned an unexpected type for 'should_exit'\n");
         os_exit(2);
@@ -1352,7 +1359,7 @@ static void command_line_scan(mparm_T *parmp)
           }
           parmp->luaf = argv[0];
           argc--;
-          if (argc > 0) {  // Lua args after "-l <file>".
+          if (argc >= 0) {  // Lua args after "-l <file>".
             parmp->lua_arg0 = parmp->argc - argc;
             argc = 0;
           }

@@ -841,7 +841,7 @@ static char *find_longest_match(expand_T *xp, int options)
 char *ExpandOne(expand_T *xp, char *str, char *orig, int options, int mode)
 {
   char *ss = NULL;
-  static int findex;
+  static int findex;                  // TODO(vim): Move into expand_T
   static char *orig_save = NULL;      // kept value of orig
   int orig_saved = false;
 
@@ -871,7 +871,10 @@ char *ExpandOne(expand_T *xp, char *str, char *orig, int options, int mode)
       cmdline_pum_remove();
     }
   }
-  findex = 0;
+  // TODO(vim): Remove condition if "findex" is part of expand_T ?
+  if (mode != WILD_EXPAND_FREE && mode != WILD_ALL && mode != WILD_ALL_KEEP) {
+    findex = 0;
+  }
 
   if (mode == WILD_FREE) {      // only release file name
     return NULL;
@@ -3478,7 +3481,6 @@ void wildmenu_cleanup(CmdlineInfo *cclp)
 /// "getcompletion()" function
 void f_getcompletion(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 {
-  char *pat;
   expand_T xpc;
   bool filtered = false;
   int options = WILD_SILENT | WILD_USE_NL | WILD_ADD_SLASH
@@ -3510,9 +3512,10 @@ void f_getcompletion(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
   const char *pattern = tv_get_string(&argvars[0]);
 
   if (strcmp(type, "cmdline") == 0) {
-    set_one_cmd_context(&xpc, pattern);
+    const int cmdline_len = (int)strlen(pattern);
+    set_cmd_context(&xpc, (char *)pattern, cmdline_len, cmdline_len, false);
     xpc.xp_pattern_len = strlen(xpc.xp_pattern);
-    xpc.xp_col = (int)strlen(pattern);
+    xpc.xp_col = cmdline_len;
     goto theend;
   }
 
@@ -3539,6 +3542,8 @@ void f_getcompletion(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
   }
 
 theend:
+  ;
+  char *pat;
   if (cmdline_fuzzy_completion_supported(&xpc)) {
     // when fuzzy matching, don't modify the search string
     pat = xstrdup(xpc.xp_pattern);

@@ -925,8 +925,7 @@ static void f_confirm(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
   }
 
   if (!error) {
-    rettv->vval.v_number = do_dialog(type, NULL, (char *)message, (char *)buttons, def, NULL,
-                                     false);
+    rettv->vval.v_number = do_dialog(type, NULL, message, buttons, def, NULL, false);
   }
 }
 
@@ -4201,7 +4200,7 @@ static void f_jobstart(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 
   env = create_environment(job_env, clear_env, pty, term_name);
 
-  Channel *chan = channel_job_start(argv, on_stdout, on_stderr, on_exit, pty,
+  Channel *chan = channel_job_start(argv, NULL, on_stdout, on_stderr, on_exit, pty,
                                     rpc, overlapped, detach, stdin_mode, cwd,
                                     width, height, env, &rettv->vval.v_number);
   if (chan) {
@@ -6604,6 +6603,7 @@ static void f_rpcrequest(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
 
   sctx_T save_current_sctx;
   char *save_autocmd_fname, *save_autocmd_match;
+  bool save_autocmd_fname_full;
   int save_autocmd_bufnr;
   funccal_entry_T funccal_entry;
 
@@ -6613,6 +6613,7 @@ static void f_rpcrequest(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
     save_current_sctx = current_sctx;
     save_autocmd_fname = autocmd_fname;
     save_autocmd_match = autocmd_match;
+    save_autocmd_fname_full = autocmd_fname_full;
     save_autocmd_bufnr = autocmd_bufnr;
     save_funccal(&funccal_entry);
 
@@ -6621,6 +6622,7 @@ static void f_rpcrequest(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
     ((estack_T *)exestack.ga_data)[exestack.ga_len++] = provider_caller_scope.es_entry;
     autocmd_fname = provider_caller_scope.autocmd_fname;
     autocmd_match = provider_caller_scope.autocmd_match;
+    autocmd_fname_full = provider_caller_scope.autocmd_fname_full;
     autocmd_bufnr = provider_caller_scope.autocmd_bufnr;
     set_current_funccal((funccall_T *)(provider_caller_scope.funccalp));
   }
@@ -6638,6 +6640,7 @@ static void f_rpcrequest(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
     exestack.ga_len--;
     autocmd_fname = save_autocmd_fname;
     autocmd_match = save_autocmd_match;
+    autocmd_fname_full = save_autocmd_fname_full;
     autocmd_bufnr = save_autocmd_bufnr;
     restore_funccal();
   }
@@ -6726,7 +6729,7 @@ static void f_rpcstart(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
   // The last item of argv must be NULL
   argv[i] = NULL;
 
-  Channel *chan = channel_job_start(argv, CALLBACK_READER_INIT,
+  Channel *chan = channel_job_start(argv, NULL, CALLBACK_READER_INIT,
                                     CALLBACK_READER_INIT, CALLBACK_NONE,
                                     false, true, false, false,
                                     kChannelStdinPipe, NULL, 0, 0, NULL,
@@ -8822,7 +8825,7 @@ static void f_termopen(typval_T *argvars, typval_T *rettv, EvalFuncData fptr)
   const bool detach = false;
   ChannelStdinMode stdin_mode = kChannelStdinPipe;
   uint16_t term_width = (uint16_t)MAX(0, curwin->w_width_inner - win_col_off(curwin));
-  Channel *chan = channel_job_start(argv, on_stdout, on_stderr, on_exit,
+  Channel *chan = channel_job_start(argv, NULL, on_stdout, on_stderr, on_exit,
                                     pty, rpc, overlapped, detach, stdin_mode,
                                     cwd, term_width, (uint16_t)curwin->w_height_inner,
                                     env, &rettv->vval.v_number);

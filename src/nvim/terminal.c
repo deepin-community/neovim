@@ -531,6 +531,7 @@ static int terminal_check(VimState *state)
   }
 
   terminal_check_cursor();
+  validate_cursor();
 
   if (must_redraw) {
     update_screen();
@@ -575,6 +576,8 @@ static int terminal_execute(VimState *state, int key)
   case K_RIGHTRELEASE:
   case K_MOUSEDOWN:
   case K_MOUSEUP:
+  case K_MOUSELEFT:
+  case K_MOUSERIGHT:
     if (send_mouse_event(s->term, key)) {
       return 0;
     }
@@ -765,7 +768,7 @@ void terminal_send_key(Terminal *term, int c)
 
   if (key) {
     vterm_keyboard_key(term->vt, key, mod);
-  } else {
+  } else if (!IS_SPECIAL(c)) {
     vterm_keyboard_unichar(term->vt, (uint32_t)c, mod);
   }
 }
@@ -1094,6 +1097,8 @@ static void convert_modifiers(int key, VTermModifier *statep)
   case K_S_DOWN:
   case K_S_LEFT:
   case K_S_RIGHT:
+  case K_S_HOME:
+  case K_S_END:
   case K_S_F1:
   case K_S_F2:
   case K_S_F3:
@@ -1111,6 +1116,8 @@ static void convert_modifiers(int key, VTermModifier *statep)
 
   case K_C_LEFT:
   case K_C_RIGHT:
+  case K_C_HOME:
+  case K_C_END:
     *statep |= VTERM_MOD_CTRL;
     break;
   }
@@ -1157,8 +1164,16 @@ static VTermKey convert_key(int key, VTermModifier *statep)
     return VTERM_KEY_INS;
   case K_DEL:
     return VTERM_KEY_DEL;
+  case K_S_HOME:
+    FALLTHROUGH;
+  case K_C_HOME:
+    FALLTHROUGH;
   case K_HOME:
     return VTERM_KEY_HOME;
+  case K_S_END:
+    FALLTHROUGH;
+  case K_C_END:
+    FALLTHROUGH;
   case K_END:
     return VTERM_KEY_END;
   case K_PAGEUP:
@@ -1426,11 +1441,17 @@ static bool send_mouse_event(Terminal *term, int c)
       pressed = true; button = 4; break;
     case K_MOUSEUP:
       pressed = true; button = 5; break;
+    case K_MOUSELEFT:
+      pressed = true; button = 7; break;
+    case K_MOUSERIGHT:
+      pressed = true; button = 6; break;
     default:
       return false;
     }
 
-    mouse_action(term, button, row, col - offset, pressed, 0);
+    VTermModifier mod = VTERM_MOD_NONE;
+    convert_modifiers(c, &mod);
+    mouse_action(term, button, row, col - offset, pressed, mod);
     return false;
   }
 

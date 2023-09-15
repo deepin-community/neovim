@@ -262,6 +262,15 @@ void set_context_in_runtime_cmd(expand_T *xp, const char *arg)
   char *p = skiptowhite(arg);
   runtime_expand_flags
     = *p != NUL ? get_runtime_cmd_flags((char **)&arg, (size_t)(p - arg)) : 0;
+  // Skip to the last argument.
+  while (*(p = skiptowhite_esc(arg)) != NUL) {
+    if (runtime_expand_flags == 0) {
+      // When there are multiple arguments and [where] is not specified,
+      // use an unrelated non-zero flag to avoid expanding [where].
+      runtime_expand_flags = DIP_ALL;
+    }
+    arg = skipwhite(p);
+  }
   xp->xp_context = EXPAND_RUNTIME;
   xp->xp_pattern = (char *)arg;
 }
@@ -335,7 +344,7 @@ int do_in_path(char *path, char *name, int flags, DoInRuntimepathCB callback, vo
           }
 
           int ew_flags = ((flags & DIP_DIR) ? EW_DIR : EW_FILE)
-                         | (flags & DIP_DIRFILE) ? (EW_DIR|EW_FILE) : 0;
+                         | ((flags & DIP_DIRFILE) ? (EW_DIR|EW_FILE) : 0);
 
           // Expand wildcards, invoke the callback for each match.
           if (gen_expand_wildcards(1, &buf, &num_files, &files, ew_flags) == OK) {
@@ -1221,9 +1230,9 @@ static void ExpandRTDir_int(char *pat, size_t pat_len, int flags, bool keep_ext,
     bool expand_dirs = false;
 
     if (*dirnames[i] == NUL) {  // empty dir used for :runtime
-      snprintf(tail, tail_buflen, "%s*.\\(vim\\|lua\\)", pat);
+      snprintf(tail, tail_buflen, "%s*.{vim,lua}", pat);
     } else {
-      snprintf(tail, tail_buflen, "%s/%s*.\\(vim\\|lua\\)", dirnames[i], pat);
+      snprintf(tail, tail_buflen, "%s/%s*.{vim,lua}", dirnames[i], pat);
     }
 
 expand:

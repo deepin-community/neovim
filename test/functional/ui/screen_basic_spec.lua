@@ -4,7 +4,6 @@ local spawn, set_session, clear = helpers.spawn, helpers.set_session, helpers.cl
 local feed, command = helpers.feed, helpers.command
 local insert = helpers.insert
 local eq = helpers.eq
-local eval = helpers.eval
 local funcs, meths = helpers.funcs, helpers.meths
 
 describe('screen', function()
@@ -62,34 +61,6 @@ local function screen_tests(linegrid)
       [7] = {bold = true, foreground = Screen.colors.SeaGreen},
       [8] = {foreground = Screen.colors.White, background = Screen.colors.Red},
     } )
-  end)
-
-  describe(':suspend', function()
-    it('is forwarded to the UI', function()
-      local function check()
-        eq(true, screen.suspended)
-      end
-
-      command('let g:ev = []')
-      command('autocmd VimResume  * :call add(g:ev, "r")')
-      command('autocmd VimSuspend * :call add(g:ev, "s")')
-
-      eq(false, screen.suspended)
-      command('suspend')
-      eq({ 's', 'r' }, eval('g:ev'))
-
-      screen:expect(check)
-      screen.suspended = false
-
-      feed('<c-z>')
-      eq({ 's', 'r', 's', 'r' }, eval('g:ev'))
-
-      screen:expect(check)
-      screen.suspended = false
-
-      command('suspend')
-      eq({ 's', 'r', 's', 'r', 's', 'r' }, eval('g:ev'))
-    end)
   end)
 
   describe('bell/visual bell', function()
@@ -1095,4 +1066,19 @@ it('CTRL-F or CTRL-B scrolls a page after UI attach/resize #20605', function()
   eq(906, funcs.line('w0'))
   feed('<C-F>')
   eq(953, funcs.line('w0'))
+end)
+
+it("showcmd doesn't cause empty grid_line with redrawdebug=compositor #22593", function()
+  clear()
+  local screen = Screen.new(30, 2)
+  screen:set_default_attr_ids({
+    [0] = {bold = true, foreground = Screen.colors.Blue},
+  })
+  screen:attach()
+  command('set showcmd redrawdebug=compositor')
+  feed('d')
+  screen:expect{grid=[[
+    ^                              |
+                       d          |
+  ]]}
 end)

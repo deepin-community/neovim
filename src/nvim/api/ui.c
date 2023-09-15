@@ -73,6 +73,11 @@ static void mpack_uint(char **buf, uint32_t val)
   }
 }
 
+static void mpack_bool(char **buf, bool val)
+{
+  mpack_w(buf, 0xc2 | val);
+}
+
 static void mpack_array(char **buf, uint32_t len)
 {
   if (len < 0x10) {
@@ -210,6 +215,8 @@ void nvim_ui_attach(uint64_t channel_id, Integer width, Integer height, Dictiona
 
   pmap_put(uint64_t)(&connected_uis, channel_id, ui);
   ui_attach_impl(ui, channel_id);
+
+  may_trigger_vim_suspend_resume(false);
 }
 
 /// @deprecated
@@ -230,6 +237,10 @@ void nvim_ui_set_focus(uint64_t channel_id, Boolean gained, Error *error)
     api_set_error(error, kErrorTypeException,
                   "UI not attached to channel: %" PRId64, channel_id);
     return;
+  }
+
+  if (gained) {
+    may_trigger_vim_suspend_resume(false);
   }
 
   do_autocmd_focusgained((bool)gained);
@@ -808,7 +819,7 @@ void remote_ui_raw_line(UI *ui, Integer grid, Integer row, Integer startcol, Int
     data->ncalls++;
 
     char **buf = &data->buf_wptr;
-    mpack_array(buf, 4);
+    mpack_array(buf, 5);
     mpack_uint(buf, (uint32_t)grid);
     mpack_uint(buf, (uint32_t)row);
     mpack_uint(buf, (uint32_t)startcol);
@@ -818,21 +829,25 @@ void remote_ui_raw_line(UI *ui, Integer grid, Integer row, Integer startcol, Int
     size_t ncells = (size_t)(endcol - startcol);
     int last_hl = -1;
     uint32_t nelem = 0;
+    bool was_space = false;
     for (size_t i = 0; i < ncells; i++) {
       repeat++;
       if (i == ncells - 1 || attrs[i] != attrs[i + 1]
           || strcmp(chunk[i], chunk[i + 1]) != 0) {
-        if (UI_BUF_SIZE - BUF_POS(data) < 2 * (1 + 2 + sizeof(schar_T) + 5 + 5)) {
+        if (UI_BUF_SIZE - BUF_POS(data) < 2 * (1 + 2 + sizeof(schar_T) + 5 + 5) + 1) {
           // close to overflowing the redraw buffer. finish this event,
           // flush, and start a new "grid_line" event at the current position.
           // For simplicity leave place for the final "clear" element
           // as well, hence the factor of 2 in the check.
           mpack_w2(&lenpos, nelem);
+
+          // We only ever set the wrap field on the final "grid_line" event for the line.
+          mpack_bool(buf, false);
           remote_ui_flush_buf(ui);
 
           prepare_call(ui, "grid_line");
           data->ncalls++;
-          mpack_array(buf, 4);
+          mpack_array(buf, 5);
           mpack_uint(buf, (uint32_t)grid);
           mpack_uint(buf, (uint32_t)row);
           mpack_uint(buf, (uint32_t)startcol + (uint32_t)i - repeat + 1);
@@ -853,9 +868,12 @@ void remote_ui_raw_line(UI *ui, Integer grid, Integer row, Integer startcol, Int
         data->ncells_pending += MIN(repeat, 2);
         last_hl = attrs[i];
         repeat = 0;
+        was_space = strequal(chunk[i], " ");
       }
     }
-    if (endcol < clearcol) {
+    // If the last chunk was all spaces, add a clearing chunk even if there are
+    // no more cells to clear, so there is no ambiguity about what to clear.
+    if (endcol < clearcol || was_space) {
       nelem++;
       data->ncells_pending += 1;
       mpack_array(buf, 3);
@@ -864,9 +882,10 @@ void remote_ui_raw_line(UI *ui, Integer grid, Integer row, Integer startcol, Int
       mpack_uint(buf, (uint32_t)(clearcol - endcol));
     }
     mpack_w2(&lenpos, nelem);
+    mpack_bool(buf, flags & kLineFlagWrap);
 
     if (data->ncells_pending > 500) {
-      // pass of cells to UI to let it start processing them
+      // pass off cells to UI to let it start processing them
       remote_ui_flush_buf(ui);
     }
   } else {

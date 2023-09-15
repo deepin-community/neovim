@@ -51,6 +51,7 @@
 #include "nvim/search.h"
 #include "nvim/state.h"
 #include "nvim/strings.h"
+#include "nvim/types.h"
 #include "nvim/ui.h"
 #include "nvim/ui_compositor.h"
 #include "nvim/vim.h"
@@ -1751,6 +1752,7 @@ bool apply_autocmds_group(event_T event, char *fname, char *fname_io, bool force
 
   // Save the autocmd_* variables and info about the current buffer.
   char *save_autocmd_fname = autocmd_fname;
+  bool save_autocmd_fname_full = autocmd_fname_full;
   int save_autocmd_bufnr = autocmd_bufnr;
   char *save_autocmd_match = autocmd_match;
   int save_autocmd_busy = autocmd_busy;
@@ -1779,6 +1781,7 @@ bool apply_autocmds_group(event_T event, char *fname, char *fname_io, bool force
     // Allocate MAXPATHL for when eval_vars() resolves the fullpath.
     autocmd_fname = xstrnsave(autocmd_fname, MAXPATHL);
   }
+  autocmd_fname_full = false;  // call FullName_save() later
 
   // Set the buffer number to be used for <abuf>.
   if (buf == NULL) {
@@ -1826,6 +1829,7 @@ bool apply_autocmds_group(event_T event, char *fname, char *fname_io, bool force
         || event == EVENT_USER || event == EVENT_WINCLOSED
         || event == EVENT_WINRESIZED || event == EVENT_WINSCROLLED) {
       fname = xstrdup(fname);
+      autocmd_fname_full = true;  // don't expand it later
     } else {
       fname = FullName_save(fname, false);
     }
@@ -1959,6 +1963,7 @@ bool apply_autocmds_group(event_T event, char *fname, char *fname_io, bool force
   estack_pop();
   xfree(autocmd_fname);
   autocmd_fname = save_autocmd_fname;
+  autocmd_fname_full = save_autocmd_fname_full;
   autocmd_bufnr = save_autocmd_bufnr;
   autocmd_match = save_autocmd_match;
   current_sctx = save_current_sctx;
@@ -2719,6 +2724,30 @@ static bool arg_autocmd_flag_get(bool *flag, char **cmd_ptr, char *pattern, int 
   }
 
   return false;
+}
+
+/// When kFalse: VimSuspend should be triggered next.
+/// When kTrue: VimResume should be triggerd next.
+/// When kNone: Currently triggering VimSuspend or VimResume.
+static TriState pending_vimresume = kFalse;
+
+static void vimresume_event(void **argv)
+{
+  apply_autocmds(EVENT_VIMRESUME, NULL, NULL, false, NULL);
+  pending_vimresume = kFalse;
+}
+
+/// Trigger VimSuspend or VimResume autocommand.
+void may_trigger_vim_suspend_resume(bool suspend)
+{
+  if (suspend && pending_vimresume == kFalse) {
+    pending_vimresume = kNone;
+    apply_autocmds(EVENT_VIMSUSPEND, NULL, NULL, false, NULL);
+    pending_vimresume = kTrue;
+  } else if (!suspend && pending_vimresume == kTrue) {
+    pending_vimresume = kNone;
+    multiqueue_put(main_loop.events, vimresume_event, 0);
+  }
 }
 
 // UI Enter

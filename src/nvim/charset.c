@@ -645,8 +645,8 @@ size_t transchar_hex(char *const buf, const int c)
   size_t i = 0;
 
   buf[i++] = '<';
-  if (c > 255) {
-    if (c > 255 * 256) {
+  if (c > 0xFF) {
+    if (c > 0xFFFF) {
       buf[i++] = (char)nr2hex((unsigned)c >> 20);
       buf[i++] = (char)nr2hex((unsigned)c >> 16);
     }
@@ -1370,7 +1370,7 @@ char *skiptowhite(const char *p)
 /// @param p
 ///
 /// @return Pointer to the next whitespace character.
-char *skiptowhite_esc(char *p)
+char *skiptowhite_esc(const char *p)
   FUNC_ATTR_PURE
 {
   while (*p != ' ' && *p != '\t' && *p != NUL) {
@@ -1379,7 +1379,7 @@ char *skiptowhite_esc(char *p)
     }
     p++;
   }
-  return p;
+  return (char *)p;
 }
 
 /// Skip over text until '\n' or NUL.

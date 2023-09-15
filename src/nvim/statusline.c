@@ -248,8 +248,8 @@ StlClickDefinition *stl_alloc_click_defs(StlClickDefinition *cdp, long width, si
 }
 
 /// Fill the click definitions array if needed.
-void stl_fill_click_defs(StlClickDefinition *click_defs, StlClickRecord *click_recs, char *buf,
-                         int width, bool tabline)
+void stl_fill_click_defs(StlClickDefinition *click_defs, StlClickRecord *click_recs,
+                         const char *buf, int width, bool tabline)
 {
   if (click_defs == NULL) {
     return;
@@ -263,6 +263,7 @@ void stl_fill_click_defs(StlClickDefinition *click_defs, StlClickRecord *click_r
   };
   for (int i = 0; click_recs[i].start != NULL; i++) {
     len += vim_strnsize(buf, (int)(click_recs[i].start - buf));
+    assert(len <= width);
     if (col < len) {
       while (col < len) {
         click_defs[col++] = cur_click_def;
@@ -270,7 +271,7 @@ void stl_fill_click_defs(StlClickDefinition *click_defs, StlClickRecord *click_r
     } else {
       xfree(cur_click_def.func);
     }
-    buf = (char *)click_recs[i].start;
+    buf = click_recs[i].start;
     cur_click_def = click_recs[i].def;
     if (!tabline && !(cur_click_def.type == kStlClickDisabled
                       || cur_click_def.type == kStlClickFuncRun)) {
@@ -889,7 +890,9 @@ void draw_tabline(void)
 /// @return  The width of the built status column string for line "lnum"
 int build_statuscol_str(win_T *wp, linenr_T lnum, long relnum, statuscol_T *stcp)
 {
-  bool fillclick = relnum >= 0 && lnum == wp->w_topline;
+  // Only update click definitions once per window per redraw.
+  // Don't update when current width is 0, since it will be redrawn again if not empty.
+  const bool fillclick = relnum >= 0 && stcp->width > 0 && lnum == wp->w_topline;
 
   if (relnum >= 0) {
     set_vim_var_nr(VV_LNUM, lnum);
@@ -902,12 +905,11 @@ int build_statuscol_str(win_T *wp, linenr_T lnum, long relnum, statuscol_T *stcp
                                stcp->width, &stcp->hlrec, fillclick ? &clickrec : NULL, stcp);
   xfree(stc);
 
-  // Only update click definitions once per window per redraw
   if (fillclick) {
     stl_clear_click_defs(wp->w_statuscol_click_defs, wp->w_statuscol_click_defs_size);
-    wp->w_statuscol_click_defs = stl_alloc_click_defs(wp->w_statuscol_click_defs, width,
+    wp->w_statuscol_click_defs = stl_alloc_click_defs(wp->w_statuscol_click_defs, stcp->width,
                                                       &wp->w_statuscol_click_defs_size);
-    stl_fill_click_defs(wp->w_statuscol_click_defs, clickrec, stcp->text, width, false);
+    stl_fill_click_defs(wp->w_statuscol_click_defs, clickrec, stcp->text, stcp->width, false);
   }
 
   return width;
@@ -1031,6 +1033,7 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, char *opt_n
   int evaldepth  = 0;
 
   int curitem = 0;
+  int foldsignitem = -1;
   bool prevchar_isflag = true;
   bool prevchar_isitem = false;
 
@@ -1652,6 +1655,7 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, char *opt_n
       if (width == 0) {
         break;
       }
+      foldsignitem = curitem;
 
       char *p = NULL;
       if (fold) {
@@ -1661,32 +1665,22 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, char *opt_n
         p[n] = NUL;
       }
 
-      *buf_tmp = NUL;
+      size_t buflen = 0;
       varnumber_T virtnum = get_vim_var_nr(VV_VIRTNUM);
-      for (int i = 0; i <= width; i++) {
-        if (i == width) {
-          if (*buf_tmp == NUL) {
-            break;
-          }
-          stl_items[curitem].minwid = 0;
-        } else if (!fold) {
+      for (int i = 0; i < width; i++) {
+        if (!fold) {
           SignTextAttrs *sattr = virtnum ? NULL : sign_get_attr(i, stcp->sattrs, wp->w_scwidth);
           p = sattr && sattr->text ? sattr->text : "  ";
           stl_items[curitem].minwid = -(sattr ? stcp->sign_cul_id ? stcp->sign_cul_id
                                         : sattr->hl_id : (stcp->use_cul ? HLF_CLS : HLF_SC) + 1);
         }
-        size_t buflen = strlen(buf_tmp);
         stl_items[curitem].type = Highlight;
         stl_items[curitem].start = out_p + buflen;
+        xstrlcpy(buf_tmp + buflen, p, TMPLEN - buflen);
+        buflen += strlen(p);
         curitem++;
-        if (i == width) {
-          str = buf_tmp;
-          break;
-        }
-        int rc = snprintf(buf_tmp + buflen, sizeof(buf_tmp) - buflen, "%s", p);
-        (void)rc;  // Avoid unused warning on release build
-        assert(rc > 0);
       }
+      str = buf_tmp;
       break;
     }
 
@@ -1829,6 +1823,13 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, char *opt_n
           }
         }
         minwid = 0;
+        // For a 'statuscolumn' sign or fold item, shift the added items
+        if (foldsignitem >= 0) {
+          ptrdiff_t offset = out_p - stl_items[foldsignitem].start;
+          for (int i = foldsignitem; i < curitem; i++) {
+            stl_items[i].start += offset;
+          }
+        }
       } else {
         // Note: The negative value denotes a left aligned item.
         //       Here we switch the minimum width back to a positive value.
@@ -1847,6 +1848,14 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, char *opt_n
         }
       }
       // }
+
+      // For a 'statuscolumn' sign or fold item, add an item to reset the highlight group
+      if (foldsignitem >= 0) {
+        foldsignitem = -1;
+        stl_items[curitem].type = Highlight;
+        stl_items[curitem].start = out_p;
+        stl_items[curitem].minwid = 0;
+      }
 
       // For left-aligned items, fill any remaining space with the fillchar
       for (; l < minwid && out_p < out_end_p; l++) {
@@ -1962,8 +1971,8 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, char *opt_n
 
   int width = vim_strsize(out);
   // Return truncated width for 'statuscolumn'
-  if (stcp != NULL && width > maxwidth) {
-    stcp->truncate = width - maxwidth;
+  if (stcp != NULL && width > stcp->width) {
+    stcp->truncate = width - stcp->width;
   }
   if (maxwidth > 0 && width > maxwidth) {
     // Result is too long, must truncate somewhere.
@@ -2042,17 +2051,6 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, char *opt_n
 
       // Put a `<` to mark where we truncated at
       *trunc_p = '<';
-
-      if (width + 1 < maxwidth) {
-        // Advance the pointer to the end of the string
-        trunc_p = trunc_p + strlen(trunc_p);
-      }
-
-      // Fill up for half a double-wide character.
-      while (++width < maxwidth) {
-        MB_CHAR2BYTES(fillchar, trunc_p);
-        *trunc_p = NUL;
-      }
       // }
 
       // { Change the start point for items based on
@@ -2067,13 +2065,24 @@ int build_stl_str_hl(win_T *wp, char *out, size_t outlen, char *fmt, char *opt_n
         // to be moved backwards.
         if (stl_items[i].start >= trunc_end_p) {
           stl_items[i].start -= item_offset;
+        } else {
           // Anything inside the truncated area is set to start
           // at the `<` truncation character.
-        } else {
           stl_items[i].start = trunc_p;
         }
       }
       // }
+
+      if (width + 1 < maxwidth) {
+        // Advance the pointer to the end of the string
+        trunc_p = trunc_p + strlen(trunc_p);
+      }
+
+      // Fill up for half a double-wide character.
+      while (++width < maxwidth) {
+        MB_CHAR2BYTES(fillchar, trunc_p);
+        *trunc_p = NUL;
+      }
     }
     width = maxwidth;
 

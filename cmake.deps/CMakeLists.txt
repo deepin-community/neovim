@@ -132,15 +132,15 @@ endif()
 include(ExternalProject)
 set_directory_properties(PROPERTIES EP_PREFIX "${DEPS_BUILD_DIR}")
 
-set(LIBUV_URL https://github.com/libuv/libuv/archive/62c2374a8c005ce9e42088965f8f8af2532c177b.tar.gz)
-set(LIBUV_SHA256 c7e89137da65a1cb550ba96b892dfeeabea982bf33b9237bcf9bbcd90f2e70a1)
+set(LIBUV_URL https://github.com/libuv/libuv/archive/v1.46.0.tar.gz)
+set(LIBUV_SHA256 7aa66be3413ae10605e1f5c9ae934504ffe317ef68ea16fdaa83e23905c681bd)
 
 set(MSGPACK_URL https://github.com/msgpack/msgpack-c/releases/download/c-6.0.0/msgpack-c-6.0.0.tar.gz)
 set(MSGPACK_SHA256 3654f5e2c652dc52e0a993e270bb57d5702b262703f03771c152bba51602aeba)
 
 # https://github.com/LuaJIT/LuaJIT/tree/v2.1
-set(LUAJIT_URL https://github.com/LuaJIT/LuaJIT/archive/505e2c03de35e2718eef0d2d3660712e06dadf1f.tar.gz)
-set(LUAJIT_SHA256 67c88399b901a22e9a236f4b77e6fe39af00f6b7144ce9dd6f51141d921f1076)
+set(LUAJIT_URL https://github.com/LuaJIT/LuaJIT/archive/03c31124cc3b521ef54fe398e10fa55660a5057d.tar.gz)
+set(LUAJIT_SHA256 61dcc7ae3f543ae3cc30e66db060e31e2a77e4be34ee65e370c953d112b4d60c)
 
 set(LUA_URL https://www.lua.org/ftp/lua-5.1.5.tar.gz)
 set(LUA_SHA256 2640fc56a795f29d28ef15e13c34a47e223960b0240e8cb0a82d9b0738695333)
@@ -154,11 +154,11 @@ set(UNIBILIUM_SHA256 9c4747c862ab5e3076dcf8fa8f0ea7a6b50f20ec5905618b95366555967
 set(LIBTERMKEY_URL https://github.com/neovim/deps/raw/aa004f1b2b6470a92363cba8e1cc1874141dacc4/opt/libtermkey-0.22.tar.gz)
 set(LIBTERMKEY_SHA256 6945bd3c4aaa83da83d80a045c5563da4edd7d0374c62c0d35aec09eb3014600)
 
-set(LIBVTERM_URL https://github.com/neovim/deps/raw/aa004f1b2b6470a92363cba8e1cc1874141dacc4/opt/libvterm-0.3.1.tar.gz)
-set(LIBVTERM_SHA256 25a8ad9c15485368dfd0a8a9dca1aec8fea5c27da3fa74ec518d5d3787f0c397)
+set(LIBVTERM_URL https://github.com/neovim/deps/raw/12c9dcf1d823ac4acbccf494c93c4774a87db11d/opt/libvterm-0.3.3.tar.gz)
+set(LIBVTERM_SHA256 09156f43dd2128bd347cbeebe50d9a571d32c64e0cf18d211197946aff7226e0)
 
-set(LUV_URL https://github.com/luvit/luv/archive/093a977b82077591baefe1e880d37dfa2730bd54.tar.gz)
-set(LUV_SHA256 222b38b6425f0926218e14e7da81481fdde6f9660c1feac25a53e6fb52e886e6)
+set(LUV_URL https://github.com/luvit/luv/archive/1.45.0-0.tar.gz)
+set(LUV_SHA256 97e89940f9eeaa8dfb34f1c19f80dd373299c42719d15228ec790f415d4e4965)
 
 set(LUA_COMPAT53_URL https://github.com/keplerproject/lua-compat-5.3/archive/v0.9.tar.gz)
 set(LUA_COMPAT53_SHA256 ad05540d2d96a48725bb79a1def35cf6652a4e2ec26376e2617c8ce2baa6f416)
@@ -185,10 +185,10 @@ set(GETTEXT_SHA256 66415634c6e8c3fa8b71362879ec7575e27da43da562c798a8a2f223e6e47
 set(LIBICONV_URL https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.15.tar.gz)
 set(LIBICONV_SHA256 ccf536620a45458d26ba83887a983b96827001e92a13847b45e4925cc8913178)
 
-set(TREESITTER_C_URL https://github.com/tree-sitter/tree-sitter-c/archive/v0.20.2.tar.gz)
-set(TREESITTER_C_SHA256 af66fde03feb0df4faf03750102a0d265b007e5d957057b6b293c13116a70af2 )
-set(TREESITTER_LUA_URL https://github.com/MunifTanjim/tree-sitter-lua/archive/v0.0.17.tar.gz)
-set(TREESITTER_LUA_SHA256 8963fd0a185d786c164dfca3824941c7eaec497ce49a3a0bc24bf753f5e0e59c)
+set(TREESITTER_C_URL https://github.com/tree-sitter/tree-sitter-c/archive/v0.20.5.tar.gz)
+set(TREESITTER_C_SHA256 694a5408246ee45d535df9df025febecdb50bee764df64a94346b9805a5f349b )
+set(TREESITTER_LUA_URL https://github.com/MunifTanjim/tree-sitter-lua/archive/v0.0.18.tar.gz)
+set(TREESITTER_LUA_SHA256 659beef871a7fa1d9a02c23f5ebf55019aa3adce6d7f5441947781e128845256)
 set(TREESITTER_VIM_URL https://github.com/neovim/tree-sitter-vim/archive/v0.3.0.tar.gz)
 set(TREESITTER_VIM_SHA256 403acec3efb7cdb18ff3d68640fc823502a4ffcdfbb71cec3f98aa786c21cbe2)
 set(TREESITTER_VIMDOC_URL https://github.com/neovim/tree-sitter-vimdoc/archive/v2.0.0.tar.gz)

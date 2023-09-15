@@ -270,6 +270,12 @@ describe('vim.fs', function()
     it('works with backward slashes', function()
       eq('C:/Users/jdoe', exec_lua [[ return vim.fs.normalize('C:\\Users\\jdoe') ]])
     end)
+    it('removes trailing /', function()
+      eq('/home/user', exec_lua [[ return vim.fs.normalize('/home/user/') ]])
+    end)
+    it('works with /', function()
+      eq('/', exec_lua [[ return vim.fs.normalize('/') ]])
+    end)
     it('works with ~', function()
       eq( exec_lua([[
       local home = ...
@@ -284,5 +290,10 @@ describe('vim.fs', function()
         return vim.fs.normalize('$XDG_CONFIG_HOME/nvim')
       ]], xdg_config_home))
     end)
+    if is_os('win') then
+      it('Last slash is not truncated from root drive', function()
+        eq('C:/', exec_lua [[ return vim.fs.normalize('C:/') ]])
+      end)
+    end
   end)
 end)

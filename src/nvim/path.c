@@ -1163,7 +1163,7 @@ static bool has_env_var(char *p)
 
 // Return true if "p" contains a special wildcard character, one that Vim
 // cannot expand, requires using a shell.
-static bool has_special_wildchar(char *p)
+static bool has_special_wildchar(char *p, int flags)
 {
   for (; *p; MB_PTR_ADV(p)) {
     // Disallow line break characters.
@@ -1174,6 +1174,10 @@ static bool has_special_wildchar(char *p)
     if (*p == '\\' && p[1] != NUL && p[1] != '\r' && p[1] != '\n') {
       p++;
     } else if (vim_strchr(SPECIAL_WILDCHAR, (uint8_t)(*p)) != NULL) {
+      // Need a shell for curly braces only when including non-existing files.
+      if (*p == '{' && !(flags & EW_NOTFOUND)) {
+        continue;
+      }
       // A { must be followed by a matching }.
       if (*p == '{' && vim_strchr(p, '}') == NULL) {
         continue;
@@ -1233,7 +1237,7 @@ int gen_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, i
   // avoids starting the shell for each argument separately.
   // For `=expr` do use the internal function.
   for (int i = 0; i < num_pat; i++) {
-    if (has_special_wildchar(pat[i])
+    if (has_special_wildchar(pat[i], flags)
         && !(vim_backtick(pat[i]) && pat[i][1] == '=')) {
       return os_expand_wildcards(num_pat, pat, num_file, file, flags);
     }
@@ -1805,7 +1809,7 @@ bool path_with_extension(const char *path, const char *extension)
 }
 
 /// Return true if "name" is a full (absolute) path name or URL.
-bool vim_isAbsName(char *name)
+bool vim_isAbsName(const char *name)
 {
   return path_with_url(name) != 0 || path_is_absolute(name);
 }
@@ -1866,7 +1870,7 @@ char *fix_fname(const char *fname)
 #ifdef UNIX
   return FullName_save(fname, true);
 #else
-  if (!vim_isAbsName((char *)fname)
+  if (!vim_isAbsName(fname)
       || strstr(fname, "..") != NULL
       || strstr(fname, "//") != NULL
 # ifdef BACKSLASH_IN_FILENAME
@@ -2082,15 +2086,15 @@ char *path_shorten_fname(char *full_path, char *dir_name)
   assert(dir_name != NULL);
   size_t len = strlen(dir_name);
 
-  // If dir_name is a path head, full_path can always be made relative.
-  if (len == (size_t)path_head_length() && is_path_head(dir_name)) {
-    return full_path + len;
-  }
-
   // If full_path and dir_name do not match, it's impossible to make one
   // relative to the other.
   if (path_fnamencmp(dir_name, full_path, len) != 0) {
     return NULL;
+  }
+
+  // If dir_name is a path head, full_path can always be made relative.
+  if (len == (size_t)path_head_length() && is_path_head(dir_name)) {
+    return full_path + len;
   }
 
   char *p = full_path + len;

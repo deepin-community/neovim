@@ -3,11 +3,13 @@ local Screen = require('test.functional.ui.screen')
 local clear = helpers.clear
 local command = helpers.command
 local eq = helpers.eq
+local exec = helpers.exec
 local eval = helpers.eval
 local exec_lua = helpers.exec_lua
 local feed = helpers.feed
 local meths = helpers.meths
 local pcall_err = helpers.pcall_err
+local assert_alive = helpers.assert_alive
 
 local mousemodels = { "extend", "popup", "popup_setpos" }
 
@@ -353,6 +355,64 @@ describe('statuscolumn', function()
       {2: }{1:  │}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaa          |
                                                            |
     ]])
+    -- Also test fold and sign column when 'cpoptions' includes "n"
+    command('set cpoptions+=n')
+    feed('Hgjg0')
+    screen:expect([[
+      {2: }{4: 0│}{1:>>}{2:                }{4: }{5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}|
+      {2:                   }{5:^aaaaaaaaaaaaaaaaaaaa              }|
+      {2: }{1: 3│}{0:>!}{2:                }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+      {2: }{1: 2│>>}{0:>!}{1:>>}{0:>!}{1:>>}{0:>!}{1:>>}{0:>!}{1:>> }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+      {2: }{1: 1│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+      {2:+}{1: 4│}{2:                  }{1: }{3:+--  1 line: aaaaaaaaaaaaaaaaa}|
+      {2: }{1: 1│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+      {2: }{1: 2│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+                                                           |
+    ]])
+    command('set breakindent')
+    feed('J2gjg0')
+    screen:expect([[
+      {2: }{4: 0│}{1:>>}{2:                }{4: }{5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}|
+      {2:                   }    {5:aaaaaaaaaaaaaaaaaaaa aaaaaaaaa}|
+      {2:                   }    {5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}|
+      {2:                   }    {5:^aaaaaaaaaaa                   }|
+      {2: }{1: 1│>>}{0:>!}{1:>>}{0:>!}{1:>>}{0:>!}{1:>>}{0:>!}{1:>> }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }    aaaaaaaaaaaaaaaaaaaa          |
+      {2: }{1: 2│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }    aaaaaaaaaaaaaaaaaaaa          |
+      {2:+}{1: 3│}{2:                  }{1: }{3:+--  1 line: aaaaaaaaaaaaaaaaa}|
+      {2: }{1: 4│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }    aaaaaaaaaaaaaaaaaaaa          |
+      {2: }{1: 5│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }    aaaaaaaaaaaaaaaaaaaa          |
+                                                           |
+    ]])
+    command('set nobreakindent')
+    feed('$g0')
+    screen:expect([[
+      {2: }{4: 0│}{1:>>}{2:                }{4: }{5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}|
+      {2:                   }{5:aaaaaaaaaaaaaaaaaaaa aaaaaaaaaaaaa}|
+      {2:                   }{5:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}|
+      {2:                   }{5:^aaa                               }|
+      {2: }{1: 1│>>}{0:>!}{1:>>}{0:>!}{1:>>}{0:>!}{1:>>}{0:>!}{1:>> }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+      {2: }{1: 2│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+      {2:+}{1: 3│}{2:                  }{1: }{3:+--  1 line: aaaaaaaaaaaaaaaaa}|
+      {2: }{1: 4│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+      {2: }{1: 5│}{2:                  }{1: }aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+      {2:                   }aaaaaaaaaaaaaaaaaaaa              |
+                                                           |
+    ]])
+    command('silent undo')
+    feed('8gg')
+    command('set cpoptions-=n')
     -- Status column is re-evaluated for virt_lines, buffer line, and wrapped line
     exec_lua([[
       vim.api.nvim_buf_set_extmark(0, ns, 5, 0, {
@@ -422,50 +482,102 @@ describe('statuscolumn', function()
     ]])
   end)
 
+  it('does not corrupt the screen with minwid sign item', function()
+    screen:try_resize(screen._width, 3)
+    screen:set_default_attr_ids({
+      [0] = {foreground = Screen.colors.Brown},
+      [1] = {foreground = Screen.colors.Blue4, background = Screen.colors.Gray},
+    })
+    command([[set stc=%6s\ %l]])
+    exec_lua('vim.api.nvim_buf_set_extmark(0, ns, 7, 0, {sign_text = "𒀀"})')
+    screen:expect([[
+      {0:    𒀀  8}^aaaaa                                        |
+      {0:    }{1:  }{0: 9}aaaaa                                        |
+                                                           |
+    ]])
+  end)
+
   for _, model in ipairs(mousemodels) do
-    it("works with 'statuscolumn' clicks with mousemodel=" .. model, function()
-      command('set mousemodel=' .. model)
-      command([[
-        function! MyClickFunc(minwid, clicks, button, mods)
-          let g:testvar = printf("%d %d %s %d", a:minwid, a:clicks, a:button, getmousepos().line)
-          if a:mods !=# '    '
-            let g:testvar ..= '(' .. a:mods .. ')'
-          endif
-        endfunction
-        set stc=%0@MyClickFunc@%=%l%T
-      ]])
-      meths.input_mouse('left', 'press', '', 0, 0, 0)
-      eq('0 1 l 4', eval("g:testvar"))
-      meths.input_mouse('left', 'press', '', 0, 0, 0)
-      eq('0 2 l 4', eval("g:testvar"))
-      meths.input_mouse('left', 'press', '', 0, 0, 0)
-      eq('0 3 l 4', eval("g:testvar"))
-      meths.input_mouse('left', 'press', '', 0, 0, 0)
-      eq('0 4 l 4', eval("g:testvar"))
-      meths.input_mouse('right', 'press', '', 0, 3, 0)
-      eq('0 1 r 7', eval("g:testvar"))
-      meths.input_mouse('right', 'press', '', 0, 3, 0)
-      eq('0 2 r 7', eval("g:testvar"))
-      meths.input_mouse('right', 'press', '', 0, 3, 0)
-      eq('0 3 r 7', eval("g:testvar"))
-      meths.input_mouse('right', 'press', '', 0, 3, 0)
-      eq('0 4 r 7', eval("g:testvar"))
-      command('set laststatus=2 winbar=%f')
-      command('let g:testvar=""')
-      -- Check that winbar click doesn't register as statuscolumn click
-      meths.input_mouse('right', 'press', '', 0, 0, 0)
-      eq('', eval("g:testvar"))
-      -- Check that statusline click doesn't register as statuscolumn click
-      meths.input_mouse('right', 'press', '', 0, 12, 0)
-      eq('', eval("g:testvar"))
-      -- Check that cmdline click doesn't register as statuscolumn click
-      meths.input_mouse('right', 'press', '', 0, 13, 0)
-      eq('', eval("g:testvar"))
+    describe('with mousemodel=' .. model, function()
+      before_each(function()
+        command('set mousemodel=' .. model)
+        exec([[
+          function! MyClickFunc(minwid, clicks, button, mods)
+            let g:testvar = printf("%d %d %s %d", a:minwid, a:clicks, a:button, getmousepos().line)
+            if a:mods !=# '    '
+              let g:testvar ..= '(' .. a:mods .. ')'
+            endif
+          endfunction
+          let g:testvar = ''
+        ]])
+      end)
+
+      it('clicks work with mousemodel=' .. model, function()
+        meths.set_option_value('statuscolumn', '%0@MyClickFunc@%=%l%T', {})
+        meths.input_mouse('left', 'press', '', 0, 0, 0)
+        eq('0 1 l 4', eval("g:testvar"))
+        meths.input_mouse('left', 'press', '', 0, 0, 0)
+        eq('0 2 l 4', eval("g:testvar"))
+        meths.input_mouse('left', 'press', '', 0, 0, 0)
+        eq('0 3 l 4', eval("g:testvar"))
+        meths.input_mouse('left', 'press', '', 0, 0, 0)
+        eq('0 4 l 4', eval("g:testvar"))
+        meths.input_mouse('right', 'press', '', 0, 3, 0)
+        eq('0 1 r 7', eval("g:testvar"))
+        meths.input_mouse('right', 'press', '', 0, 3, 0)
+        eq('0 2 r 7', eval("g:testvar"))
+        meths.input_mouse('right', 'press', '', 0, 3, 0)
+        eq('0 3 r 7', eval("g:testvar"))
+        meths.input_mouse('right', 'press', '', 0, 3, 0)
+        eq('0 4 r 7', eval("g:testvar"))
+        command('set laststatus=2 winbar=%f')
+        command('let g:testvar = ""')
+        -- Check that winbar click doesn't register as statuscolumn click
+        meths.input_mouse('right', 'press', '', 0, 0, 0)
+        eq('', eval("g:testvar"))
+        -- Check that statusline click doesn't register as statuscolumn click
+        meths.input_mouse('right', 'press', '', 0, 12, 0)
+        eq('', eval("g:testvar"))
+        -- Check that cmdline click doesn't register as statuscolumn click
+        meths.input_mouse('right', 'press', '', 0, 13, 0)
+        eq('', eval("g:testvar"))
+      end)
+
+      it('clicks and highlights work with control characters', function()
+        meths.set_option_value('statuscolumn', '\t%#NonText#\1%0@MyClickFunc@\t\1%T\t%##\1', {})
+        screen:expect{grid=[[
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}^aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+          {1:^I}{0:^A^I^A^I}{1:^A}aaaaa                                    |
+                                                               |
+        ]], attr_ids={
+          [0] = {foreground = Screen.colors.Blue, bold = true};  -- NonText
+          [1] = {foreground = Screen.colors.Brown};  -- LineNr
+        }}
+        meths.input_mouse('right', 'press', '', 0, 4, 3)
+        eq('', eval("g:testvar"))
+        meths.input_mouse('left', 'press', '', 0, 5, 8)
+        eq('', eval("g:testvar"))
+        meths.input_mouse('right', 'press', '', 0, 6, 4)
+        eq('0 1 r 10', eval("g:testvar"))
+        meths.input_mouse('left', 'press', '', 0, 7, 7)
+        eq('0 1 l 11', eval("g:testvar"))
+      end)
     end)
   end
 
-  it('click labels do not leak memory', function()
-    command([[
+  it('click labels do not leak memory #21878', function()
+    exec([[
       set laststatus=2
       setlocal statuscolumn=%0@MyClickFunc@abcd%T
       4vsplit
@@ -475,6 +587,18 @@ describe('statuscolumn', function()
       only
       redraw
     ]])
+  end)
+
+  it('click labels do not crash when initial width is 0 #24428', function()
+    exec([[
+      set nonumber
+      bwipe!
+      setlocal statuscolumn=abcd
+      redraw
+      setlocal statuscolumn=%0@MyClickFunc@abcd%T
+      redraw
+    ]])
+    assert_alive()
   end)
 
   it('works with foldcolumn', function()
@@ -601,6 +725,8 @@ describe('statuscolumn', function()
         end
         return vim.v.lnum .. '%=' .. sign
       end
+      vim.o.number = true
+      vim.o.numberwidth = 2
       vim.o.statuscolumn = "%!v:lua.StatusCol()"
     ]])
     command('sign place 1 line=2 name=sign')

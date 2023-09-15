@@ -1676,7 +1676,7 @@ int execute_cmd(exarg_T *eap, CmdParseInfo *cmdinfo, bool preview)
       && !(eap->cmdidx == CMD_file && *eap->arg == NUL)
       && !IS_USER_CMDIDX(eap->cmdidx)
       && curbuf_locked()) {
-    ERROR(_(e_cannot_edit_other_buf));
+    goto end;
   }
 
   correct_range(eap);
@@ -4835,12 +4835,9 @@ static void ex_stop(exarg_T *eap)
   if (!eap->forceit) {
     autowrite_all();
   }
-  apply_autocmds(EVENT_VIMSUSPEND, NULL, NULL, false, NULL);
-
+  may_trigger_vim_suspend_resume(true);
   ui_call_suspend();
   ui_flush();
-
-  apply_autocmds(EVENT_VIMRESUME, NULL, NULL, false, NULL);
 }
 
 /// ":exit", ":xit" and ":wq": Write file and quit the current window.
@@ -6864,12 +6861,10 @@ char *eval_vars(char *src, const char *srcstart, size_t *usedlen, linenr_T *lnum
       break;
 
     case SPEC_AFILE:  // file name for autocommand
-      if (autocmd_fname != NULL
-          && !path_is_absolute(autocmd_fname)
-          // For CmdlineEnter and related events, <afile> is not a path! #9348
-          && !strequal("/", autocmd_fname)) {
+      if (autocmd_fname != NULL && !autocmd_fname_full) {
         // Still need to turn the fname into a full path.  It was
         // postponed to avoid a delay when <afile> is not used.
+        autocmd_fname_full = true;
         result = FullName_save(autocmd_fname, false);
         // Copy into `autocmd_fname`, don't reassign it. #8165
         xstrlcpy(autocmd_fname, result, MAXPATHL);

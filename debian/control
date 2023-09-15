@@ -1,8 +1,8 @@
 Source: neovim
 Section: editors
 Priority: optional
-Maintainer: Debian Vim Maintainers <team+vim@tracker.debian.org>
-Uploaders: James McCoy <jamessan@debian.org>
+Maintainer: Harry Loong <xiangzelong@deepin.org> black-desk<chenlinxuan@deepin.org>
+Uploaders: Harry Loong <xiangzelong@deepin.org>
 Build-Depends:
  cmake (>= 3.10),
  debhelper-compat (= 13),
@@ -17,7 +17,7 @@ Build-Depends:
  libtree-sitter-dev (>= 0.20.8),
  libunibilium-dev,
  libuv1-dev,
- libvterm-dev (>= 0.1),
+ libvterm-dev (>= 0.3.3),
  locales <!nocheck>,
  lua-bitop,
  lua-busted <!nocheck>,

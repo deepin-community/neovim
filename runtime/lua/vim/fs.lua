@@ -345,8 +345,10 @@ function M.normalize(path, opts)
   end
 
   path = path:gsub('\\', '/'):gsub('/+', '/')
-
-  return path:sub(-1) == '/' and path:sub(1, -2) or path
+  if iswin and path:match('^%w:/$') then
+    return path
+  end
+  return (path:gsub('(.)/$', '%1'))
 end
 
 return M
