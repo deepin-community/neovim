@@ -27,7 +27,7 @@ Build-Depends:
  lua-luv-dev (>= 1.43.0),
  lua-mpack,
  lua-nvim (>= 0.2.4) <!nocheck>,
- luajit [amd64 arm64 hurd-i386 i386] (>= 2.1.0~beta3+git20220320),
+ luajit (>= 2.1.0~beta3+git20220320),
  lua5.1,
  ninja-build,
  pkg-config,
