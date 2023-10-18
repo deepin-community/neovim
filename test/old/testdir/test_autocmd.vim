@@ -4,6 +4,7 @@ source shared.vim
 source check.vim
 source term_util.vim
 source screendump.vim
+source vim9.vim
 source load.vim
 
 func s:cleanup_buffers() abort
@@ -98,6 +99,22 @@ if has('timers')
     call feedkeys("a\<C-X>", 'x!')
     call assert_equal(0, g:triggered)
     unlet g:triggered
+    au! CursorHoldI
+    set updatetime&
+  endfunc
+
+  func Test_cursorhold_insert_ctrl_g_U()
+    au CursorHoldI * :
+    set updatetime=20
+    new
+    call timer_start(100, { -> feedkeys("\<Left>foo\<Esc>", 't') })
+    call feedkeys("i()\<C-g>U", 'tx!')
+    sleep 200m
+    call assert_equal('(foo)', getline(1))
+    undo
+    call assert_equal('', getline(1))
+
+    bwipe!
     au! CursorHoldI
     set updatetime&
   endfunc
@@ -3414,6 +3431,20 @@ func Test_autocmd_vimgrep()
   augroup aucmd_vimgrep
     au!
   augroup END
+endfunc
+
+func Test_closing_autocmd_window()
+  let lines =<< trim END
+      edit Xa.txt
+      tabnew Xb.txt
+      autocmd BufEnter Xa.txt unhide 1
+      doautoall BufEnter
+  END
+  call CheckScriptFailure(lines, 'E814:')
+  au! BufEnter
+  only!
+  bwipe Xa.txt
+  bwipe Xb.txt
 endfunc
 
 func Test_bufwipeout_changes_window()

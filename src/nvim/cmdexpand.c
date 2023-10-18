@@ -616,14 +616,14 @@ static void redraw_wildmenu(expand_T *xp, int num_matches, char **matches, int m
 }
 
 /// Get the next or prev cmdline completion match. The index of the match is set
-/// in "p_findex"
-static char *get_next_or_prev_match(int mode, expand_T *xp, int *p_findex, char *orig_save)
+/// in "xp->xp_selected"
+static char *get_next_or_prev_match(int mode, expand_T *xp)
 {
   if (xp->xp_numfiles <= 0) {
     return NULL;
   }
 
-  int findex = *p_findex;
+  int findex = xp->xp_selected;
 
   if (mode == WILD_PREV) {
     if (findex == -1) {
@@ -677,14 +677,14 @@ static char *get_next_or_prev_match(int mode, expand_T *xp, int *p_findex, char 
 
   // When wrapping around, return the original string, set findex to -1.
   if (findex < 0) {
-    if (orig_save == NULL) {
+    if (xp->xp_orig == NULL) {
       findex = xp->xp_numfiles - 1;
     } else {
       findex = -1;
     }
   }
   if (findex >= xp->xp_numfiles) {
-    if (orig_save == NULL) {
+    if (xp->xp_orig == NULL) {
       findex = 0;
     } else {
       findex = -1;
@@ -696,9 +696,9 @@ static char *get_next_or_prev_match(int mode, expand_T *xp, int *p_findex, char 
   } else if (p_wmnu) {
     redraw_wildmenu(xp, xp->xp_numfiles, xp->xp_files, findex, cmd_showtail);
   }
-  *p_findex = findex;
+  xp->xp_selected = findex;
 
-  return xstrdup(findex == -1 ? orig_save : xp->xp_files[findex]);
+  return xstrdup(findex == -1 ? xp->xp_orig : xp->xp_files[findex]);
 }
 
 /// Start the command-line expansion and get the matches.
@@ -805,8 +805,8 @@ static char *find_longest_match(expand_T *xp, int options)
 /// Return NULL for failure.
 ///
 /// "orig" is the originally expanded string, copied to allocated memory.  It
-/// should either be kept in orig_save or freed.  When "mode" is WILD_NEXT or
-/// WILD_PREV "orig" should be NULL.
+/// should either be kept in "xp->xp_orig" or freed.  When "mode" is WILD_NEXT
+/// or WILD_PREV "orig" should be NULL.
 ///
 /// Results are cached in xp->xp_files and xp->xp_numfiles, except when "mode"
 /// is WILD_EXPAND_FREE or WILD_ALL.
@@ -841,48 +841,43 @@ static char *find_longest_match(expand_T *xp, int options)
 char *ExpandOne(expand_T *xp, char *str, char *orig, int options, int mode)
 {
   char *ss = NULL;
-  static int findex;                  // TODO(vim): Move into expand_T
-  static char *orig_save = NULL;      // kept value of orig
   int orig_saved = false;
 
   // first handle the case of using an old match
   if (mode == WILD_NEXT || mode == WILD_PREV
       || mode == WILD_PAGEUP || mode == WILD_PAGEDOWN
       || mode == WILD_PUM_WANT) {
-    return get_next_or_prev_match(mode, xp, &findex, orig_save);
+    return get_next_or_prev_match(mode, xp);
   }
 
   if (mode == WILD_CANCEL) {
-    ss = xstrdup(orig_save ? orig_save : "");
+    ss = xstrdup(xp->xp_orig ? xp->xp_orig : "");
   } else if (mode == WILD_APPLY) {
-    ss = xstrdup(findex == -1
-                 ? (orig_save ? orig_save : "")
-                 : xp->xp_files[findex]);
+    ss = xstrdup(xp->xp_selected == -1
+                 ? (xp->xp_orig ? xp->xp_orig : "")
+                 : xp->xp_files[xp->xp_selected]);
   }
 
   // free old names
   if (xp->xp_numfiles != -1 && mode != WILD_ALL && mode != WILD_LONGEST) {
     FreeWild(xp->xp_numfiles, xp->xp_files);
     xp->xp_numfiles = -1;
-    XFREE_CLEAR(orig_save);
+    XFREE_CLEAR(xp->xp_orig);
 
     // The entries from xp_files may be used in the PUM, remove it.
     if (compl_match_array != NULL) {
       cmdline_pum_remove();
     }
   }
-  // TODO(vim): Remove condition if "findex" is part of expand_T ?
-  if (mode != WILD_EXPAND_FREE && mode != WILD_ALL && mode != WILD_ALL_KEEP) {
-    findex = 0;
-  }
+  xp->xp_selected = 0;
 
   if (mode == WILD_FREE) {      // only release file name
     return NULL;
   }
 
   if (xp->xp_numfiles == -1 && mode != WILD_APPLY && mode != WILD_CANCEL) {
-    xfree(orig_save);
-    orig_save = orig;
+    xfree(xp->xp_orig);
+    xp->xp_orig = orig;
     orig_saved = true;
 
     ss = ExpandOne_start(mode, xp, str, options);
@@ -891,7 +886,7 @@ char *ExpandOne(expand_T *xp, char *str, char *orig, int options, int mode)
   // Find longest common part
   if (mode == WILD_LONGEST && xp->xp_numfiles > 0) {
     ss = find_longest_match(xp, options);
-    findex = -1;  // next p_wc gets first one
+    xp->xp_selected = -1;  // next p_wc gets first one
   }
 
   // Concatenate all matching names.  Unless interrupted, this can be slow
@@ -916,7 +911,7 @@ char *ExpandOne(expand_T *xp, char *str, char *orig, int options, int mode)
     ExpandCleanup(xp);
   }
 
-  // Free "orig" if it wasn't stored in "orig_save".
+  // Free "orig" if it wasn't stored in "xp->xp_orig".
   if (!orig_saved) {
     xfree(orig);
   }
@@ -940,6 +935,7 @@ void ExpandCleanup(expand_T *xp)
     FreeWild(xp->xp_numfiles, xp->xp_files);
     xp->xp_numfiles = -1;
   }
+  XFREE_CLEAR(xp->xp_orig);
 }
 
 /// Display one line of completion matches. Multiple matches are displayed in

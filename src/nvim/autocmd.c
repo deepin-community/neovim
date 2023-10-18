@@ -675,9 +675,9 @@ bool is_aucmd_win(win_T *win)
   return false;
 }
 
-// Return the event number for event name "start".
-// Return NUM_EVENTS if the event name was not found.
-// Return a pointer to the next event name in "end".
+/// Return the event number for event name "start".
+/// Return NUM_EVENTS if the event name was not found.
+/// Return a pointer to the next event name in "end".
 event_T event_name2nr(const char *start, char **end)
 {
   const char *p;
@@ -699,6 +699,18 @@ event_T event_name2nr(const char *start, char **end)
     return NUM_EVENTS;
   }
   return event_names[i].event;
+}
+
+/// Return the event number for event name "str".
+/// Return NUM_EVENTS if the event name was not found.
+event_T event_name2nr_str(String str)
+{
+  for (int i = 0; event_names[i].name != NULL; i++) {
+    if (str.size == event_names[i].len && STRNICMP(str.data, event_names[i].name, str.size) == 0) {
+      return event_names[i].event;
+    }
+  }
+  return NUM_EVENTS;
 }
 
 /// Return the name for event
@@ -1482,7 +1494,6 @@ void aucmd_restbuf(aco_save_T *aco)
   if (aco->use_aucmd_win_idx >= 0) {
     win_T *awp = aucmd_win[aco->use_aucmd_win_idx].auc_win;
 
-    curbuf->b_nwindows--;
     // Find "awp", it can't be closed, but it may be in another tab page.
     // Do not trigger autocommands here.
     block_autocmds();
@@ -1498,7 +1509,7 @@ void aucmd_restbuf(aco_save_T *aco)
       }
     }
 win_found:
-    ;
+    curbuf->b_nwindows--;
     const bool save_stop_insert_mode = stop_insert_mode;
     // May need to stop Insert mode if we were in a prompt buffer.
     leaving_window(curwin);

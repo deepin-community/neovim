@@ -110,7 +110,7 @@ set_default_buildtype()
 # version string, else they are combined with the result of `git describe`.
 set(NVIM_VERSION_MAJOR 0)
 set(NVIM_VERSION_MINOR 9)
-set(NVIM_VERSION_PATCH 2)
+set(NVIM_VERSION_PATCH 4)
 set(NVIM_VERSION_PRERELEASE "") # for package maintainers
 
 # API level
