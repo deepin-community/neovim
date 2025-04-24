@@ -93,6 +93,65 @@ func FillBuffer()
   endfor
 endfunc
 
+func Test_undotree_bufnr()
+  new
+  let buf1 = bufnr()
+
+  normal! Aabc
+  set ul=100
+
+  " Save undo tree without bufnr as ground truth for buffer 1
+  let d1 = undotree()
+
+  new
+  let buf2 = bufnr()
+
+  normal! Adef
+  set ul=100
+
+  normal! Aghi
+  set ul=100
+
+  " Save undo tree without bufnr as ground truth for buffer 2
+  let d2 = undotree()
+
+  " Check undotree() with bufnr argument
+  let d = undotree(buf1)
+  call assert_equal(d1, d)
+  call assert_notequal(d2, d)
+
+  let d = undotree(buf2)
+  call assert_notequal(d1, d)
+  call assert_equal(d2, d)
+
+  " Switch buffers and check again
+  wincmd p
+
+  let d = undotree(buf1)
+  call assert_equal(d1, d)
+
+  let d = undotree(buf2)
+  call assert_notequal(d1, d)
+  call assert_equal(d2, d)
+
+  " error cases
+  call assert_fails('call undotree(-1)', 'E158:')
+  call assert_fails('call undotree("nosuchbuf")', 'E158:')
+
+  " after creating a buffer nosuchbuf, undotree('nosuchbuf') should
+  " not error out
+  new nosuchbuf
+  let d = {'seq_last': 0, 'entries': [], 'time_cur': 0, 'save_last': 0, 'synced': 1, 'save_cur': 0, 'seq_cur': 0}
+  call assert_equal(d, undotree("nosuchbuf"))
+  " clean up
+  bw nosuchbuf
+
+  " Drop created windows
+  set ul&
+  new
+  only!
+endfunc
+
 func Test_global_local_undolevels()
   new one
   set undolevels=5
@@ -124,6 +183,11 @@ func Test_global_local_undolevels()
   new three
   setglobal ul=50
   call assert_equal(50, &g:undolevels)
+  call assert_equal(-123456, &l:undolevels)
+
+  " Resetting the local 'undolevels' value to use the global value
+  setlocal undolevels=5
+  setlocal undolevels<
   call assert_equal(-123456, &l:undolevels)
 
   " Drop created windows
@@ -335,6 +399,11 @@ endfunc
 
 func Test_undofile_earlier()
   throw 'Skipped: Nvim does not support test_settime()'
+  if has('win32')
+    " FIXME: This test is flaky on MS-Windows.
+    let g:test_is_flaky = 1
+  endif
+
   " Issue #1254
   " create undofile with timestamps older than Vim startup time.
   let t0 = localtime() - 43200
@@ -519,7 +588,7 @@ funct Test_undofile()
   endif
   call assert_equal('', undofile(''))
 
-  " Test undofile() with 'undodir' set to to an existing directory.
+  " Test undofile() with 'undodir' set to an existing directory.
   call mkdir('Xundodir')
   set undodir=Xundodir
   let cwd = getcwd()
@@ -799,6 +868,7 @@ func Test_undo_after_write()
 
   call StopVimInTerminal(buf)
   call delete('Xtestfile.txt')
+  call delete('.Xtestfile.txt.un~')
 endfunc
 
 func Test_undo_range_normal()

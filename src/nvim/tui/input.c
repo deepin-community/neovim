@@ -1,28 +1,25 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "klib/kvec.h"
 #include "nvim/api/private/defs.h"
 #include "nvim/api/private/helpers.h"
-#include "nvim/ascii.h"
-#include "nvim/charset.h"
-#include "nvim/event/defs.h"
-#include "nvim/log.h"
-#include "nvim/macros.h"
+#include "nvim/event/loop.h"
+#include "nvim/event/stream.h"
+#include "nvim/macros_defs.h"
 #include "nvim/main.h"
-#include "nvim/map.h"
+#include "nvim/map_defs.h"
 #include "nvim/memory.h"
-#include "nvim/option.h"
-#include "nvim/os/input.h"
+#include "nvim/option_vars.h"
 #include "nvim/os/os.h"
+#include "nvim/os/os_defs.h"
+#include "nvim/rbuffer.h"
+#include "nvim/strings.h"
 #include "nvim/tui/input.h"
 #include "nvim/tui/input_defs.h"
 #include "nvim/tui/tui.h"
-#include "nvim/types.h"
 #include "nvim/ui_client.h"
 #ifdef MSWIN
 # include "nvim/os/os_win_console.h"
@@ -30,10 +27,16 @@
 #include "nvim/event/rstream.h"
 #include "nvim/msgpack_rpc/channel.h"
 
+#define READ_STREAM_SIZE 0xfff
 #define KEY_BUFFER_SIZE 0xfff
 
+/// Size of libtermkey's internal input buffer. The buffer may grow larger than
+/// this when processing very long escape sequences, but will shrink back to
+/// this size afterward
+#define INPUT_BUFFER_SIZE 256
+
 static const struct kitty_key_map_entry {
-  KittyKey key;
+  int key;
   const char *name;
 } kitty_key_map_entry[] = {
   { KITTY_KEY_ESCAPE,              "Esc" },
@@ -115,7 +118,7 @@ static const struct kitty_key_map_entry {
   { KITTY_KEY_KP_BEGIN,            "kOrigin" },
 };
 
-static Map(KittyKey, cstr_t) kitty_key_map = MAP_INIT;
+static PMap(int) kitty_key_map = MAP_INIT;
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "tui/input.c.generated.h"
@@ -126,17 +129,13 @@ void tinput_init(TermInput *input, Loop *loop)
   input->loop = loop;
   input->paste = 0;
   input->in_fd = STDIN_FILENO;
-  input->waiting_for_bg_response = 0;
-  input->extkeys_type = kExtkeysNone;
-  // The main thread is waiting for the UI thread to call CONTINUE, so it can
-  // safely access global variables.
+  input->key_encoding = kKeyEncodingLegacy;
   input->ttimeout = (bool)p_ttimeout;
   input->ttimeoutlen = p_ttm;
   input->key_buffer = rbuffer_new(KEY_BUFFER_SIZE);
 
   for (size_t i = 0; i < ARRAY_SIZE(kitty_key_map_entry); i++) {
-    map_put(KittyKey, cstr_t)(&kitty_key_map, kitty_key_map_entry[i].key,
-                              kitty_key_map_entry[i].name);
+    pmap_put(int)(&kitty_key_map, kitty_key_map_entry[i].key, (ptr_t)kitty_key_map_entry[i].name);
   }
 
   input->in_fd = STDIN_FILENO;
@@ -148,6 +147,7 @@ void tinput_init(TermInput *input, Loop *loop)
 
   input->tk = termkey_new_abstract(term,
                                    TERMKEY_FLAG_UTF8 | TERMKEY_FLAG_NOSTART);
+  termkey_set_buffer_size(input->tk, INPUT_BUFFER_SIZE);
   termkey_hook_terminfo_getstr(input->tk, input->tk_ti_hook_fn, input);
   termkey_start(input->tk);
 
@@ -155,16 +155,18 @@ void tinput_init(TermInput *input, Loop *loop)
   termkey_set_canonflags(input->tk, curflags | TERMKEY_CANON_DELBS);
 
   // setup input handle
-  rstream_init_fd(loop, &input->read_stream, input->in_fd, 0xfff);
+  rstream_init_fd(loop, &input->read_stream, input->in_fd, READ_STREAM_SIZE);
+
   // initialize a timer handle for handling ESC with libtermkey
-  time_watcher_init(loop, &input->timer_handle, input);
+  uv_timer_init(&loop->uv, &input->timer_handle);
+  input->timer_handle.data = input;
 }
 
 void tinput_destroy(TermInput *input)
 {
-  map_destroy(KittyKey, cstr_t)(&kitty_key_map);
+  map_destroy(int, &kitty_key_map);
   rbuffer_free(input->key_buffer);
-  time_watcher_close(&input->timer_handle, NULL);
+  uv_close((uv_handle_t *)&input->timer_handle, NULL);
   stream_close(&input->read_stream, NULL, NULL);
   termkey_destroy(input->tk);
 }
@@ -177,7 +179,7 @@ void tinput_start(TermInput *input)
 void tinput_stop(TermInput *input)
 {
   rstream_stop(&input->read_stream);
-  time_watcher_stop(&input->timer_handle);
+  uv_timer_stop(&input->timer_handle);
 }
 
 static void tinput_done_event(void **argv)
@@ -237,13 +239,13 @@ static size_t handle_termkey_modifiers(TermKeyKey *key, char *buf, size_t buflen
 {
   size_t len = 0;
   if (key->modifiers & TERMKEY_KEYMOD_SHIFT) {  // Shift
-    len += (size_t)snprintf(buf + len, sizeof(buf) - len, "S-");
+    len += (size_t)snprintf(buf + len, buflen - len, "S-");
   }
   if (key->modifiers & TERMKEY_KEYMOD_ALT) {  // Alt
-    len += (size_t)snprintf(buf + len, sizeof(buf) - len, "A-");
+    len += (size_t)snprintf(buf + len, buflen - len, "A-");
   }
   if (key->modifiers & TERMKEY_KEYMOD_CTRL) {  // Ctrl
-    len += (size_t)snprintf(buf + len, sizeof(buf) - len, "C-");
+    len += (size_t)snprintf(buf + len, buflen - len, "C-");
   }
   assert(len < buflen);
   return len;
@@ -269,7 +271,7 @@ static size_t handle_more_modifiers(TermKeyKey *key, char *buf, size_t buflen)
 
 static void handle_kitty_key_protocol(TermInput *input, TermKeyKey *key)
 {
-  const char *name = map_get(KittyKey, cstr_t)(&kitty_key_map, (KittyKey)key->code.codepoint);
+  const char *name = pmap_get(int)(&kitty_key_map, (int)key->code.codepoint);
   if (name) {
     char buf[64];
     size_t len = 0;
@@ -289,7 +291,7 @@ static void forward_simple_utf8(TermInput *input, TermKeyKey *key)
   char *ptr = key->utf8;
 
   if (key->code.codepoint >= 0xE000 && key->code.codepoint <= 0xF8FF
-      && map_has(KittyKey, cstr_t)(&kitty_key_map, (KittyKey)key->code.codepoint)) {
+      && map_has(int, &kitty_key_map, (int)key->code.codepoint)) {
     handle_kitty_key_protocol(input, key);
     return;
   }
@@ -299,10 +301,10 @@ static void forward_simple_utf8(TermInput *input, TermKeyKey *key)
     } else {
       buf[len++] = *ptr;
     }
+    assert(len < sizeof(buf));
     ptr++;
   }
 
-  assert(len < sizeof(buf));
   tinput_enqueue(input, buf, len);
 }
 
@@ -319,8 +321,7 @@ static void forward_modified_utf8(TermInput *input, TermKeyKey *key)
   } else {
     assert(key->modifiers);
     if (key->code.codepoint >= 0xE000 && key->code.codepoint <= 0xF8FF
-        && map_has(KittyKey, cstr_t)(&kitty_key_map,
-                                     (KittyKey)key->code.codepoint)) {
+        && map_has(int, &kitty_key_map, (int)key->code.codepoint)) {
       handle_kitty_key_protocol(input, key);
       return;
     }
@@ -369,14 +370,6 @@ static void forward_mouse_event(TermInput *input, TermKeyKey *key)
     // For drag and release, we can reasonably infer the button to be the last
     // pressed one.
     button = last_pressed_button;
-  }
-
-  if (ev == TERMKEY_MOUSE_UNKNOWN && !(key->code.mouse[0] & 0x20)) {
-    int code = key->code.mouse[0] & ~0x3c;
-    if (code == 66 || code == 67) {
-      ev = TERMKEY_MOUSE_PRESS;
-      button = code - 60;
-    }
   }
 
   if ((button == 0 && ev != TERMKEY_MOUSE_RELEASE)
@@ -449,39 +442,12 @@ static void tk_getkeys(TermInput *input, bool force)
       forward_modified_utf8(input, &key);
     } else if (key.type == TERMKEY_TYPE_MOUSE) {
       forward_mouse_event(input, &key);
+    } else if (key.type == TERMKEY_TYPE_MODEREPORT) {
+      handle_modereport(input, &key);
     } else if (key.type == TERMKEY_TYPE_UNKNOWN_CSI) {
-      // There is no specified limit on the number of parameters a CSI sequence can contain, so just
-      // allocate enough space for a large upper bound
-      long args[16];
-      size_t nargs = 16;
-      unsigned long cmd;
-      if (termkey_interpret_csi(input->tk, &key, args, &nargs, &cmd) == TERMKEY_RES_KEY) {
-        uint8_t intermediate = (cmd >> 16) & 0xFF;
-        uint8_t initial = (cmd >> 8) & 0xFF;
-        uint8_t command = cmd & 0xFF;
-
-        // Currently unused
-        (void)intermediate;
-
-        if (input->waiting_for_csiu_response > 0) {
-          if (initial == '?' && command == 'u') {
-            // The first (and only) argument contains the current progressive
-            // enhancement flags. Only enable CSI u mode if the first bit
-            // (disambiguate escape codes) is not already set
-            if (nargs > 0 && (args[0] & 0x1) == 0) {
-              input->extkeys_type = kExtkeysCSIu;
-            } else {
-              input->extkeys_type = kExtkeysNone;
-            }
-          } else if (initial == '?' && command == 'c') {
-            // Received Primary Device Attributes response
-            input->waiting_for_csiu_response = 0;
-            tui_enable_extkeys(input->tui_data);
-          } else {
-            input->waiting_for_csiu_response--;
-          }
-        }
-      }
+      handle_unknown_csi(input, &key);
+    } else if (key.type == TERMKEY_TYPE_OSC || key.type == TERMKEY_TYPE_DCS) {
+      handle_term_response(input, &key);
     }
   }
 
@@ -494,17 +460,16 @@ static void tk_getkeys(TermInput *input, bool force)
 
   if (input->ttimeout && input->ttimeoutlen >= 0) {
     // Stop the current timer if already running
-    time_watcher_stop(&input->timer_handle);
-    time_watcher_start(&input->timer_handle, tinput_timer_cb,
-                       (uint64_t)input->ttimeoutlen, 0);
+    uv_timer_stop(&input->timer_handle);
+    uv_timer_start(&input->timer_handle, tinput_timer_cb, (uint64_t)input->ttimeoutlen, 0);
   } else {
     tk_getkeys(input, true);
   }
 }
 
-static void tinput_timer_cb(TimeWatcher *watcher, void *data)
+static void tinput_timer_cb(uv_timer_t *handle)
 {
-  TermInput *input = (TermInput *)data;
+  TermInput *input = handle->data;
   // If the raw buffer is not empty, process the raw buffer first because it is
   // processing an incomplete bracketed paster sequence.
   if (rbuffer_size(input->read_stream.buffer)) {
@@ -517,8 +482,8 @@ static void tinput_timer_cb(TimeWatcher *watcher, void *data)
 /// Handle focus events.
 ///
 /// If the upcoming sequence of bytes in the input stream matches the termcode
-/// for "focus gained" or "focus lost", consume that sequence and schedule an
-/// event on the main loop.
+/// for "focus gained" or "focus lost", consume that sequence and send an event
+/// to Nvim server.
 ///
 /// @param input the input stream
 /// @return true iff handle_focus_event consumed some input
@@ -580,124 +545,123 @@ static HandleState handle_bracketed_paste(TermInput *input)
   return kNotApplicable;
 }
 
-static void set_bg(char *bgvalue)
+/// Handle an OSC or DCS response sequence from the terminal.
+static void handle_term_response(TermInput *input, const TermKeyKey *key)
+  FUNC_ATTR_NONNULL_ALL
 {
-  if (ui_client_attached) {
+  const char *str = NULL;
+  if (termkey_interpret_string(input->tk, key, &str) == TERMKEY_RES_KEY) {
+    assert(str != NULL);
+
+    // Handle DECRQSS SGR response for the query from tui_query_extended_underline().
+    // Some terminals include "0" in the attribute list unconditionally; others don't.
+    if (key->type == TERMKEY_TYPE_DCS
+        && (strnequal(str, S_LEN("1$r4:3m")) || strnequal(str, S_LEN("1$r0;4:3m")))) {
+      tui_enable_extended_underline(input->tui_data);
+    }
+
+    // Send an event to nvim core. This will update the v:termresponse variable
+    // and fire the TermResponse event
     MAXSIZE_TEMP_ARRAY(args, 2);
-    ADD_C(args, STRING_OBJ(cstr_as_string("term_background")));
-    ADD_C(args, STRING_OBJ(cstr_as_string(bgvalue)));
-    rpc_send_event(ui_client_channel_id, "nvim_ui_set_option", args);
+    ADD_C(args, STATIC_CSTR_AS_OBJ("termresponse"));
+
+    // libtermkey strips the OSC/DCS bytes from the response. We add it back in
+    // so that downstream consumers of v:termresponse can differentiate between
+    // the two.
+    StringBuilder response = KV_INITIAL_VALUE;
+    switch (key->type) {
+    case TERMKEY_TYPE_OSC:
+      kv_printf(response, "\x1b]%s", str);
+      break;
+    case TERMKEY_TYPE_DCS:
+      kv_printf(response, "\x1bP%s", str);
+      break;
+    default:
+      // Key type already checked for OSC/DCS in termkey_interpret_string
+      UNREACHABLE;
+    }
+
+    ADD_C(args, STRING_OBJ(cbuf_as_string(response.items, response.size)));
+    rpc_send_event(ui_client_channel_id, "nvim_ui_term_event", args);
+    kv_destroy(response);
   }
 }
 
-// During startup, tui.c requests the background color (see `ext.get_bg`).
-//
-// Here in input.c, we watch for the terminal response `\e]11;COLOR\a`.  If
-// COLOR matches `rgb:RRRR/GGGG/BBBB/AAAA` where R, G, B, and A are hex digits,
-// then compute the luminance[1] of the RGB color and classify it as light/dark
-// accordingly. Note that the color components may have anywhere from one to
-// four hex digits, and require scaling accordingly as values out of 4, 8, 12,
-// or 16 bits. Also note the A(lpha) component is optional, and is parsed but
-// ignored in the calculations.
-//
-// [1] https://en.wikipedia.org/wiki/Luma_%28video%29
-HandleState handle_background_color(TermInput *input)
+/// Handle a mode report (DECRPM) sequence from the terminal.
+static void handle_modereport(TermInput *input, const TermKeyKey *key)
+  FUNC_ATTR_NONNULL_ALL
 {
-  if (input->waiting_for_bg_response <= 0) {
-    return kNotApplicable;
+  int initial;
+  int mode;
+  int value;
+  if (termkey_interpret_modereport(input->tk, key, &initial, &mode, &value) == TERMKEY_RES_KEY) {
+    (void)initial;  // Unused
+    tui_handle_term_mode(input->tui_data, (TermMode)mode, (TermModeState)value);
   }
-  size_t count = 0;
-  size_t component = 0;
-  size_t header_size = 0;
-  size_t num_components = 0;
-  size_t buf_size = rbuffer_size(input->read_stream.buffer);
-  uint16_t rgb[] = { 0, 0, 0 };
-  uint16_t rgb_max[] = { 0, 0, 0 };
-  bool eat_backslash = false;
-  bool done = false;
-  bool bad = false;
-  if (buf_size >= 9
-      && !rbuffer_cmp(input->read_stream.buffer, "\x1b]11;rgb:", 9)) {
-    header_size = 9;
-    num_components = 3;
-  } else if (buf_size >= 10
-             && !rbuffer_cmp(input->read_stream.buffer, "\x1b]11;rgba:", 10)) {
-    header_size = 10;
-    num_components = 4;
-  } else if (buf_size < 10
-             && !rbuffer_cmp(input->read_stream.buffer,
-                             "\x1b]11;rgba", buf_size)) {
-    // An incomplete sequence was found, waiting for the next input.
-    return kIncomplete;
-  } else {
-    input->waiting_for_bg_response--;
-    if (input->waiting_for_bg_response == 0) {
-      DLOG("did not get a response for terminal background query");
-    }
-    return kNotApplicable;
+}
+
+/// Handle a CSI sequence from the terminal that is unrecognized by libtermkey.
+static void handle_unknown_csi(TermInput *input, const TermKeyKey *key)
+  FUNC_ATTR_NONNULL_ALL
+{
+  // There is no specified limit on the number of parameters a CSI sequence can
+  // contain, so just allocate enough space for a large upper bound
+  long args[16];
+  size_t nargs = 16;
+  unsigned long cmd;
+  if (termkey_interpret_csi(input->tk, key, args, &nargs, &cmd) != TERMKEY_RES_KEY) {
+    return;
   }
-  RBUFFER_EACH(input->read_stream.buffer, c, i) {
-    count = i + 1;
-    // Skip the header.
-    if (i < header_size) {
-      continue;
-    }
-    if (eat_backslash) {
-      done = true;
-      break;
-    } else if (c == '\x07') {
-      done = true;
-      break;
-    } else if (c == '\x1b') {
-      eat_backslash = true;
-    } else if (bad) {
-      // ignore
-    } else if ((c == '/') && (++component < num_components)) {
-      // work done in condition
-    } else if (ascii_isxdigit(c)) {
-      if (component < 3 && rgb_max[component] != 0xffff) {
-        rgb_max[component] = (uint16_t)((rgb_max[component] << 4) | 0xf);
-        rgb[component] = (uint16_t)((rgb[component] << 4) | hex2nr(c));
+
+  uint8_t intermediate = (cmd >> 16) & 0xFF;
+  uint8_t initial = (cmd >> 8) & 0xFF;
+  uint8_t command = cmd & 0xFF;
+
+  // Currently unused
+  (void)intermediate;
+
+  switch (command) {
+  case 'u':
+    switch (initial) {
+    case '?':
+      // Kitty keyboard protocol query response.
+      if (input->waiting_for_kkp_response) {
+        input->waiting_for_kkp_response = false;
+        input->key_encoding = kKeyEncodingKitty;
+        tui_set_key_encoding(input->tui_data);
       }
-    } else {
-      bad = true;
+
+      break;
     }
+    break;
+  case 'c':
+    switch (initial) {
+    case '?':
+      // Primary Device Attributes response
+      if (input->waiting_for_kkp_response) {
+        input->waiting_for_kkp_response = false;
+
+        // Enable the fallback key encoding (if any)
+        tui_set_key_encoding(input->tui_data);
+      }
+
+      break;
+    }
+    break;
+  default:
+    break;
   }
-  if (done && !bad && rgb_max[0] && rgb_max[1] && rgb_max[2]) {
-    rbuffer_consumed(input->read_stream.buffer, count);
-    double r = (double)rgb[0] / (double)rgb_max[0];
-    double g = (double)rgb[1] / (double)rgb_max[1];
-    double b = (double)rgb[2] / (double)rgb_max[2];
-    double luminance = (0.299 * r) + (0.587 * g) + (0.114 * b);  // CCIR 601
-    bool is_dark = luminance < 0.5;
-    char *bgvalue = is_dark ? "dark" : "light";
-    DLOG("bg response: %s", bgvalue);
-    ui_client_bg_response = is_dark ? kTrue : kFalse;
-    set_bg(bgvalue);
-    input->waiting_for_bg_response = 0;
-  } else if (!done && !bad) {
-    // An incomplete sequence was found, waiting for the next input.
-    return kIncomplete;
-  } else {
-    input->waiting_for_bg_response = 0;
-    rbuffer_consumed(input->read_stream.buffer, count);
-    DLOG("failed to parse bg response");
-    return kNotApplicable;
-  }
-  return kComplete;
 }
 
 static void handle_raw_buffer(TermInput *input, bool force)
 {
   HandleState is_paste = kNotApplicable;
-  HandleState is_bc = kNotApplicable;
 
   do {
     if (!force
         && (handle_focus_event(input)
-            || (is_paste = handle_bracketed_paste(input)) != kNotApplicable
-            || (is_bc = handle_background_color(input)) != kNotApplicable)) {
-      if (is_paste == kIncomplete || is_bc == kIncomplete) {
+            || (is_paste = handle_bracketed_paste(input)) != kNotApplicable)) {
+      if (is_paste == kIncomplete) {
         // Wait for the next input, leaving it in the raw buffer due to an
         // incomplete sequence.
         return;
@@ -733,20 +697,44 @@ static void handle_raw_buffer(TermInput *input, bool force)
     }
     // Push through libtermkey (translates to "<keycode>" strings, etc.).
     RBUFFER_UNTIL_EMPTY(input->read_stream.buffer, ptr, len) {
-      size_t consumed = termkey_push_bytes(input->tk, ptr, MIN(count, len));
-      // termkey_push_bytes can return (size_t)-1, so it is possible that
-      // `consumed > input->read_stream.buffer->size`, but since tk_getkeys is
-      // called soon, it shouldn't happen.
-      assert(consumed <= input->read_stream.buffer->size);
+      const size_t size = MIN(count, len);
+      if (size > termkey_get_buffer_remaining(input->tk)) {
+        // We are processing a very long escape sequence. Increase termkey's
+        // internal buffer size. We don't handle out of memory situations so
+        // abort if it fails
+        const size_t delta = size - termkey_get_buffer_remaining(input->tk);
+        const size_t bufsize = termkey_get_buffer_size(input->tk);
+        if (!termkey_set_buffer_size(input->tk, MAX(bufsize + delta, bufsize * 2))) {
+          abort();
+        }
+      }
+
+      size_t consumed = termkey_push_bytes(input->tk, ptr, size);
+
+      // We resize termkey's buffer when it runs out of space, so this should
+      // never happen
+      assert(consumed <= rbuffer_size(input->read_stream.buffer));
       rbuffer_consumed(input->read_stream.buffer, consumed);
-      // Process the keys now: there is no guarantee `count` will
-      // fit into libtermkey's input buffer.
+
+      // Process the input buffer now for any keys
       tk_getkeys(input, false);
+
       if (!(count -= consumed)) {
         break;
       }
     }
   } while (rbuffer_size(input->read_stream.buffer));
+
+  const size_t tk_size = termkey_get_buffer_size(input->tk);
+  const size_t tk_remaining = termkey_get_buffer_remaining(input->tk);
+  const size_t tk_count = tk_size - tk_remaining;
+  if (tk_count < INPUT_BUFFER_SIZE && tk_size > INPUT_BUFFER_SIZE) {
+    // If the termkey buffer was resized to handle a large input sequence then
+    // shrink it back down to its original size.
+    if (!termkey_set_buffer_size(input->tk, INPUT_BUFFER_SIZE)) {
+      abort();
+    }
+  }
 }
 
 static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_, void *data, bool eof)
@@ -754,7 +742,7 @@ static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_, void *da
   TermInput *input = data;
 
   if (eof) {
-    loop_schedule_fast(&main_loop, event_create(tinput_done_event, 0));
+    loop_schedule_fast(&main_loop, event_create(tinput_done_event, NULL));
     return;
   }
 
@@ -766,11 +754,11 @@ static void tinput_read_cb(Stream *stream, RBuffer *buf, size_t count_, void *da
   if (rbuffer_size(input->read_stream.buffer)) {
     // If 'ttimeout' is not set, start the timer with a timeout of 0 to process
     // the next input.
-    long ms = input->ttimeout ?
-              (input->ttimeoutlen >= 0 ? input->ttimeoutlen : 0) : 0;
+    int64_t ms = input->ttimeout
+                 ? (input->ttimeoutlen >= 0 ? input->ttimeoutlen : 0) : 0;
     // Stop the current timer if already running
-    time_watcher_stop(&input->timer_handle);
-    time_watcher_start(&input->timer_handle, tinput_timer_cb, (uint32_t)ms, 0);
+    uv_timer_stop(&input->timer_handle);
+    uv_timer_start(&input->timer_handle, tinput_timer_cb, (uint32_t)ms, 0);
     return;
   }
 

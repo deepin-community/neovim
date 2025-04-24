@@ -1,6 +1,9 @@
 " test execute()
 
 source view_util.vim
+source check.vim
+source vim9.vim
+source term_util.vim
 
 func NestedEval()
   let nested = execute('echo "nested\nlines"')
@@ -31,7 +34,6 @@ func Test_execute_string()
   call assert_equal("\nthat", evaled)
 
   call assert_fails('call execute("doesnotexist")', 'E492:')
-  call assert_fails('call execute(3.4)', 'E806:')
 " Nvim supports execute('... :redir ...'), so this test is intentionally
 " disabled.
 "  call assert_fails('call execute("call NestedRedir()")', 'E930:')
@@ -40,9 +42,11 @@ func Test_execute_string()
   call assert_equal("\nsomething", execute('echo "something"', 'silent'))
   call assert_equal("\nsomething", execute('echo "something"', 'silent!'))
   call assert_equal("", execute('burp', 'silent!'))
-  call assert_fails('call execute("echo \"x\"", 3.4)', 'E806:')
-
-  call assert_equal("", execute(""))
+  if has('float')
+    call assert_fails('call execute(3.4)', 'E492:')
+    call assert_equal("\nx", execute("echo \"x\"", 3.4))
+    call CheckDefExecAndScriptFailure(['execute("echo \"x\"", 3.4)'], 'E806:')
+  endif
 endfunc
 
 func Test_execute_list()
@@ -53,7 +57,6 @@ func Test_execute_list()
   call assert_equal("\n0\n1\n2\n3", execute(l))
 
   call assert_equal("", execute([]))
-  call assert_equal("", execute(v:_null_list))
 endfunc
 
 func Test_execute_does_not_change_col()
@@ -122,6 +125,8 @@ func Test_win_execute()
 endfunc
 
 func Test_win_execute_update_ruler()
+  CheckFeature quickfix
+
   enew
   call setline(1, range(500))
   20
@@ -171,6 +176,64 @@ func Test_win_execute_visual_redraw()
 
   bwipe!
   bwipe!
+endfunc
+
+func Test_win_execute_on_startup()
+  CheckRunVimInTerminal
+
+  let lines =<< trim END
+      vim9script
+      [repeat('x', &columns)]->writefile('Xfile1')
+      silent tabedit Xfile2
+      var id = win_getid()
+      silent tabedit Xfile3
+      autocmd VimEnter * win_execute(id, 'close')
+  END
+  call writefile(lines, 'XwinExecute')
+  let buf = RunVimInTerminal('-p Xfile1 -Nu XwinExecute', {})
+
+  " this was crashing on exit with EXITFREE defined
+  call StopVimInTerminal(buf)
+
+  call delete('XwinExecute')
+  call delete('Xfile1')
+endfunc
+
+func Test_execute_cmd_with_null()
+  call assert_equal("", execute(v:_null_string))
+  call assert_equal("", execute(v:_null_list))
+  call assert_fails('call execute(v:_null_dict)', 'E731:')
+  call assert_fails('call execute(v:_null_blob)', 'E976:')
+  " Nvim doesn't have null partials
+  " call assert_fails('call execute(test_null_partial())','E729:')
+  if has('job')
+    call assert_fails('call execute(test_null_job())', 'E908:')
+    call assert_fails('call execute(test_null_channel())', 'E908:')
+  endif
+endfunc
+
+func Test_win_execute_tabpagewinnr()
+  belowright split
+  tab split
+  belowright split
+  call assert_equal(2, tabpagewinnr(1))
+
+  tabprevious
+  wincmd p
+  call assert_equal(1, tabpagenr())
+  call assert_equal(1, tabpagewinnr(1))
+  call assert_equal(2, tabpagewinnr(2))
+
+  call win_execute(win_getid(1, 2),
+        \      'call assert_equal(2, tabpagenr())'
+        \ .. '| call assert_equal(1, tabpagewinnr(1))'
+        \ .. '| call assert_equal(1, tabpagewinnr(2))')
+
+  call assert_equal(1, tabpagenr())
+  call assert_equal(1, tabpagewinnr(1))
+  call assert_equal(2, tabpagewinnr(2))
+
+  %bwipe!
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

@@ -1,6 +1,11 @@
 " Test for Select-mode
 
+source check.vim
+" CheckNotGui
+" CheckUnix
+
 source shared.vim
+source mouse.vim
 
 " Test for select mode
 func Test_selectmode_basic()
@@ -155,6 +160,106 @@ func Test_select_mode_map()
   close!
 endfunc
 
+" Test double/triple/quadruple click to start 'select' mode
+func Test_term_mouse_multiple_clicks_to_select_mode()
+  let save_mouse = &mouse
+  let save_term = &term
+  " let save_ttymouse = &ttymouse
+  " call test_override('no_query_mouse', 1)
+
+  " 'mousetime' must be sufficiently large, or else the test is flaky when
+  " using a ssh connection with X forwarding; i.e. ssh -X.
+  " set mouse=a term=xterm mousetime=1000
+  set mouse=a mousetime=1000
+  set selectmode=mouse
+  new
+
+  for ttymouse_val in g:Ttymouse_values + g:Ttymouse_dec
+    let msg = 'ttymouse=' .. ttymouse_val
+    " exe 'set ttymouse=' .. ttymouse_val
+
+    " Single-click and drag should 'select' the characters
+    call setline(1, ['foo [foo bar] foo', 'foo'])
+    call MouseLeftClick(1, 3)
+    call assert_equal(0, getcharmod(), msg)
+    call MouseLeftDrag(1, 13)
+    call MouseLeftRelease(1, 13)
+    norm! o
+    call assert_equal(['foo foo', 'foo'], getline(1, '$'), msg)
+
+    " Double-click on word should visually 'select' the word.
+    call setline(1, ['foo [foo bar] foo', 'foo'])
+    call MouseLeftClick(1, 2)
+    call assert_equal(0, getcharmod(), msg)
+    call MouseLeftRelease(1, 2)
+    call MouseLeftClick(1, 2)
+    call assert_equal(32, getcharmod(), msg) " double-click
+    call MouseLeftRelease(1, 2)
+    call assert_equal('s', mode(), msg)
+    norm! bar
+    call assert_equal(['bar [foo bar] foo', 'foo'], getline(1, '$'), msg)
+
+    " Double-click on opening square bracket should visually
+    " 'select' the whole [foo bar].
+    call setline(1, ['foo [foo bar] foo', 'foo'])
+    call MouseLeftClick(1, 5)
+    call assert_equal(0, getcharmod(), msg)
+    call MouseLeftRelease(1, 5)
+    call MouseLeftClick(1, 5)
+    call assert_equal(32, getcharmod(), msg) " double-click
+    call MouseLeftRelease(1, 5)
+    call assert_equal('s', mode(), msg)
+    norm! bar
+    call assert_equal(['foo bar foo', 'foo'], getline(1, '$'), msg)
+
+    " To guarantee that the next click is not counted as a triple click
+    call MouseRightClick(1, 1)
+    call MouseRightRelease(1, 1)
+
+    " Triple-click should visually 'select' the whole line.
+    call setline(1, ['foo [foo bar] foo', 'foo'])
+    call MouseLeftClick(1, 3)
+    call assert_equal(0, getcharmod(), msg)
+    call MouseLeftRelease(1, 3)
+    call MouseLeftClick(1, 3)
+    call assert_equal(32, getcharmod(), msg) " double-click
+    call MouseLeftRelease(1, 3)
+    call MouseLeftClick(1, 3)
+    call assert_equal(64, getcharmod(), msg) " triple-click
+    call MouseLeftRelease(1, 3)
+    call assert_equal('S', mode(), msg)
+    norm! baz
+    call assert_equal(['bazfoo'], getline(1, '$'), msg)
+
+    " Quadruple-click should start visual block 'select'.
+    call setline(1, ['aaaaaa', 'bbbbbb'])
+    call MouseLeftClick(1, 2)
+    call assert_equal(0, getcharmod(), msg)
+    call MouseLeftRelease(1, 2)
+    call MouseLeftClick(1, 2)
+    call assert_equal(32, getcharmod(), msg) " double-click
+    call MouseLeftRelease(1, 2)
+    call MouseLeftClick(1, 2)
+    call assert_equal(64, getcharmod(), msg) " triple-click
+    call MouseLeftRelease(1, 2)
+    call MouseLeftClick(1, 2)
+    call assert_equal(96, getcharmod(), msg) " quadruple-click
+    call MouseLeftDrag(2, 4)
+    call MouseLeftRelease(2, 4)
+    call assert_equal("\<c-s>", mode(), msg)
+    norm! x
+    call assert_equal(['axaa', 'bxbb'], getline(1, '$'), msg)
+  endfor
+
+  let &mouse = save_mouse
+  " let &term = save_term
+  " let &ttymouse = save_ttymouse
+  set mousetime&
+  set selectmode&
+  " call test_override('no_query_mouse', 0)
+  bwipe!
+endfunc
+
 " Test for selecting a register with CTRL-R
 func Test_selectmode_register()
   new
@@ -205,6 +310,33 @@ func Test_selectmode_register()
   call assert_equal('f', getreg('a'))
 
   bw!
+endfunc
+
+func Test_ins_ctrl_o_in_insert_mode_resets_selectmode()
+  new
+  " ctrl-o in insert mode resets restart_VIsual_select
+  call setline(1, 'abcdef')
+  call cursor(1, 1)
+  exe "norm! \<c-v>\<c-g>\<c-o>c\<c-o>\<c-v>\<right>\<right>IABC"
+  call assert_equal('ABCbcdef', getline(1))
+
+  bwipe!
+endfunc
+
+" Test that an :lmap mapping for a printable keypad key is applied when typing
+" it in Select mode.
+func Test_selectmode_keypad_lmap()
+  new
+  lnoremap <buffer> <kPoint> ???
+  lnoremap <buffer> <kEnter> !!!
+  setlocal iminsert=1
+  call setline(1, 'abcdef')
+  call feedkeys("gH\<kPoint>\<Esc>", 'tx')
+  call assert_equal(['???'], getline(1, '$'))
+  call feedkeys("gH\<kEnter>\<Esc>", 'tx')
+  call assert_equal(['!!!'], getline(1, '$'))
+
+  bwipe!
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

@@ -1,7 +1,4 @@
-# fixtests-check-for-eof-on-exit-of-nvim-p.patch
-# testmksession_spec-use-bwipeout-instead-.patch
-# test-deal-with-rpc-call-causing-nvim-to-.patch
-# testlet_spec-increase-expect_exit-timeou.patch
-# testjob_spec-accept-alternate-messages-f.patch
-# fixtreesitter-validate-language-name.patch
-# fixtest-adapt-test-to-release-0.8.patch
+testunitstrings_spec-provide-context-for.patch
+testunitstrings_spec-use-correct-type-fo.patch
+fixvim_snprintf-special-case-handling-of.patch
+0004-Skip-flaky-tests-in-test_stat.vim.patch

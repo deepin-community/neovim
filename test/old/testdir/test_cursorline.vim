@@ -136,61 +136,45 @@ func Test_cursorline_screenline()
   call writefile(lines, filename)
   " basic test
   let buf = RunVimInTerminal('-S '. filename, #{rows: 20})
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_1', {})
   call term_sendkeys(buf, "fagj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_2', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_3', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_4', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_5', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_6', {})
   " test with set list and cursorlineopt containing number
   call term_sendkeys(buf, "gg0")
   call term_sendkeys(buf, ":set list cursorlineopt+=number listchars=space:-\<cr>")
   call VerifyScreenDump(buf, 'Test_'. filename. '_7', {})
   call term_sendkeys(buf, "fagj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_8', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_9', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_10', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_11', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_12', {})
   if exists("+foldcolumn") && exists("+signcolumn") && exists("+breakindent")
-    " test with set foldcolumn signcoloumn and breakindent
+    " test with set foldcolumn signcolumn and breakindent
     call term_sendkeys(buf, "gg0")
     call term_sendkeys(buf, ":set breakindent foldcolumn=2 signcolumn=yes\<cr>")
     call VerifyScreenDump(buf, 'Test_'. filename. '_13', {})
     call term_sendkeys(buf, "fagj")
-    call term_wait(buf)
     call VerifyScreenDump(buf, 'Test_'. filename. '_14', {})
     call term_sendkeys(buf, "gj")
-    call term_wait(buf)
     call VerifyScreenDump(buf, 'Test_'. filename. '_15', {})
     call term_sendkeys(buf, "gj")
-    call term_wait(buf)
     call VerifyScreenDump(buf, 'Test_'. filename. '_16', {})
     call term_sendkeys(buf, "gj")
-    call term_wait(buf)
     call VerifyScreenDump(buf, 'Test_'. filename. '_17', {})
     call term_sendkeys(buf, "gj")
-    call term_wait(buf)
     call VerifyScreenDump(buf, 'Test_'. filename. '_18', {})
     call term_sendkeys(buf, ":set breakindent& foldcolumn& signcolumn&\<cr>")
   endif
@@ -200,19 +184,14 @@ func Test_cursorline_screenline()
   call term_sendkeys(buf, ":set nonumber\<cr>")
   call VerifyScreenDump(buf, 'Test_'. filename. '_19', {})
   call term_sendkeys(buf, "fagj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_20', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_21', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_22', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_23', {})
   call term_sendkeys(buf, "gj")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_'. filename. '_24', {})
   call term_sendkeys(buf, ":set list& cursorlineopt& listchars&\<cr>")
 
@@ -283,14 +262,34 @@ func Test_cursorline_callback()
 
       call timer_start(300, 'Func')
   END
-  call writefile(lines, 'Xcul_timer')
+  call writefile(lines, 'Xcul_timer', 'D')
 
   let buf = RunVimInTerminal('-S Xcul_timer', #{rows: 8})
   call TermWait(buf, 310)
   call VerifyScreenDump(buf, 'Test_cursorline_callback_1', {})
 
   call StopVimInTerminal(buf)
-  call delete('Xcul_timer')
+endfunc
+
+func Test_cursorline_screenline_resize()
+  CheckScreendump
+
+  let lines =<< trim END
+      50vnew
+      call setline(1, repeat('xyz ', 30))
+      setlocal number cursorline cursorlineopt=screenline
+      normal! $
+  END
+  call writefile(lines, 'Xcul_screenline_resize', 'D')
+
+  let buf = RunVimInTerminal('-S Xcul_screenline_resize', #{rows: 8})
+  call VerifyScreenDump(buf, 'Test_cursorline_screenline_resize_1', {})
+  call term_sendkeys(buf, ":vertical resize -4\<CR>")
+  call VerifyScreenDump(buf, 'Test_cursorline_screenline_resize_2', {})
+  call term_sendkeys(buf, ":set cpoptions+=n\<CR>")
+  call VerifyScreenDump(buf, 'Test_cursorline_screenline_resize_3', {})
+
+  call StopVimInTerminal(buf)
 endfunc
 
 func Test_cursorline_screenline_update()
@@ -301,7 +300,7 @@ func Test_cursorline_screenline_update()
       set cursorline cursorlineopt=screenline
       inoremap <F2> <Cmd>call cursor(1, 1)<CR>
   END
-  call writefile(lines, 'Xcul_screenline')
+  call writefile(lines, 'Xcul_screenline', 'D')
 
   let buf = RunVimInTerminal('-S Xcul_screenline', #{rows: 8})
   call term_sendkeys(buf, "A")
@@ -311,7 +310,17 @@ func Test_cursorline_screenline_update()
   call term_sendkeys(buf, "\<Esc>")
 
   call StopVimInTerminal(buf)
-  call delete('Xcul_screenline')
+endfunc
+
+func Test_cursorline_screenline_zero_width()
+  CheckOption foldcolumn
+
+  set cursorline culopt=screenline winminwidth=1 foldcolumn=1
+  " This used to crash Vim
+  1vnew | redraw
+
+  bwipe!
+  set cursorline& culopt& winminwidth& foldcolumn&
 endfunc
 
 func Test_cursorline_cursorbind_horizontal_scroll()

@@ -1,6 +1,3 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -8,11 +5,11 @@
 #include "klib/kvec.h"
 #include "mpack/conv.h"
 #include "nvim/api/private/helpers.h"
-#include "nvim/ascii.h"
-#include "nvim/macros.h"
+#include "nvim/ascii_defs.h"
+#include "nvim/grid.h"
+#include "nvim/macros_defs.h"
 #include "nvim/memory.h"
 #include "nvim/msgpack_rpc/channel_defs.h"
-#include "nvim/msgpack_rpc/helpers.h"
 #include "nvim/msgpack_rpc/unpacker.h"
 #include "nvim/ui_client.h"
 
@@ -20,14 +17,17 @@
 # include "msgpack_rpc/unpacker.c.generated.h"
 #endif
 
-Object unpack(const char *data, size_t size, Error *err)
+Object unpack(const char *data, size_t size, Arena *arena, Error *err)
 {
   Unpacker unpacker;
   mpack_parser_init(&unpacker.parser, 0);
   unpacker.parser.data.p = &unpacker;
+  unpacker.arena = *arena;
 
   int result = mpack_parse(&unpacker.parser, &data, &size,
                            api_parse_enter, api_parse_exit);
+
+  *arena = unpacker.arena;
 
   if (result == MPACK_NOMEM) {
     api_set_error(err, kErrorTypeException, "object was too deep to unpack");
@@ -87,7 +87,7 @@ static void api_parse_enter(mpack_parser_t *parser, mpack_node_t *node)
     *result = NIL;
     break;
   case MPACK_TOKEN_BOOLEAN:
-    *result = BOOL(mpack_unpack_boolean(node->tok));
+    *result = BOOLEAN_OBJ(mpack_unpack_boolean(node->tok));
     break;
   case MPACK_TOKEN_SINT:
     *result = INTEGER_OBJ(mpack_unpack_sint(node->tok));
@@ -172,14 +172,12 @@ static void api_parse_enter(mpack_parser_t *parser, mpack_node_t *node)
     node->data[0].p = result;
     break;
   }
-
-  default:
-    abort();
   }
 }
 
 static void api_parse_exit(mpack_parser_t *parser, mpack_node_t *node)
-{}
+{
+}
 
 void unpacker_init(Unpacker *p)
 {
@@ -189,6 +187,8 @@ void unpacker_init(Unpacker *p)
   p->unpack_error = ERROR_INIT;
 
   p->arena = (Arena)ARENA_EMPTY;
+
+  p->has_grid_line_event = false;
 }
 
 void unpacker_teardown(Unpacker *p)
@@ -292,19 +292,20 @@ error:
 // objects. For the moment "redraw/grid_line" uses a hand-rolled decoder,
 // to avoid a blizzard of small objects for each screen cell.
 //
-// <0>[2, "redraw", <10>[{11}["method", <12>[args], <12>[args], ...], <11>[...], ...]]
+// <0>[2, "redraw", <10>[<11>["method", <12>[args], <12>[args], ...], <11>[...], ...]]
 //
 // Where [args] gets unpacked as an Array. Note: first {11} is not saved as a state.
 //
 // When method is "grid_line", we furthermore decode a cell at a time like:
 //
-// <0>[2, "redraw", <10>[{11}["grid_line", <14>[g, r, c, [<15>[cell], <15>[cell], ...]], ...], <11>[...], ...]]
+// <0>[2, "redraw", <10>[<11>["grid_line", <14>[g, r, c, [<15>[cell], <15>[cell], ...], <16>wrap]], <11>[...], ...]]
 //
 // where [cell] is [char, repeat, attr], where 'repeat' and 'attr' is optional
 
 bool unpacker_advance(Unpacker *p)
 {
   assert(p->state >= 0);
+  p->has_grid_line_event = false;
   if (p->state == 0) {
     if (!unpacker_parse_header(p)) {
       return false;
@@ -323,8 +324,9 @@ bool unpacker_advance(Unpacker *p)
       return false;
     }
 
-    if (p->state == 15) {
+    if (p->state == 16) {
       // grid_line event already unpacked
+      p->has_grid_line_event = true;
       goto done;
     } else {
       assert(p->state == 12);
@@ -358,10 +360,10 @@ done:
     p->state = 0;
     return true;
   case 13:
-  case 15:
+  case 16:
     p->ncalls--;
     if (p->ncalls > 0) {
-      p->state = (p->state == 15) ? 14 : 12;
+      p->state = (p->state == 16) ? 14 : 12;
     } else if (p->nevents > 0) {
       p->state = 11;
     } else {
@@ -380,9 +382,8 @@ bool unpacker_parse_redraw(Unpacker *p)
 
   const char *data = p->read_ptr;
   size_t size = p->read_size;
-  GridLineEvent *g = p->grid_line_event;
+  GridLineEvent *g = &p->grid_line_event;
 
-// -V:NEXT_TYPE:501
 #define NEXT_TYPE(tok, typ) \
   result = mpack_rtoken(&data, &size, &tok); \
   if (result == MPACK_EOF) { \
@@ -394,7 +395,6 @@ bool unpacker_parse_redraw(Unpacker *p)
     return false; \
   }
 
-redo:
   switch (p->state) {
   case 10:
     NEXT_TYPE(tok, MPACK_TOKEN_ARRAY);
@@ -424,16 +424,10 @@ redo:
     p->read_size = size;
     if (p->ui_handler.fn != ui_client_event_grid_line) {
       p->state = 12;
-      if (p->grid_line_event) {
-        arena_mem_free(arena_finish(&p->arena));
-        p->grid_line_event = NULL;
-      }
       return true;
     } else {
       p->state = 14;
       p->arena = (Arena)ARENA_EMPTY;
-      p->grid_line_event = arena_alloc(&p->arena, sizeof *p->grid_line_event, true);
-      g = p->grid_line_event;
     }
     FALLTHROUGH;
 
@@ -462,63 +456,64 @@ redo:
     FALLTHROUGH;
 
   case 15:
-    assert(g->icell < g->ncells);
+    for (; g->icell != g->ncells; g->icell++) {
+      assert(g->icell < g->ncells);
 
-    NEXT_TYPE(tok, MPACK_TOKEN_ARRAY);
-    int cellarrsize = (int)tok.length;
-    if (cellarrsize < 1 || cellarrsize > 3) {
-      p->state = -1;
-      return false;
-    }
-
-    NEXT_TYPE(tok, MPACK_TOKEN_STR);
-    if (tok.length > size) {
-      return false;
-    }
-
-    const char *cellbuf = data;
-    size_t cellsize = tok.length;
-    data += cellsize;
-    size -= cellsize;
-
-    if (cellarrsize >= 2) {
-      NEXT_TYPE(tok, MPACK_TOKEN_SINT);
-      g->cur_attr = (int)tok.data.value.lo;
-    }
-
-    int repeat = 1;
-    if (cellarrsize >= 3) {
-      NEXT_TYPE(tok, MPACK_TOKEN_UINT);
-      repeat = (int)tok.data.value.lo;
-    }
-
-    g->clear_width = 0;
-    if (g->icell == g->ncells - 1 && cellsize == 1 && cellbuf[0] == ' ' && repeat > 1) {
-      g->clear_width = repeat;
-    } else {
-      for (int r = 0; r < repeat; r++) {
-        if (g->coloff >= (int)grid_line_buf_size) {
-          p->state = -1;
-          return false;
-        }
-        memcpy(grid_line_buf_char[g->coloff], cellbuf, cellsize);
-        grid_line_buf_char[g->coloff][cellsize] = NUL;
-        grid_line_buf_attr[g->coloff++] = g->cur_attr;
+      NEXT_TYPE(tok, MPACK_TOKEN_ARRAY);
+      int cellarrsize = (int)tok.length;
+      if (cellarrsize < 1 || cellarrsize > 3) {
+        p->state = -1;
+        return false;
       }
-    }
 
-    g->icell++;
-    if (g->icell == g->ncells) {
-      NEXT_TYPE(tok, MPACK_TOKEN_BOOLEAN);
-      g->wrap = mpack_unpack_boolean(tok);
+      NEXT_TYPE(tok, MPACK_TOKEN_STR);
+      if (tok.length > size) {
+        return false;
+      }
+
+      const char *cellbuf = data;
+      size_t cellsize = tok.length;
+      data += cellsize;
+      size -= cellsize;
+
+      if (cellarrsize >= 2) {
+        NEXT_TYPE(tok, MPACK_TOKEN_SINT);
+        g->cur_attr = (int)tok.data.value.lo;
+      }
+
+      int repeat = 1;
+      if (cellarrsize >= 3) {
+        NEXT_TYPE(tok, MPACK_TOKEN_UINT);
+        repeat = (int)tok.data.value.lo;
+      }
+
+      g->clear_width = 0;
+      if (g->icell == g->ncells - 1 && cellsize == 1 && cellbuf[0] == ' ' && repeat > 1) {
+        g->clear_width = repeat;
+      } else {
+        schar_T sc = schar_from_buf(cellbuf, cellsize);
+        for (int r = 0; r < repeat; r++) {
+          if (g->coloff >= (int)grid_line_buf_size) {
+            p->state = -1;
+            return false;
+          }
+          grid_line_buf_char[g->coloff] = sc;
+          grid_line_buf_attr[g->coloff++] = g->cur_attr;
+        }
+      }
+
       p->read_ptr = data;
       p->read_size = size;
-      return true;
     }
+    p->state = 16;
+    FALLTHROUGH;
 
+  case 16:
+    NEXT_TYPE(tok, MPACK_TOKEN_BOOLEAN);
+    g->wrap = mpack_unpack_boolean(tok);
     p->read_ptr = data;
     p->read_size = size;
-    goto redo;
+    return true;
 
   case 12:
     return true;

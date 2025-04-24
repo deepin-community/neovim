@@ -97,7 +97,7 @@ endfunc
 func Test_argadd_empty_curbuf()
   new
   let curbuf = bufnr('%')
-  call writefile(['test', 'Xargadd'], 'Xargadd')
+  call writefile(['test', 'Xargadd'], 'Xargadd', 'D')
   " must not re-use the current buffer.
   argadd Xargadd
   call assert_equal(curbuf, bufnr('%'))
@@ -183,22 +183,25 @@ func Test_argument()
 
   let save_columns = &columns
   let &columns = 79
-  exe 'args ' .. join(range(1, 81))
-  call assert_equal(join([
-        \ '',
-        \ '[1] 6   11  16  21  26  31  36  41  46  51  56  61  66  71  76  81  ',
-        \ '2   7   12  17  22  27  32  37  42  47  52  57  62  67  72  77  ',
-        \ '3   8   13  18  23  28  33  38  43  48  53  58  63  68  73  78  ',
-        \ '4   9   14  19  24  29  34  39  44  49  54  59  64  69  74  79  ',
-        \ '5   10  15  20  25  30  35  40  45  50  55  60  65  70  75  80  ',
-        \ ], "\n"),
-        \ execute('args'))
+  try
+    exe 'args ' .. join(range(1, 81))
+    call assert_equal(join([
+          \ '',
+          \ '[1] 6   11  16  21  26  31  36  41  46  51  56  61  66  71  76  81  ',
+          \ '2   7   12  17  22  27  32  37  42  47  52  57  62  67  72  77  ',
+          \ '3   8   13  18  23  28  33  38  43  48  53  58  63  68  73  78  ',
+          \ '4   9   14  19  24  29  34  39  44  49  54  59  64  69  74  79  ',
+          \ '5   10  15  20  25  30  35  40  45  50  55  60  65  70  75  80  ',
+          \ ], "\n"),
+          \ execute('args'))
 
-  " No trailing newline with one item per row.
-  let long_arg = repeat('X', 81)
-  exe 'args ' .. long_arg
-  call assert_equal("\n[".long_arg.']', execute('args'))
-  let &columns = save_columns
+    " No trailing newline with one item per row.
+    let long_arg = repeat('X', 81)
+    exe 'args ' .. long_arg
+    call assert_equal("\n[".long_arg.']', execute('args'))
+  finally
+    let &columns = save_columns
+  endtry
 
   " Setting argument list should fail when the current buffer has unsaved
   " changes
@@ -513,9 +516,9 @@ endfunc
 " Test for autocommand that redefines the argument list, when doing ":all".
 func Test_arglist_autocmd()
   autocmd BufReadPost Xxx2 next Xxx2 Xxx1
-  call writefile(['test file Xxx1'], 'Xxx1')
-  call writefile(['test file Xxx2'], 'Xxx2')
-  call writefile(['test file Xxx3'], 'Xxx3')
+  call writefile(['test file Xxx1'], 'Xxx1', 'D')
+  call writefile(['test file Xxx2'], 'Xxx2', 'D')
+  call writefile(['test file Xxx3'], 'Xxx3', 'D')
 
   new
   " redefine arglist; go to Xxx1
@@ -531,18 +534,14 @@ func Test_arglist_autocmd()
 
   autocmd! BufReadPost Xxx2
   enew! | only
-  call delete('Xxx1')
-  call delete('Xxx2')
-  call delete('Xxx3')
   argdelete Xxx*
   bwipe! Xxx1 Xxx2 Xxx3
 endfunc
 
 func Test_arg_all_expand()
-  call writefile(['test file Xxx1'], 'Xx x')
+  call writefile(['test file Xxx1'], 'Xx x', 'D')
   next notexist Xx\ x runtest.vim
   call assert_equal('notexist Xx\ x runtest.vim', expand('##'))
-  call delete('Xx x')
 endfunc
 
 func Test_large_arg()
@@ -568,7 +567,7 @@ func Test_quit_with_arglist()
   call term_sendkeys(buf, ":set nomore\n")
   call term_sendkeys(buf, ":args a b c\n")
   call term_sendkeys(buf, ":quit\n")
-  call term_wait(buf)
+  call TermWait(buf)
   call WaitForAssert({-> assert_match('^E173:', term_getline(buf, 6))})
   call StopVimInTerminal(buf)
 
@@ -577,16 +576,16 @@ func Test_quit_with_arglist()
   call term_sendkeys(buf, ":set nomore\n")
   call term_sendkeys(buf, ":args a b c\n")
   call term_sendkeys(buf, ":confirm quit\n")
-  call term_wait(buf)
+  call TermWait(buf)
   call WaitForAssert({-> assert_match('^\[Y\]es, (N)o: *$',
         \ term_getline(buf, 6))})
   call term_sendkeys(buf, "N")
-  call term_wait(buf)
+  call TermWait(buf)
   call term_sendkeys(buf, ":confirm quit\n")
   call WaitForAssert({-> assert_match('^\[Y\]es, (N)o: *$',
         \ term_getline(buf, 6))})
   call term_sendkeys(buf, "Y")
-  call term_wait(buf)
+  call TermWait(buf)
   call WaitForAssert({-> assert_equal("finished", term_getstatus(buf))})
   only!
   " When this test fails, swap files are left behind which breaks subsequent

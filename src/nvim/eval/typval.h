@@ -1,5 +1,4 @@
-#ifndef NVIM_EVAL_TYPVAL_H
-#define NVIM_EVAL_TYPVAL_H
+#pragma once
 
 #include <assert.h>
 #include <stdbool.h>
@@ -7,84 +6,15 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "nvim/eval/typval_defs.h"
+#include "nvim/eval/typval_defs.h"  // IWYU pragma: keep
 #include "nvim/func_attr.h"
-#include "nvim/garray.h"
-#include "nvim/gettext.h"
+#include "nvim/gettext_defs.h"
 #include "nvim/hashtab.h"
-#include "nvim/lib/queue.h"
-#include "nvim/macros.h"
-#include "nvim/mbyte_defs.h"
+#include "nvim/lib/queue_defs.h"
+#include "nvim/macros_defs.h"
+#include "nvim/mbyte_defs.h"  // IWYU pragma: keep
 #include "nvim/message.h"
-#include "nvim/types.h"
-
-#ifdef LOG_LIST_ACTIONS
-# include "nvim/memory.h"
-
-extern ListLog *list_log_first;  ///< First list log chunk, NULL if missing
-extern ListLog *list_log_last;  ///< Last list log chunk
-
-static inline ListLog *list_log_alloc(const size_t size)
-  REAL_FATTR_ALWAYS_INLINE REAL_FATTR_WARN_UNUSED_RESULT;
-
-/// Allocate a new log chunk and update globals
-///
-/// @param[in]  size  Number of entries in a new chunk.
-///
-/// @return [allocated] Newly allocated chunk.
-static inline ListLog *list_log_new(const size_t size)
-{
-  ListLog *ret = xmalloc(offsetof(ListLog, entries)
-                         + size * sizeof(ret->entries[0]));
-  ret->size = 0;
-  ret->capacity = size;
-  ret->next = NULL;
-  if (list_log_first == NULL) {
-    list_log_first = ret;
-  } else {
-    list_log_last->next = ret;
-  }
-  list_log_last = ret;
-  return ret;
-}
-
-static inline void list_log(const list_T *const l, const listitem_T *const li1,
-                            const listitem_T *const li2, const char *const action)
-  REAL_FATTR_ALWAYS_INLINE;
-
-/// Add new entry to log
-///
-/// If last chunk was filled it uses twice as much memory to allocate the next
-/// chunk.
-///
-/// @param[in]  l  List to which entry belongs.
-/// @param[in]  li1  List item 1.
-/// @param[in]  li2  List item 2, often used for integers and not list items.
-/// @param[in]  action  Logged action.
-static inline void list_log(const list_T *const l, const listitem_T *const li1,
-                            const listitem_T *const li2, const char *const action)
-{
-  ListLog *tgt;
-  if (list_log_first == NULL) {
-    tgt = list_log_new(128);
-  } else if (list_log_last->size == list_log_last->capacity) {
-    tgt = list_log_new(list_log_last->capacity * 2);
-  } else {
-    tgt = list_log_last;
-  }
-  tgt->entries[tgt->size++] = (ListLogEntry) {
-    .l = (uintptr_t)l,
-    .li1 = (uintptr_t)li1,
-    .li2 = (uintptr_t)li2,
-    .len = (l == NULL ? 0 : l->lv_len),
-    .action = action,
-  };
-}
-#else
-# define list_log(...)
-# define list_write_log(...)
-# define list_free_log()
-#endif
+#include "nvim/types_defs.h"
 
 // In a hashtab item "hi_key" points to "di_key" in a dictitem.
 // This avoids adding a pointer to the hashtab item.
@@ -154,6 +84,9 @@ static inline void tv_list_set_lock(list_T *const l, const VarLockStatus lock)
   l->lv_lock = lock;
 }
 
+static inline void tv_list_set_copyid(list_T *l, int copyid)
+  REAL_FATTR_NONNULL_ALL;
+
 /// Set list copyID
 ///
 /// Does not expect NULL list, be careful.
@@ -161,7 +94,6 @@ static inline void tv_list_set_lock(list_T *const l, const VarLockStatus lock)
 /// @param[out]  l  List to modify.
 /// @param[in]  copyid  New copyID.
 static inline void tv_list_set_copyid(list_T *const l, const int copyid)
-  FUNC_ATTR_NONNULL_ALL
 {
   l->lv_copyID = copyid;
 }
@@ -174,7 +106,6 @@ static inline int tv_list_len(const list_T *l)
 /// @param[in]  l  List to check.
 static inline int tv_list_len(const list_T *const l)
 {
-  list_log(l, NULL, NULL, "len");
   if (l == NULL) {
     return 0;
   }
@@ -258,10 +189,8 @@ static inline listitem_T *tv_list_first(const list_T *l)
 static inline listitem_T *tv_list_first(const list_T *const l)
 {
   if (l == NULL) {
-    list_log(l, NULL, NULL, "first");
     return NULL;
   }
-  list_log(l, l->lv_first, NULL, "first");
   return l->lv_first;
 }
 
@@ -276,10 +205,8 @@ static inline listitem_T *tv_list_last(const list_T *l)
 static inline listitem_T *tv_list_last(const list_T *const l)
 {
   if (l == NULL) {
-    list_log(l, NULL, NULL, "last");
     return NULL;
   }
-  list_log(l, l->lv_last, NULL, "last");
   return l->lv_last;
 }
 
@@ -308,7 +235,7 @@ static inline long tv_dict_len(const dict_T *d)
 static inline long tv_dict_len(const dict_T *const d)
 {
   if (d == NULL) {
-    return 0L;
+    return 0;
   }
   return (long)d->dv_hashtab.ht_used;
 }
@@ -385,7 +312,7 @@ static inline void tv_blob_set(blob_T *const blob, int idx, uint8_t c)
   ((uint8_t *)blob->bv_ga.ga_data)[idx] = c;
 }
 
-/// Initialize VimL object
+/// Initialize Vimscript object
 ///
 /// Initializes to unlocked VAR_UNKNOWN object.
 ///
@@ -413,10 +340,9 @@ extern bool tv_in_free_unref_items;
 /// @param[in]  l  List to iterate over.
 /// @param  li  Name of the variable with current listitem_T entry.
 /// @param  code  Cycle body.
-#define _TV_LIST_ITER_MOD(modifier, l, li, code) \
+#define TV_LIST_ITER_MOD(modifier, l, li, code) \
   do { \
     modifier list_T *const l_ = (l); \
-    list_log(l_, NULL, NULL, "iter" #modifier); \
     if (l_ != NULL) { \
       for (modifier listitem_T *li = l_->lv_first; \
            li != NULL; li = li->li_next) { \
@@ -434,7 +360,7 @@ extern bool tv_in_free_unref_items;
 /// @param  li  Name of the variable with current listitem_T entry.
 /// @param  code  Cycle body.
 #define TV_LIST_ITER(l, li, code) \
-  _TV_LIST_ITER_MOD( , l, li, code)  // NOLINT(whitespace/parens)
+  TV_LIST_ITER_MOD( , l, li, code)
 
 /// Iterate over a list
 ///
@@ -445,7 +371,7 @@ extern bool tv_in_free_unref_items;
 /// @param  li  Name of the variable with current listitem_T entry.
 /// @param  code  Cycle body.
 #define TV_LIST_ITER_CONST(l, li, code) \
-  _TV_LIST_ITER_MOD(const, l, li, code)
+  TV_LIST_ITER_MOD(const, l, li, code)
 
 // Below macros are macros to avoid duplicating code for functionally identical
 // const and non-const function variants.
@@ -498,7 +424,7 @@ static inline bool tv_get_float_chk(const typval_T *tv, float_T *ret_f)
 ///
 /// Raises an error if object is not number or floating-point.
 ///
-/// @param[in]  tv  VimL object to get value from.
+/// @param[in]  tv  Vimscript object to get value from.
 /// @param[out]  ret_f  Location where resulting float is stored.
 ///
 /// @return true in case of success, false if tv is not a number or float.
@@ -517,22 +443,20 @@ static inline bool tv_get_float_chk(const typval_T *const tv, float_T *const ret
 }
 
 static inline DictWatcher *tv_dict_watcher_node_data(QUEUE *q)
-  REAL_FATTR_NONNULL_ALL REAL_FATTR_NONNULL_RET REAL_FATTR_PURE
-  REAL_FATTR_WARN_UNUSED_RESULT REAL_FATTR_ALWAYS_INLINE
-  FUNC_ATTR_NO_SANITIZE_ADDRESS;
+  REAL_FATTR_ALWAYS_INLINE REAL_FATTR_NONNULL_ALL REAL_FATTR_NONNULL_RET
+    REAL_FATTR_NO_SANITIZE_ADDRESS REAL_FATTR_PURE REAL_FATTR_WARN_UNUSED_RESULT;
 
 /// Compute the `DictWatcher` address from a QUEUE node.
 ///
 /// This only exists for .asan-blacklist (ASAN doesn't handle QUEUE_DATA pointer
 /// arithmetic).
 static inline DictWatcher *tv_dict_watcher_node_data(QUEUE *q)
-  FUNC_ATTR_NO_SANITIZE_ADDRESS
 {
   return QUEUE_DATA(q, DictWatcher, node);
 }
 
 static inline bool tv_is_func(typval_T tv)
-  FUNC_ATTR_WARN_UNUSED_RESULT FUNC_ATTR_ALWAYS_INLINE FUNC_ATTR_CONST;
+  REAL_FATTR_WARN_UNUSED_RESULT REAL_FATTR_ALWAYS_INLINE REAL_FATTR_CONST;
 
 /// Check whether given typval_T contains a function
 ///
@@ -559,16 +483,10 @@ static inline bool tv_is_func(const typval_T tv)
 
 #ifdef UNIT_TESTING
 // Do not use enum constants, see commit message.
-EXTERN const size_t kTVCstring INIT(= TV_CSTRING);
-EXTERN const size_t kTVTranslate INIT(= TV_TRANSLATE);
+EXTERN const size_t kTVCstring INIT( = TV_CSTRING);
+EXTERN const size_t kTVTranslate INIT( = TV_TRANSLATE);
 #endif
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "eval/typval.h.generated.h"
 #endif
-
-#define tv_get_bool tv_get_number
-#define tv_get_bool_chk tv_get_number_chk
-#define tv_dict_get_bool tv_dict_get_number_def
-
-#endif  // NVIM_EVAL_TYPVAL_H

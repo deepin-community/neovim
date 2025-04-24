@@ -1,9 +1,6 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 /// @file encode.c
 ///
-/// File containing functions for encoding and decoding VimL values.
+/// File containing functions for encoding and decoding Vimscript values.
 ///
 /// Split out from eval.c.
 
@@ -17,22 +14,23 @@
 
 #include "klib/kvec.h"
 #include "msgpack/pack.h"
-#include "nvim/ascii.h"
+#include "nvim/ascii_defs.h"
 #include "nvim/eval.h"
 #include "nvim/eval/encode.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/typval_encode.h"
 #include "nvim/garray.h"
-#include "nvim/gettext.h"
+#include "nvim/gettext_defs.h"
+#include "nvim/globals.h"
 #include "nvim/hashtab.h"
-#include "nvim/macros.h"
+#include "nvim/macros_defs.h"
 #include "nvim/math.h"
 #include "nvim/mbyte.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/strings.h"
-#include "nvim/types.h"
-#include "nvim/vim.h"  // For _()
+#include "nvim/types_defs.h"
+#include "nvim/vim_defs.h"  // For _()
 
 const char *const encode_bool_var_names[] = {
   [kBoolVarTrue] = "v:true",
@@ -152,9 +150,9 @@ static int conv_error(const char *const msg, const MPConvStack *const mpstack,
                        ? 0
                        : (v.data.l.li == NULL
                           ? tv_list_len(v.data.l.list) - 1
-                          : (int)tv_list_idx_of_item(v.data.l.list,
-                                                     TV_LIST_ITEM_PREV(v.data.l.list,
-                                                                       v.data.l.li))));
+                          : tv_list_idx_of_item(v.data.l.list,
+                                                TV_LIST_ITEM_PREV(v.data.l.list,
+                                                                  v.data.l.li))));
       const listitem_T *const li = (v.data.l.li == NULL
                                     ? tv_list_last(v.data.l.list)
                                     : TV_LIST_ITEM_PREV(v.data.l.list,
@@ -418,7 +416,7 @@ int encode_read_from_list(ListReaderState *const state, char *const buf, const s
   ga_concat(gap, "v:null")
 
 #define TYPVAL_ENCODE_CONV_BOOL(tv, num) \
-  ga_concat(gap, ((num)? "v:true": "v:false"))
+  ga_concat(gap, ((num) ? "v:true" : "v:false"))
 
 #define TYPVAL_ENCODE_CONV_UNSIGNED_NUMBER(tv, num)
 
@@ -544,7 +542,7 @@ int encode_read_from_list(ListReaderState *const state, char *const buf, const s
 
 #undef TYPVAL_ENCODE_CONV_BOOL
 #define TYPVAL_ENCODE_CONV_BOOL(tv, num) \
-  ga_concat(gap, ((num)? "true": "false"))
+  ga_concat(gap, ((num) ? "true" : "false"))
 
 #undef TYPVAL_ENCODE_CONV_UNSIGNED_NUMBER
 #define TYPVAL_ENCODE_CONV_UNSIGNED_NUMBER(tv, num) \
@@ -1058,3 +1056,17 @@ char *encode_tv2json(typval_T *tv, size_t *len)
 #undef TYPVAL_ENCODE_CONV_LIST_BETWEEN_ITEMS
 #undef TYPVAL_ENCODE_CONV_RECURSE
 #undef TYPVAL_ENCODE_ALLOW_SPECIALS
+
+/// Initialize ListReaderState structure
+ListReaderState encode_init_lrstate(const list_T *const list)
+  FUNC_ATTR_NONNULL_ALL
+{
+  return (ListReaderState) {
+    .list = list,
+    .li = tv_list_first(list),
+    .offset = 0,
+    .li_length = (TV_LIST_ITEM_TV(tv_list_first(list))->vval.v_string == NULL
+                  ? 0
+                  : strlen(TV_LIST_ITEM_TV(tv_list_first(list))->vval.v_string)),
+  };
+}

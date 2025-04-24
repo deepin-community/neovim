@@ -1,15 +1,14 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <uv.h>
 
-#include "nvim/event/loop.h"
+#include "nvim/event/defs.h"
 #include "nvim/event/stream.h"
 #include "nvim/event/wstream.h"
-#include "nvim/macros.h"
+#include "nvim/macros_defs.h"
 #include "nvim/memory.h"
+#include "nvim/types_defs.h"
 
 #define DEFAULT_MAXMEM 1024 * 1024 * 2000
 
@@ -74,6 +73,26 @@ bool wstream_write(Stream *stream, WBuffer *buffer)
   // This should not be called after a stream was freed
   assert(!stream->closed);
 
+  uv_buf_t uvbuf;
+  uvbuf.base = buffer->data;
+  uvbuf.len = UV_BUF_LEN(buffer->size);
+
+  if (!stream->uvstream) {
+    uv_fs_t req;
+
+    // Synchronous write
+    uv_fs_write(stream->uv.idle.loop, &req, stream->fd, &uvbuf, 1, (int64_t)stream->fpos, NULL);
+
+    uv_fs_req_cleanup(&req);
+
+    wstream_release_wbuffer(buffer);
+
+    assert(stream->write_cb == NULL);
+
+    stream->fpos += (size_t)MAX(req.result, 0);
+    return req.result > 0;
+  }
+
   if (stream->curmem > stream->maxmem) {
     goto err;
   }
@@ -84,10 +103,6 @@ bool wstream_write(Stream *stream, WBuffer *buffer)
   data->stream = stream;
   data->buffer = buffer;
   data->uv_req.data = data;
-
-  uv_buf_t uvbuf;
-  uvbuf.base = buffer->data;
-  uvbuf.len = UV_BUF_LEN(buffer->size);
 
   if (uv_write(&data->uv_req, stream->uvstream, &uvbuf, 1, write_cb)) {
     xfree(data);
@@ -104,7 +119,7 @@ err:
 
 /// Creates a WBuffer object for holding output data. Instances of this
 /// object can be reused across Stream instances, and the memory is freed
-/// automatically when no longer needed(it tracks the number of references
+/// automatically when no longer needed (it tracks the number of references
 /// internally)
 ///
 /// @param data Data stored by the WBuffer
@@ -112,7 +127,7 @@ err:
 /// @param refcount The number of references for the WBuffer. This will be used
 ///        by Stream instances to decide when a WBuffer should be freed.
 /// @param cb Pointer to function that will be responsible for freeing
-///        the buffer data(passing 'free' will work as expected).
+///        the buffer data (passing `xfree` will work as expected).
 /// @return The allocated WBuffer instance
 WBuffer *wstream_new_buffer(char *data, size_t size, size_t refcount, wbuffer_data_finalizer cb)
   FUNC_ATTR_NONNULL_ARG(1)

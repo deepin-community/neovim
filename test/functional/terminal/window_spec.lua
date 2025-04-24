@@ -1,38 +1,43 @@
-local helpers = require('test.functional.helpers')(after_each)
-local thelpers = require('test.functional.terminal.helpers')
-local feed_data = thelpers.feed_data
-local feed, clear = helpers.feed, helpers.clear
-local poke_eventloop = helpers.poke_eventloop
-local command = helpers.command
-local retry = helpers.retry
-local eq = helpers.eq
-local eval = helpers.eval
-local skip = helpers.skip
-local is_os = helpers.is_os
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
+
+local tt = require('test.functional.terminal.testutil')
+local feed_data = tt.feed_data
+local feed, clear = n.feed, n.clear
+local poke_eventloop = n.poke_eventloop
+local command = n.command
+local retry = t.retry
+local eq = t.eq
+local eval = n.eval
+local skip = t.skip
+local is_os = t.is_os
 
 describe(':terminal window', function()
   local screen
 
   before_each(function()
     clear()
-    screen = thelpers.screen_setup()
+    screen = tt.screen_setup()
   end)
 
   it('sets topline correctly #8556', function()
     skip(is_os('win'))
     -- Test has hardcoded assumptions of dimensions.
     eq(7, eval('&lines'))
-    feed_data('\n\n\n')  -- Add blank lines.
+    feed_data('\n\n\n') -- Add blank lines.
     -- Terminal/shell contents must exceed the height of this window.
     command('topleft 1split')
     eq('terminal', eval('&buftype'))
     feed([[i<cr>]])
     -- Check topline _while_ in terminal-mode.
-    retry(nil, nil, function() eq(6, eval('winsaveview()["topline"]')) end)
+    retry(nil, nil, function()
+      eq(6, eval('winsaveview()["topline"]'))
+    end)
   end)
 
   describe("with 'number'", function()
     it('wraps text', function()
+      skip(is_os('win')) -- todo(clason): unskip when reenabling reflow
       feed([[<C-\><C-N>]])
       feed([[:set numberwidth=1 number<CR>i]])
       screen:expect([[
@@ -54,8 +59,6 @@ describe(':terminal window', function()
         {7:6 }                                                |
         {3:-- TERMINAL --}                                    |
       ]])
-
-      skip(is_os('win'), 'win: :terminal resize is unreliable #7007')
 
       -- numberwidth=9
       feed([[<C-\><C-N>]])
@@ -84,6 +87,7 @@ describe(':terminal window', function()
 
   describe("with 'statuscolumn'", function()
     it('wraps text', function()
+      skip(is_os('win')) -- todo(clason): unskip when reenabling reflow
       command([[set number statuscolumn=++%l\ \ ]])
       screen:expect([[
         {7:++1  }tty ready                                    |
@@ -104,6 +108,16 @@ describe(':terminal window', function()
         {7:++9  }TUVWXYZ{1: }                                     |
         {3:-- TERMINAL --}                                    |
       ]])
+      feed_data('\nabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
+      screen:expect([[
+        {7:++7   }                                            |
+        {7:++8   }abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR|
+        {7:++9   }TUVWXYZ                                     |
+        {7:++10  }abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR|
+        {7:++11  }TUVWXYZrows: 6, cols: 44                    |
+        {7:++12  }{1: }                                           |
+        {3:-- TERMINAL --}                                    |
+      ]])
     end)
   end)
 
@@ -113,11 +127,7 @@ describe(':terminal window', function()
       screen:expect([[
         tty ready                                         |
         {2:^ }                                                 |
-                                                          |
-                                                          |
-                                                          |
-                                                          |
-                                                          |
+                                                          |*5
       ]])
       feed(':set colorcolumn=20<CR>i')
     end)
@@ -126,10 +136,7 @@ describe(':terminal window', function()
       screen:expect([[
         tty ready                                         |
         {1: }                                                 |
-                                                          |
-                                                          |
-                                                          |
-                                                          |
+                                                          |*4
         {3:-- TERMINAL --}                                    |
       ]])
     end)
@@ -138,7 +145,7 @@ describe(':terminal window', function()
   describe('with fold set', function()
     before_each(function()
       feed([[<C-\><C-N>:set foldenable foldmethod=manual<CR>i]])
-      feed_data({'line1', 'line2', 'line3', 'line4', ''})
+      feed_data({ 'line1', 'line2', 'line3', 'line4', '' })
       screen:expect([[
         tty ready                                         |
         line1                                             |
@@ -171,54 +178,35 @@ describe(':terminal with multigrid', function()
 
   before_each(function()
     clear()
-    screen = thelpers.screen_setup(0,nil,50,{ext_multigrid=true})
+    screen = tt.screen_setup(0, nil, 50, nil, { ext_multigrid = true })
   end)
 
   it('resizes to requested size', function()
     screen:expect([[
     ## grid 1
-      [2:--------------------------------------------------]|
-      [2:--------------------------------------------------]|
-      [2:--------------------------------------------------]|
-      [2:--------------------------------------------------]|
-      [2:--------------------------------------------------]|
-      [2:--------------------------------------------------]|
+      [2:--------------------------------------------------]|*6
       [3:--------------------------------------------------]|
     ## grid 2
       tty ready                                         |
       {1: }                                                 |
-                                                        |
-                                                        |
-                                                        |
-                                                        |
+                                                        |*4
     ## grid 3
       {3:-- TERMINAL --}                                    |
     ]])
 
     screen:try_resize_grid(2, 20, 10)
     if is_os('win') then
-      screen:expect{any="rows: 10, cols: 20"}
+      screen:expect { any = 'rows: 10, cols: 20' }
     else
       screen:expect([[
       ## grid 1
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|*6
         [3:--------------------------------------------------]|
       ## grid 2
         tty ready           |
         rows: 10, cols: 20  |
         {1: }                   |
-                            |
-                            |
-                            |
-                            |
-                            |
-                            |
-                            |
+                            |*7
       ## grid 3
         {3:-- TERMINAL --}                                    |
       ]])
@@ -226,16 +214,11 @@ describe(':terminal with multigrid', function()
 
     screen:try_resize_grid(2, 70, 3)
     if is_os('win') then
-      screen:expect{any="rows: 3, cols: 70"}
+      screen:expect { any = 'rows: 3, cols: 70' }
     else
       screen:expect([[
       ## grid 1
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|*6
         [3:--------------------------------------------------]|
       ## grid 2
         rows: 10, cols: 20                                                    |
@@ -248,16 +231,11 @@ describe(':terminal with multigrid', function()
 
     screen:try_resize_grid(2, 0, 0)
     if is_os('win') then
-      screen:expect{any="rows: 6, cols: 50"}
+      screen:expect { any = 'rows: 6, cols: 50' }
     else
       screen:expect([[
       ## grid 1
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
-        [2:--------------------------------------------------]|
+        [2:--------------------------------------------------]|*6
         [3:--------------------------------------------------]|
       ## grid 2
         tty ready                                         |

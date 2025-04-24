@@ -1,39 +1,47 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <inttypes.h>
+#include <lauxlib.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "lauxlib.h"
+#include "klib/kvec.h"
 #include "nvim/api/private/converter.h"
 #include "nvim/api/private/defs.h"
 #include "nvim/api/private/helpers.h"
 #include "nvim/autocmd.h"
+#include "nvim/autocmd_defs.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/channel.h"
 #include "nvim/eval.h"
 #include "nvim/eval/encode.h"
 #include "nvim/eval/typval.h"
 #include "nvim/event/loop.h"
+#include "nvim/event/multiqueue.h"
+#include "nvim/event/process.h"
 #include "nvim/event/rstream.h"
 #include "nvim/event/socket.h"
+#include "nvim/event/stream.h"
 #include "nvim/event/wstream.h"
-#include "nvim/gettext.h"
+#include "nvim/garray.h"
+#include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
 #include "nvim/log.h"
 #include "nvim/lua/executor.h"
 #include "nvim/main.h"
+#include "nvim/mbyte.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/msgpack_rpc/channel.h"
 #include "nvim/msgpack_rpc/server.h"
+#include "nvim/os/fs.h"
 #include "nvim/os/os_defs.h"
 #include "nvim/os/shell.h"
 #include "nvim/path.h"
 #include "nvim/rbuffer.h"
+#include "nvim/rbuffer_defs.h"
+#include "nvim/terminal.h"
+#include "nvim/types_defs.h"
 
 #ifdef MSWIN
 # include "nvim/os/fs.h"
@@ -55,12 +63,24 @@ static uint64_t next_chan_id = CHAN_STDERR + 1;
 /// Teardown the module
 void channel_teardown(void)
 {
-  Channel *channel;
-
-  map_foreach_value(&channels, channel, {
-    channel_close(channel->id, kChannelPartAll, NULL);
+  Channel *chan;
+  map_foreach_value(&channels, chan, {
+    channel_close(chan->id, kChannelPartAll, NULL);
   });
 }
+
+#ifdef EXITFREE
+void channel_free_all_mem(void)
+{
+  Channel *chan;
+  map_foreach_value(&channels, chan, {
+    channel_destroy(chan);
+  });
+  map_destroy(uint64_t, &channels);
+
+  callback_free(&on_print);
+}
+#endif
 
 /// Closes a channel
 ///
@@ -168,9 +188,6 @@ bool channel_close(uint64_t id, ChannelPart part, const char **error)
       channel_decref(chan);
     }
     break;
-
-  default:
-    abort();
   }
 
   return true;
@@ -222,15 +239,17 @@ void channel_create_event(Channel *chan, const char *ext_source)
   }
 
   assert(chan->id <= VARNUMBER_MAX);
-  Dictionary info = channel_info(chan->id);
+  Arena arena = ARENA_EMPTY;
+  Dictionary info = channel_info(chan->id, &arena);
   typval_T tv = TV_INITIAL_VALUE;
   // TODO(bfredl): do the conversion in one step. Also would be nice
   // to pretty print top level dict in defined order
-  (void)object_to_vim(DICTIONARY_OBJ(info), &tv, NULL);
+  object_to_vim(DICTIONARY_OBJ(info), &tv, NULL);
+  assert(tv.v_type == VAR_DICT);
   char *str = encode_tv2json(&tv, NULL);
   ILOG("new channel %" PRIu64 " (%s) : %s", chan->id, source, str);
   xfree(str);
-  api_free_dictionary(info);
+  arena_mem_free(arena_finish(&arena));
 
 #else
   (void)ext_source;
@@ -248,7 +267,7 @@ void channel_decref(Channel *chan)
 {
   if (!(--chan->refcount)) {
     // delay free, so that libuv is done with the handles
-    multiqueue_put(main_loop.events, free_channel_event, 1, chan);
+    multiqueue_put(main_loop.events, free_channel_event, chan);
   }
 }
 
@@ -264,9 +283,8 @@ void callback_reader_start(CallbackReader *reader, const char *type)
   reader->type = type;
 }
 
-static void free_channel_event(void **argv)
+static void channel_destroy(Channel *chan)
 {
-  Channel *chan = argv[0];
   if (chan->is_rpc) {
     rpc_free(chan);
   }
@@ -279,9 +297,15 @@ static void free_channel_event(void **argv)
   callback_reader_free(&chan->on_stderr);
   callback_free(&chan->on_exit);
 
-  pmap_del(uint64_t)(&channels, chan->id);
   multiqueue_free(chan->events);
   xfree(chan);
+}
+
+static void free_channel_event(void **argv)
+{
+  Channel *chan = argv[0];
+  pmap_del(uint64_t)(&channels, chan->id, NULL);
+  channel_destroy(chan);
 }
 
 static void channel_destroy_early(Channel *chan)
@@ -289,7 +313,7 @@ static void channel_destroy_early(Channel *chan)
   if ((chan->id != --next_chan_id)) {
     abort();
   }
-  pmap_del(uint64_t)(&channels, chan->id);
+  pmap_del(uint64_t)(&channels, chan->id, NULL);
   chan->id = 0;
 
   if ((--chan->refcount != 0)) {
@@ -297,7 +321,7 @@ static void channel_destroy_early(Channel *chan)
   }
 
   // uv will keep a reference to handles until next loop tick, so delay free
-  multiqueue_put(main_loop.events, free_channel_event, 1, chan);
+  multiqueue_put(main_loop.events, free_channel_event, chan);
 }
 
 static void close_cb(Stream *stream, void *data)
@@ -520,8 +544,11 @@ uint64_t channel_from_stdio(bool rpc, CallbackReader on_output, const char **err
   }
 #else
   if (embedded_mode) {
-    stdin_dup_fd = dup(STDIN_FILENO);
-    stdout_dup_fd = dup(STDOUT_FILENO);
+    // Redirect stdout/stdin (the UI channel) to stderr. Use fnctl(F_DUPFD_CLOEXEC) instead of dup()
+    // to prevent child processes from inheriting the file descriptors, which are used by UIs to
+    // detect when Nvim exits.
+    stdin_dup_fd = fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+    stdout_dup_fd = fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
     dup2(STDERR_FILENO, STDOUT_FILENO);
     dup2(STDERR_FILENO, STDIN_FILENO);
   }
@@ -557,7 +584,10 @@ size_t channel_send(uint64_t id, char *data, size_t len, bool data_owned, const 
       goto retfree;
     }
     // unbuffered write
-    written = len * fwrite(data, len, 1, stderr);
+    ptrdiff_t wres = os_write(STDERR_FILENO, data, len, false);
+    if (wres >= 0) {
+      written = (size_t)wres;
+    }
     goto retfree;
   }
 
@@ -620,35 +650,52 @@ static inline list_T *buffer_to_tv_list(const char *const buf, const size_t len)
 void on_channel_data(Stream *stream, RBuffer *buf, size_t count, void *data, bool eof)
 {
   Channel *chan = data;
-  on_channel_output(stream, chan, buf, count, eof, &chan->on_data);
+  on_channel_output(stream, chan, buf, eof, &chan->on_data);
 }
 
 void on_job_stderr(Stream *stream, RBuffer *buf, size_t count, void *data, bool eof)
 {
   Channel *chan = data;
-  on_channel_output(stream, chan, buf, count, eof, &chan->on_stderr);
+  on_channel_output(stream, chan, buf, eof, &chan->on_stderr);
 }
 
-static void on_channel_output(Stream *stream, Channel *chan, RBuffer *buf, size_t count, bool eof,
+static void on_channel_output(Stream *stream, Channel *chan, RBuffer *buf, bool eof,
                               CallbackReader *reader)
 {
-  // stub variable, to keep reading consistent with the order of events, only
-  // consider the count parameter.
-  size_t r;
-  char *ptr = rbuffer_read_ptr(buf, &r);
+  size_t count;
+  char *output = rbuffer_read_ptr(buf, &count);
+
+  if (chan->term) {
+    if (!eof) {
+      char *p = output;
+      char *end = output + count;
+      while (p < end) {
+        // Don't pass incomplete UTF-8 sequences to libvterm. #16245
+        // Composing chars can be passed separately, so utf_ptr2len_len() is enough.
+        int clen = utf_ptr2len_len(p, (int)(end - p));
+        if (clen > end - p) {
+          count = (size_t)(p - output);
+          break;
+        }
+        p += clen;
+      }
+    }
+
+    terminal_receive(chan->term, output, count);
+  }
+
+  if (count) {
+    rbuffer_consumed(buf, count);
+  }
+  // Move remaining data to start of buffer, so the buffer can never wrap around.
+  rbuffer_reset(buf);
+
+  if (callback_reader_set(*reader)) {
+    ga_concat_len(&reader->buffer, output, count);
+  }
 
   if (eof) {
     reader->eof = true;
-  } else {
-    if (chan->term) {
-      terminal_receive(chan->term, ptr, count);
-    }
-
-    rbuffer_consumed(buf, count);
-
-    if (callback_reader_set(*reader)) {
-      ga_concat_len(&reader->buffer, ptr, count);
-    }
   }
 
   if (callback_reader_set(*reader)) {
@@ -661,7 +708,7 @@ static void schedule_channel_event(Channel *chan)
 {
   if (!chan->callback_scheduled) {
     if (!chan->callback_busy) {
-      multiqueue_put(chan->events, on_channel_event, 1, chan);
+      multiqueue_put(chan->events, on_channel_event, chan);
       channel_incref(chan);
     }
     chan->callback_scheduled = true;
@@ -686,7 +733,7 @@ static void on_channel_event(void **args)
   chan->callback_busy = false;
   if (chan->callback_scheduled) {
     // further callback was deferred to avoid recursion.
-    multiqueue_put(chan->events, on_channel_event, 1, chan);
+    multiqueue_put(chan->events, on_channel_event, chan);
     channel_incref(chan);
   }
 
@@ -781,19 +828,21 @@ static void channel_callback_call(Channel *chan, CallbackReader *reader)
 /// and `buf` is assumed to be a new, unmodified buffer.
 void channel_terminal_open(buf_T *buf, Channel *chan)
 {
-  TerminalOptions topts;
-  topts.data = chan;
-  topts.width = chan->stream.pty.width;
-  topts.height = chan->stream.pty.height;
-  topts.write_cb = term_write;
-  topts.resize_cb = term_resize;
-  topts.close_cb = term_close;
-  buf->b_p_channel = (long)chan->id;  // 'channel' option
+  TerminalOptions topts = {
+    .data = chan,
+    .width = chan->stream.pty.width,
+    .height = chan->stream.pty.height,
+    .write_cb = term_write,
+    .resize_cb = term_resize,
+    .close_cb = term_close,
+    .force_crlf = false,
+  };
+  buf->b_p_channel = (OptInt)chan->id;  // 'channel' option
   channel_incref(chan);
   terminal_open(&chan->term, buf, topts);
 }
 
-static void term_write(char *buf, size_t size, void *data)
+static void term_write(const char *buf, size_t size, void *data)
 {
   Channel *chan = data;
   if (chan->stream.proc.in.closed) {
@@ -816,7 +865,7 @@ static inline void term_delayed_free(void **argv)
 {
   Channel *chan = argv[0];
   if (chan->stream.proc.in.pending_reqs || chan->stream.proc.out.pending_reqs) {
-    multiqueue_put(chan->events, term_delayed_free, 1, chan);
+    multiqueue_put(chan->events, term_delayed_free, chan);
     return;
   }
 
@@ -830,7 +879,7 @@ static void term_close(void *data)
 {
   Channel *chan = data;
   process_stop(&chan->stream.proc);
-  multiqueue_put(chan->events, term_delayed_free, 1, data);
+  multiqueue_put(chan->events, term_delayed_free, data);
 }
 
 void channel_info_changed(Channel *chan, bool new_chan)
@@ -838,7 +887,7 @@ void channel_info_changed(Channel *chan, bool new_chan)
   event_T event = new_chan ? EVENT_CHANOPEN : EVENT_CHANINFO;
   if (has_event(event)) {
     channel_incref(chan);
-    multiqueue_put(main_loop.events, set_info_event, 2, chan, event);
+    multiqueue_put(main_loop.events, set_info_event, chan, (void *)(intptr_t)event);
   }
 }
 
@@ -849,16 +898,18 @@ static void set_info_event(void **argv)
 
   save_v_event_T save_v_event;
   dict_T *dict = get_v_event(&save_v_event);
-  Dictionary info = channel_info(chan->id);
+  Arena arena = ARENA_EMPTY;
+  Dictionary info = channel_info(chan->id, &arena);
   typval_T retval;
-  (void)object_to_vim(DICTIONARY_OBJ(info), &retval, NULL);
+  object_to_vim(DICTIONARY_OBJ(info), &retval, NULL);
+  assert(retval.v_type == VAR_DICT);
   tv_dict_add_dict(dict, S_LEN("info"), retval.vval.v_dict);
   tv_dict_set_keys_readonly(dict);
 
   apply_autocmds(event, NULL, NULL, false, curbuf);
 
   restore_v_event(dict, &save_v_event);
-  api_free_dictionary(info);
+  arena_mem_free(arena_finish(&arena));
   channel_decref(chan);
 }
 
@@ -870,15 +921,15 @@ bool channel_job_running(uint64_t id)
           && !process_is_stopped(&chan->stream.proc));
 }
 
-Dictionary channel_info(uint64_t id)
+Dictionary channel_info(uint64_t id, Arena *arena)
 {
   Channel *chan = find_channel(id);
   if (!chan) {
     return (Dictionary)ARRAY_DICT_INIT;
   }
 
-  Dictionary info = ARRAY_DICT_INIT;
-  PUT(info, "id", INTEGER_OBJ((Integer)chan->id));
+  Dictionary info = arena_dict(arena, 8);
+  PUT_C(info, "id", INTEGER_OBJ((Integer)chan->id));
 
   const char *stream_desc, *mode_desc;
   switch (chan->streamtype) {
@@ -886,18 +937,20 @@ Dictionary channel_info(uint64_t id)
     stream_desc = "job";
     if (chan->stream.proc.type == kProcessTypePty) {
       const char *name = pty_process_tty_name(&chan->stream.pty);
-      PUT(info, "pty", STRING_OBJ(cstr_to_string(name)));
+      PUT_C(info, "pty", CSTR_TO_ARENA_OBJ(arena, name));
     }
 
-    char **p = chan->stream.proc.argv;
+    char **args = chan->stream.proc.argv;
     Array argv = ARRAY_DICT_INIT;
-    if (p != NULL) {
-      while (*p != NULL) {
-        ADD(argv, STRING_OBJ(cstr_to_string(*p)));
-        p++;
+    if (args != NULL) {
+      size_t n;
+      for (n = 0; args[n] != NULL; n++) {}
+      argv = arena_array(arena, n);
+      for (size_t i = 0; i < n; i++) {
+        ADD_C(argv, CSTR_AS_OBJ(args[i]));
       }
     }
-    PUT(info, "argv", ARRAY_OBJ(argv));
+    PUT_C(info, "argv", ARRAY_OBJ(argv));
     break;
   }
 
@@ -910,38 +963,51 @@ Dictionary channel_info(uint64_t id)
     break;
 
   case kChannelStreamInternal:
-    PUT(info, "internal", BOOLEAN_OBJ(true));
+    PUT_C(info, "internal", BOOLEAN_OBJ(true));
     FALLTHROUGH;
 
   case kChannelStreamSocket:
     stream_desc = "socket";
     break;
-
-  default:
-    abort();
   }
-  PUT(info, "stream", STRING_OBJ(cstr_to_string(stream_desc)));
+  PUT_C(info, "stream", CSTR_AS_OBJ(stream_desc));
 
   if (chan->is_rpc) {
     mode_desc = "rpc";
-    PUT(info, "client", DICTIONARY_OBJ(rpc_client_info(chan)));
+    PUT_C(info, "client", DICTIONARY_OBJ(chan->rpc.info));
   } else if (chan->term) {
     mode_desc = "terminal";
-    PUT(info, "buffer", BUFFER_OBJ(terminal_buf(chan->term)));
+    PUT_C(info, "buffer", BUFFER_OBJ(terminal_buf(chan->term)));
   } else {
     mode_desc = "bytes";
   }
-  PUT(info, "mode", STRING_OBJ(cstr_to_string(mode_desc)));
+  PUT_C(info, "mode", CSTR_AS_OBJ(mode_desc));
 
   return info;
 }
 
-Array channel_all_info(void)
+/// Simple int64_t comparison function for use with qsort()
+static int int64_t_cmp(const void *pa, const void *pb)
 {
-  Channel *channel;
-  Array ret = ARRAY_DICT_INIT;
-  map_foreach_value(&channels, channel, {
-    ADD(ret, DICTIONARY_OBJ(channel_info(channel->id)));
+  const int64_t a = *(const int64_t *)pa;
+  const int64_t b = *(const int64_t *)pb;
+  return a == b ? 0 : a > b ? 1 : -1;
+}
+
+Array channel_all_info(Arena *arena)
+{
+  // order the items in the array by channel number, for Determinism™
+  kvec_t(int64_t) ids = KV_INITIAL_VALUE;
+  kv_fixsize_arena(arena, ids, map_size(&channels));
+  uint64_t id;
+  map_foreach_key(&channels, id, {
+    kv_push(ids, (int64_t)id);
   });
+  qsort(ids.items, ids.size, sizeof ids.items[0], int64_t_cmp);
+
+  Array ret = arena_array(arena, ids.size);
+  for (size_t i = 0; i < ids.size; i++) {
+    ADD_C(ret, DICTIONARY_OBJ(channel_info((uint64_t)ids.items[i], arena)));
+  }
   return ret;
 }

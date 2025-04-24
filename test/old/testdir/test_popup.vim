@@ -501,6 +501,8 @@ endfunc
 " Test that 'completefunc' on Scratch buffer with preview window works when
 " it's OK.
 func Test_completefunc_with_scratch_buffer()
+  CheckFeature quickfix
+
   new +setlocal\ buftype=nofile\ bufhidden=wipe\ noswapfile
   set completeopt+=preview
   setlocal completefunc=DummyCompleteFive
@@ -676,7 +678,9 @@ endfunc
 
 func Test_popup_and_window_resize()
   CheckFeature terminal
+  CheckFeature quickfix
   CheckNotGui
+  let g:test_is_flaky = 1
 
   let h = winheight(0)
   if h < 15
@@ -691,11 +695,11 @@ func Test_popup_and_window_resize()
 
   call term_sendkeys(buf, "Gi\<c-x>")
   call term_sendkeys(buf, "\<c-v>")
-  call term_wait(buf, 100)
+  call TermWait(buf, 50)
   " popup first entry "!" must be at the top
   call WaitForAssert({-> assert_match('^!\s*$', term_getline(buf, 1))})
   exe 'resize +' . (h - 1)
-  call term_wait(buf, 100)
+  call TermWait(buf, 50)
   redraw!
   " popup shifted down, first line is now empty
   call WaitForAssert({-> assert_equal('', term_getline(buf, 1))})
@@ -708,14 +712,13 @@ func Test_popup_and_window_resize()
 endfunc
 
 func Test_popup_and_preview_autocommand()
+  CheckFeature python
+  CheckFeature quickfix
+  if winheight(0) < 15
+    throw 'Skipped: window height insufficient'
+  endif
+
   " This used to crash Vim
-  if !has('python')
-    return
-  endif
-  let h = winheight(0)
-  if h < 15
-    return
-  endif
   new
   augroup MyBufAdd
     au!
@@ -759,11 +762,11 @@ func Test_popup_and_previewwindow_dump()
   let buf = RunVimInTerminal('-S Xscript', {})
 
   " wait for the script to finish
-  call term_wait(buf)
+  call TermWait(buf)
 
   " Test that popup and previewwindow do not overlap.
   call term_sendkeys(buf, "o")
-  call term_wait(buf, 100)
+  call TermWait(buf, 50)
   call term_sendkeys(buf, "\<C-X>\<C-N>")
   call VerifyScreenDump(buf, 'Test_popup_and_previewwindow_01', {})
 
@@ -819,9 +822,8 @@ func Test_balloon_split()
 endfunc
 
 func Test_popup_position()
-  if !CanRunVimInTerminal()
-    return
-  endif
+  CheckScreendump
+
   let lines =<< trim END
     123456789_123456789_123456789_a
     123456789_123456789_123456789_b
@@ -1140,6 +1142,10 @@ func Test_CompleteChanged()
     let g:event = copy(v:event)
     let g:item = get(v:event, 'completed_item', {})
     let g:word = get(g:item, 'word', v:null)
+    let l:line = getline('.')
+    if g:word == v:null && l:line == "bc"
+      let g:word = l:line
+    endif
   endfunction
   augroup AAAAA_Group
     au!
@@ -1159,10 +1165,24 @@ func Test_CompleteChanged()
   call assert_equal(v:null, g:word)
   call feedkeys("a\<C-N>\<C-N>\<C-N>\<C-N>\<C-P>", 'tx')
   call assert_equal('foobar', g:word)
+  call feedkeys("S\<C-N>bc", 'tx')
+  call assert_equal("bc", g:word)
+
+  func Omni_test(findstart, base)
+    if a:findstart
+      return col(".")
+    endif
+    return [#{word: "one"}, #{word: "two"}, #{word: "five"}]
+  endfunc
+  set omnifunc=Omni_test
+  set completeopt=menu,menuone
+  call feedkeys("i\<C-X>\<C-O>\<BS>\<BS>\<BS>f", 'tx')
+  call assert_equal('five', g:word)
 
   autocmd! AAAAA_Group
   set complete& completeopt&
   delfunc! OnPumChange
+  delfunc! Omni_test
   bw!
 endfunc
 
@@ -1208,7 +1228,6 @@ func Test_pum_rightleft()
   let buf = RunVimInTerminal('--cmd "set rightleft" Xtest1', {})
   call term_wait(buf)
   call term_sendkeys(buf, "Go\<C-P>")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_pum_rightleft_01', {'rows': 8})
   call term_sendkeys(buf, "\<C-P>\<C-Y>")
   call term_wait(buf)
@@ -1250,7 +1269,6 @@ func Test_pum_scrollbar()
   let buf = RunVimInTerminal('--cmd "set pumheight=2" Xtest1', {})
   call term_wait(buf)
   call term_sendkeys(buf, "Go\<C-P>\<C-P>\<C-P>")
-  call term_wait(buf)
   call VerifyScreenDump(buf, 'Test_pum_scrollbar_01', {'rows': 7})
   call term_sendkeys(buf, "\<C-E>\<Esc>dd")
   call term_wait(buf)
@@ -1259,7 +1277,6 @@ func Test_pum_scrollbar()
     call term_sendkeys(buf, ":set rightleft\<CR>")
     call term_wait(buf)
     call term_sendkeys(buf, "Go\<C-P>\<C-P>\<C-P>")
-    call term_wait(buf)
     call VerifyScreenDump(buf, 'Test_pum_scrollbar_02', {'rows': 7})
   endif
 

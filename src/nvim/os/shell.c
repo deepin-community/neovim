@@ -1,6 +1,3 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -10,11 +7,12 @@
 
 #include "auto/config.h"
 #include "klib/kvec.h"
-#include "nvim/ascii.h"
+#include "nvim/ascii_defs.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/charset.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval_defs.h"
+#include "nvim/event/defs.h"
 #include "nvim/event/libuv_process.h"
 #include "nvim/event/loop.h"
 #include "nvim/event/multiqueue.h"
@@ -24,29 +22,31 @@
 #include "nvim/event/wstream.h"
 #include "nvim/ex_cmds.h"
 #include "nvim/fileio.h"
-#include "nvim/gettext.h"
+#include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
-#include "nvim/macros.h"
+#include "nvim/macros_defs.h"
 #include "nvim/main.h"
 #include "nvim/mbyte.h"
 #include "nvim/memline.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/option_defs.h"
+#include "nvim/option_vars.h"
 #include "nvim/os/fs.h"
 #include "nvim/os/os_defs.h"
 #include "nvim/os/shell.h"
 #include "nvim/os/signal.h"
 #include "nvim/os/time.h"
 #include "nvim/path.h"
-#include "nvim/pos.h"
+#include "nvim/pos_defs.h"
 #include "nvim/profile.h"
 #include "nvim/rbuffer.h"
+#include "nvim/rbuffer_defs.h"
+#include "nvim/state_defs.h"
 #include "nvim/strings.h"
 #include "nvim/tag.h"
-#include "nvim/types.h"
+#include "nvim/types_defs.h"
 #include "nvim/ui.h"
-#include "nvim/vim.h"
+#include "nvim/vim_defs.h"
 
 #define DYNAMIC_BUFFER_INIT { NULL, 0, 0 }
 #define NS_1_SECOND         1000000000U     // 1 second, in nanoseconds
@@ -121,19 +121,17 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   int i;
   size_t len;
   char *p;
-  bool dir;
   char *extra_shell_arg = NULL;
-  ShellOpts shellopts = kShellOptExpand | kShellOptSilent;
+  int shellopts = kShellOptExpand | kShellOptSilent;
   int j;
   char *tempname;
-  char *command;
-  FILE *fd;
-  char *buffer;
 #define STYLE_ECHO      0       // use "echo", the default
 #define STYLE_GLOB      1       // use "glob", for csh
 #define STYLE_VIMGLOB   2       // use "vimglob", for Posix sh
 #define STYLE_PRINT     3       // use "print -N", for zsh
 #define STYLE_BT        4       // `cmd` expansion, execute the pattern directly
+#define STYLE_GLOBSTAR  5       // use extended shell glob for bash (this uses extended
+                                // globbing functionality with globstar, needs bash > 4)
   int shell_style = STYLE_ECHO;
   int check_spaces;
   static bool did_find_nul = false;
@@ -141,6 +139,9 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   // vimglob() function to define for Posix shell
   static char *sh_vimglob_func =
     "vimglob() { while [ $# -ge 1 ]; do echo \"$1\"; shift; done }; vimglob >";
+  // vimglob() function with globstar setting enabled, only for bash >= 4.X
+  static char *sh_globstar_opt =
+    "[[ ${BASH_VERSINFO[0]} -ge 4 ]] && shopt -s globstar; ";
 
   bool is_fish_shell =
 #if defined(UNIX)
@@ -190,6 +191,8 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   //       If we use *zsh, "print -N" will work better than "glob".
   // STYLE_VIMGLOB:    NL separated
   //       If we use *sh*, we define "vimglob()".
+  // STYLE_GLOBSTAR:   NL separated
+  //       If we use *bash*, we define "vimglob() and enable globstar option".
   // STYLE_ECHO:       space separated.
   //       A shell we don't know, stay safe and use "echo".
   if (num_pat == 1 && *pat[0] == '`'
@@ -203,9 +206,12 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
       shell_style = STYLE_PRINT;
     }
   }
-  if (shell_style == STYLE_ECHO
-      && strstr(path_tail(p_sh), "sh") != NULL) {
-    shell_style = STYLE_VIMGLOB;
+  if (shell_style == STYLE_ECHO) {
+    if (strstr(path_tail(p_sh), "bash") != NULL) {
+      shell_style = STYLE_GLOBSTAR;
+    } else if (strstr(path_tail(p_sh), "sh") != NULL) {
+      shell_style = STYLE_VIMGLOB;
+    }
   }
 
   // Compute the length of the command.  We need 2 extra bytes: for the
@@ -214,6 +220,8 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   len = strlen(tempname) + 29;
   if (shell_style == STYLE_VIMGLOB) {
     len += strlen(sh_vimglob_func);
+  } else if (shell_style == STYLE_GLOBSTAR) {
+    len += strlen(sh_vimglob_func) + strlen(sh_globstar_opt);
   }
 
   for (i = 0; i < num_pat; i++) {
@@ -232,7 +240,7 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
     len += sizeof("egin;" " end") - 1;
   }
 
-  command = xmalloc(len);
+  char *command = xmalloc(len);
 
   // Build the shell command:
   // - Set $nonomatch depending on EW_NOTFOUND (hopefully the shell
@@ -280,6 +288,9 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
     } else if (shell_style == STYLE_PRINT) {
       STRCAT(command, "print -N >");
     } else if (shell_style == STYLE_VIMGLOB) {
+      STRCAT(command, sh_vimglob_func);
+    } else if (shell_style == STYLE_GLOBSTAR) {
+      STRCAT(command, sh_globstar_opt);
       STRCAT(command, sh_vimglob_func);
     } else {
       STRCAT(command, "echo >");
@@ -352,7 +363,7 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   // When running in the background, give it some time to create the temp
   // file, but don't wait for it to finish.
   if (ampersand) {
-    os_delay(10L, true);
+    os_delay(10, true);
   }
 
   xfree(command);
@@ -364,7 +375,7 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
     if (!(flags & EW_SILENT)) {
       msg_putchar('\n');                // clear bottom line quickly
       cmdline_row = Rows - 1;           // continue on last line
-      msg(_(e_wildexpand));
+      msg(_(e_wildexpand), 0);
       msg_start();                    // don't overwrite this message
     }
 
@@ -377,17 +388,17 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   }
 
   // read the names from the file into memory
-  fd = fopen(tempname, READBIN);
+  FILE *fd = fopen(tempname, READBIN);
   if (fd == NULL) {
     // Something went wrong, perhaps a file name with a special char.
     if (!(flags & EW_SILENT)) {
-      msg(_(e_wildexpand));
+      msg(_(e_wildexpand), 0);
       msg_start();                      // don't overwrite this message
     }
     xfree(tempname);
     goto notfound;
   }
-  int fseek_res = fseek(fd, 0L, SEEK_END);
+  int fseek_res = fseek(fd, 0, SEEK_END);
   if (fseek_res < 0) {
     xfree(tempname);
     fclose(fd);
@@ -403,8 +414,8 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
   assert(templen <= SIZE_MAX);  // NOLINT(runtime/int)
 #endif
   len = (size_t)templen;
-  fseek(fd, 0L, SEEK_SET);
-  buffer = xmalloc(len + 1);
+  fseek(fd, 0, SEEK_SET);
+  char *buffer = xmalloc(len + 1);
   // fread() doesn't terminate buffer with NUL;
   // appropriate termination (not always NUL) is done below.
   size_t readlen = fread(buffer, 1, len, fd);
@@ -430,7 +441,9 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
       p = skipwhite(p);                 // skip to next entry
     }
     // file names are separated with NL
-  } else if (shell_style == STYLE_BT || shell_style == STYLE_VIMGLOB) {
+  } else if (shell_style == STYLE_BT
+             || shell_style == STYLE_VIMGLOB
+             || shell_style == STYLE_GLOBSTAR) {
     buffer[len] = NUL;                  // make sure the buffer ends in NUL
     p = buffer;
     for (i = 0; *p != NUL; i++) {       // count number of entries
@@ -496,7 +509,7 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
     (*file)[i] = p;
     // Space or NL separates
     if (shell_style == STYLE_ECHO || shell_style == STYLE_BT
-        || shell_style == STYLE_VIMGLOB) {
+        || shell_style == STYLE_VIMGLOB || shell_style == STYLE_GLOBSTAR) {
       while (!(shell_style == STYLE_ECHO && *p == ' ')
              && *p != '\n' && *p != NUL) {
         p++;
@@ -523,7 +536,7 @@ int os_expand_wildcards(int num_pat, char **pat, int *num_file, char ***file, in
     }
 
     // check if this entry should be included
-    dir = (os_isdir((*file)[i]));
+    bool dir = (os_isdir((*file)[i]));
     if ((dir && !(flags & EW_DIR)) || (!dir && !(flags & EW_FILE))) {
       continue;
     }
@@ -653,10 +666,11 @@ char *shell_argv_to_str(char **const argv)
 /// @param extra_args Extra arguments to the shell, or NULL.
 ///
 /// @return shell command exit code
-int os_call_shell(char *cmd, ShellOpts opts, char *extra_args)
+int os_call_shell(char *cmd, int opts, char *extra_args)
 {
   DynamicBuffer input = DYNAMIC_BUFFER_INIT;
-  char *output = NULL, **output_ptr = NULL;
+  char *output = NULL;
+  char **output_ptr = NULL;
   int current_state = State;
   bool forward_output = true;
 
@@ -688,7 +702,7 @@ int os_call_shell(char *cmd, ShellOpts opts, char *extra_args)
   xfree(input.data);
 
   if (output) {
-    (void)write_output(output, nread, true);
+    write_output(output, nread, true);
     xfree(output);
   }
 
@@ -707,15 +721,17 @@ int os_call_shell(char *cmd, ShellOpts opts, char *extra_args)
 /// os_call_shell() wrapper. Handles 'verbose', :profile, and v:shell_error.
 /// Invalidates cached tags.
 ///
+/// @param opts  a combination of ShellOpts flags
+///
 /// @return shell command exit code
-int call_shell(char *cmd, ShellOpts opts, char *extra_shell_arg)
+int call_shell(char *cmd, int opts, char *extra_shell_arg)
 {
   int retval;
   proftime_T wait_time;
 
   if (p_verbose > 3) {
     verbose_enter();
-    smsg(_("Executing command: \"%s\""), cmd == NULL ? p_sh : cmd);
+    smsg(0, _("Executing command: \"%s\""), cmd == NULL ? p_sh : cmd);
     msg_putchar('\n');
     verbose_leave();
   }
@@ -752,7 +768,7 @@ int call_shell(char *cmd, ShellOpts opts, char *extra_shell_arg)
 /// @param  ret_len  length of the stdout
 ///
 /// @return an allocated string, or NULL for error.
-char *get_cmd_output(char *cmd, char *infile, ShellOpts flags, size_t *ret_len)
+char *get_cmd_output(char *cmd, char *infile, int flags, size_t *ret_len)
 {
   char *buffer = NULL;
 
@@ -786,9 +802,9 @@ char *get_cmd_output(char *cmd, char *infile, ShellOpts flags, size_t *ret_len)
     goto done;
   }
 
-  fseek(fd, 0L, SEEK_END);
+  fseek(fd, 0, SEEK_END);
   size_t len = (size_t)ftell(fd);  // get size of temp file
-  fseek(fd, 0L, SEEK_SET);
+  fseek(fd, 0, SEEK_SET);
 
   buffer = xmalloc(len + 1);
   size_t i = fread(buffer, 1, len, fd);
@@ -876,9 +892,9 @@ static int do_os_system(char **argv, const char *input, size_t len, char **outpu
     // Failed, probably 'shell' is not executable.
     if (!silent) {
       msg_puts(_("\nshell failed to start: "));
-      msg_outtrans(os_strerror(status));
+      msg_outtrans(os_strerror(status), 0);
       msg_puts(": ");
-      msg_outtrans(prog);
+      msg_outtrans(prog, 0);
       msg_putchar('\n');
     }
     multiqueue_free(events);
@@ -1006,9 +1022,9 @@ static void system_data_cb(Stream *stream, RBuffer *buf, size_t count, void *dat
 ///          Returns the previous decision if size=0.
 static bool out_data_decide_throttle(size_t size)
 {
-  static uint64_t started     = 0;  // Start time of the current throttle.
-  static size_t received    = 0;  // Bytes observed since last throttle.
-  static size_t visit       = 0;  // "Pulse" count of the current throttle.
+  static uint64_t started = 0;  // Start time of the current throttle.
+  static size_t received = 0;  // Bytes observed since last throttle.
+  static size_t visit = 0;  // "Pulse" count of the current throttle.
   static char pulse_msg[] = { ' ', ' ', ' ', '\0' };
 
   if (!size) {
@@ -1026,7 +1042,7 @@ static bool out_data_decide_throttle(size_t size)
     started = os_hrtime();
   } else {
     uint64_t since = os_hrtime() - started;
-    if (since < (visit * 0.1L * NS_1_SECOND)) {
+    if (since < (visit * (NS_1_SECOND / 10))) {
       return true;
     }
     if (since > (3 * NS_1_SECOND)) {
@@ -1088,7 +1104,7 @@ static void out_data_ring(char *output, size_t size)
     last_skipped_len = MAX_CHUNK_SIZE;
   } else if (size > 0) {
     // Length of the old data that can be kept.
-    size_t keep_len   = MIN(last_skipped_len, MAX_CHUNK_SIZE - size);
+    size_t keep_len = MIN(last_skipped_len, MAX_CHUNK_SIZE - size);
     size_t keep_start = last_skipped_len - keep_len;
     // Shift the kept part of the old data to the start.
     if (keep_start) {
@@ -1103,12 +1119,13 @@ static void out_data_ring(char *output, size_t size)
 /// Continue to append data to last screen line.
 ///
 /// @param output       Data to append to screen lines.
-/// @param remaining    Size of data.
-/// @param new_line     If true, next data output will be on a new line.
+/// @param count        Size of data.
+/// @param eof          If true, there will be no more data output.
 static void out_data_append_to_screen(char *output, size_t *count, bool eof)
   FUNC_ATTR_NONNULL_ALL
 {
-  char *p = output, *end = output + *count;
+  char *p = output;
+  char *end = output + *count;
   while (p < end) {
     if (*p == '\n' || *p == '\r' || *p == TAB || *p == BELL) {
       msg_putchar_attr((uint8_t)(*p), 0);
@@ -1127,7 +1144,7 @@ static void out_data_append_to_screen(char *output, size_t *count, bool eof)
         goto end;
       }
 
-      (void)msg_outtrans_len_attr(p, i, 0);
+      msg_outtrans_len(p, i, 0);
       p += i;
     }
   }
@@ -1153,8 +1170,7 @@ static void out_data_cb(Stream *stream, RBuffer *buf, size_t count, void *data, 
     rbuffer_consumed(buf, cnt);
   }
 
-  // Move remaining data to start of buffer, so the buffer can never
-  // wrap around.
+  // Move remaining data to start of buffer, so the buffer can never wrap around.
   rbuffer_reset(buf);
 }
 
@@ -1221,12 +1237,13 @@ static size_t word_length(const char *str)
 /// before we finish writing.
 static void read_input(DynamicBuffer *buf)
 {
-  size_t written = 0, l = 0, len = 0;
+  size_t written = 0;
+  size_t len = 0;
   linenr_T lnum = curbuf->b_op_start.lnum;
   char *lp = ml_get(lnum);
 
-  for (;;) {
-    l = strlen(lp + written);
+  while (true) {
+    size_t l = strlen(lp + written);
     if (l == 0) {
       len = 0;
     } else if (lp[written] == NL) {

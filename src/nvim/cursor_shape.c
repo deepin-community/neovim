@@ -1,52 +1,50 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "nvim/api/private/defs.h"
 #include "nvim/api/private/helpers.h"
-#include "nvim/ascii.h"
+#include "nvim/ascii_defs.h"
 #include "nvim/charset.h"
 #include "nvim/cursor_shape.h"
 #include "nvim/ex_getln.h"
-#include "nvim/gettext.h"
+#include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
 #include "nvim/highlight_group.h"
 #include "nvim/log.h"
-#include "nvim/macros.h"
-#include "nvim/memory.h"
-#include "nvim/option_defs.h"
+#include "nvim/macros_defs.h"
+#include "nvim/option_vars.h"
+#include "nvim/state_defs.h"
 #include "nvim/strings.h"
 #include "nvim/ui.h"
-#include "nvim/vim.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "cursor_shape.c.generated.h"
 #endif
 
+static const char e_digit_expected[] = N_("E548: Digit expected");
+
 /// Handling of cursor and mouse pointer shapes in various modes.
 cursorentry_T shape_table[SHAPE_IDX_COUNT] = {
   // Values are set by 'guicursor' and 'mouseshape'.
   // Adjust the SHAPE_IDX_ defines when changing this!
-  { "normal", 0, 0, 0, 700L, 400L, 250L, 0, 0, "n", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "visual", 0, 0, 0, 700L, 400L, 250L, 0, 0, "v", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "insert", 0, 0, 0, 700L, 400L, 250L, 0, 0, "i", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "replace", 0, 0, 0, 700L, 400L, 250L, 0, 0, "r", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "cmdline_normal", 0, 0, 0, 700L, 400L, 250L, 0, 0, "c", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "cmdline_insert", 0, 0, 0, 700L, 400L, 250L, 0, 0, "ci", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "cmdline_replace", 0, 0, 0, 700L, 400L, 250L, 0, 0, "cr", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "operator", 0, 0, 0, 700L, 400L, 250L, 0, 0, "o", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "visual_select", 0, 0, 0, 700L, 400L, 250L, 0, 0, "ve", SHAPE_CURSOR + SHAPE_MOUSE },
-  { "cmdline_hover", 0, 0, 0,   0L,   0L,   0L, 0, 0, "e", SHAPE_MOUSE },
-  { "statusline_hover", 0, 0, 0,   0L,   0L,   0L, 0, 0, "s", SHAPE_MOUSE },
-  { "statusline_drag", 0, 0, 0,   0L,   0L,   0L, 0, 0, "sd", SHAPE_MOUSE },
-  { "vsep_hover", 0, 0, 0,   0L,   0L,   0L, 0, 0, "vs", SHAPE_MOUSE },
-  { "vsep_drag", 0, 0, 0,   0L,   0L,   0L, 0, 0, "vd", SHAPE_MOUSE },
-  { "more", 0, 0, 0,   0L,   0L,   0L, 0, 0, "m", SHAPE_MOUSE },
-  { "more_lastline", 0, 0, 0,   0L,   0L,   0L, 0, 0, "ml", SHAPE_MOUSE },
-  { "showmatch", 0, 0, 0, 100L, 100L, 100L, 0, 0, "sm", SHAPE_CURSOR },
+  { "normal", 0, 0, 0, 700, 400, 250, 0, 0, "n", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "visual", 0, 0, 0, 700, 400, 250, 0, 0, "v", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "insert", 0, 0, 0, 700, 400, 250, 0, 0, "i", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "replace", 0, 0, 0, 700, 400, 250, 0, 0, "r", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "cmdline_normal", 0, 0, 0, 700, 400, 250, 0, 0, "c", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "cmdline_insert", 0, 0, 0, 700, 400, 250, 0, 0, "ci", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "cmdline_replace", 0, 0, 0, 700, 400, 250, 0, 0, "cr", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "operator", 0, 0, 0, 700, 400, 250, 0, 0, "o", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "visual_select", 0, 0, 0, 700, 400, 250, 0, 0, "ve", SHAPE_CURSOR + SHAPE_MOUSE },
+  { "cmdline_hover", 0, 0, 0,   0,   0,   0, 0, 0, "e", SHAPE_MOUSE },
+  { "statusline_hover", 0, 0, 0,   0,   0,   0, 0, 0, "s", SHAPE_MOUSE },
+  { "statusline_drag", 0, 0, 0,   0,   0,   0, 0, 0, "sd", SHAPE_MOUSE },
+  { "vsep_hover", 0, 0, 0,   0,   0,   0, 0, 0, "vs", SHAPE_MOUSE },
+  { "vsep_drag", 0, 0, 0,   0,   0,   0, 0, 0, "vd", SHAPE_MOUSE },
+  { "more", 0, 0, 0,   0,   0,   0, 0, 0, "m", SHAPE_MOUSE },
+  { "more_lastline", 0, 0, 0,   0,   0,   0, 0, 0, "ml", SHAPE_MOUSE },
+  { "showmatch", 0, 0, 0, 100, 100, 100, 0, 0, "sm", SHAPE_CURSOR },
 };
 
 /// Converts cursor_shapes into an Array of Dictionaries
@@ -60,8 +58,8 @@ Array mode_style_array(Arena *arena)
   for (int i = 0; i < SHAPE_IDX_COUNT; i++) {
     cursorentry_T *cur = &shape_table[i];
     Dictionary dic = arena_dict(arena, 3 + ((cur->used_for & SHAPE_CURSOR) ? 9 : 0));
-    PUT_C(dic, "name", STRING_OBJ(cstr_as_string(cur->full_name)));
-    PUT_C(dic, "short_name", STRING_OBJ(cstr_as_string(cur->name)));
+    PUT_C(dic, "name", CSTR_AS_OBJ(cur->full_name));
+    PUT_C(dic, "short_name", CSTR_AS_OBJ(cur->name));
     if (cur->used_for & SHAPE_MOUSE) {
       PUT_C(dic, "mouse_shape", INTEGER_OBJ(cur->mshape));
     }
@@ -101,22 +99,15 @@ Array mode_style_array(Arena *arena)
 /// @param what SHAPE_CURSOR or SHAPE_MOUSE ('mouseshape')
 ///
 /// @returns error message for an illegal option, NULL otherwise.
-char *parse_shape_opt(int what)
+const char *parse_shape_opt(int what)
 {
-  char *colonp;
-  char *commap;
-  char *slashp;
   char *p = NULL;
-  char *endp;
   int idx = 0;                          // init for GCC
-  int all_idx;
   int len;
-  int i;
-  int found_ve = false;                 // found "ve" flag
-  int round;
+  bool found_ve = false;                 // found "ve" flag
 
   // First round: check for errors; second round: do it for real.
-  for (round = 1; round <= 2; round++) {
+  for (int round = 1; round <= 2; round++) {
     if (round == 2 || *p_guicursor == NUL) {
       // Set all entries to default (block, blinkon0, default color).
       // This is the default for anything that is not set.
@@ -129,8 +120,8 @@ char *parse_shape_opt(int what)
     // Repeat for all comma separated parts.
     char *modep = p_guicursor;
     while (modep != NULL && *modep != NUL) {
-      colonp = vim_strchr(modep, ':');
-      commap = vim_strchr(modep, ',');
+      char *colonp = vim_strchr(modep, ':');
+      char *commap = vim_strchr(modep, ',');
 
       if (colonp == NULL || (commap != NULL && commap < colonp)) {
         return N_("E545: Missing colon");
@@ -141,7 +132,7 @@ char *parse_shape_opt(int what)
 
       // Repeat for all modes before the colon.
       // For the 'a' mode, we loop to handle all the modes.
-      all_idx = -1;
+      int all_idx = -1;
       while (modep < colonp || all_idx >= 0) {
         if (all_idx < 0) {
           // Find the mode
@@ -178,7 +169,7 @@ char *parse_shape_opt(int what)
         for (p = colonp + 1; *p && *p != ',';) {
           {
             // First handle the ones with a number argument.
-            i = (uint8_t)(*p);
+            int i = (uint8_t)(*p);
             len = 0;
             if (STRNICMP(p, "ver", 3) == 0) {
               len = 3;
@@ -194,7 +185,7 @@ char *parse_shape_opt(int what)
             if (len != 0) {
               p += len;
               if (!ascii_isdigit(*p)) {
-                return N_("E548: digit expected");
+                return e_digit_expected;
               }
               int n = getdigits_int(&p, false, 0);
               if (len == 3) {               // "ver" or "hor"
@@ -224,7 +215,7 @@ char *parse_shape_opt(int what)
               }
               p += 5;
             } else {          // must be a highlight group name then
-              endp = vim_strchr(p, '-');
+              char *endp = vim_strchr(p, '-');
               if (commap == NULL) {                       // last part
                 if (endp == NULL) {
                   endp = p + strlen(p);                  // find end of part
@@ -232,7 +223,7 @@ char *parse_shape_opt(int what)
               } else if (endp > commap || endp == NULL) {
                 endp = commap;
               }
-              slashp = vim_strchr(p, '/');
+              char *slashp = vim_strchr(p, '/');
               if (slashp != NULL && slashp < endp) {
                 // "group/langmap_group"
                 i = syn_check_group(p, (size_t)(slashp - p));
@@ -362,9 +353,9 @@ static void clear_shape_table(void)
 {
   for (int idx = 0; idx < SHAPE_IDX_COUNT; idx++) {
     shape_table[idx].shape = SHAPE_BLOCK;
-    shape_table[idx].blinkwait = 0L;
-    shape_table[idx].blinkon = 0L;
-    shape_table[idx].blinkoff = 0L;
+    shape_table[idx].blinkwait = 0;
+    shape_table[idx].blinkon = 0;
+    shape_table[idx].blinkoff = 0;
     shape_table[idx].id = 0;
     shape_table[idx].id_lm = 0;
   }

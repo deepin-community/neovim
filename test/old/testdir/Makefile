@@ -41,13 +41,13 @@ ifdef USE_VALGRIND
 	                 --leak-check=yes    \
 	                 --track-origins=yes
 #        VALGRIND_TOOL := exp-sgcheck
-	TOOL := valgrind -q                                     \
-	                 -q                                     \
-	                 $(VALGRIND_TOOL)                       \
-	                 --suppressions=../../.valgrind.supp \
-	                 --error-exitcode=123                   \
-	                 --log-file=valgrind-\%p.$*             \
-	                 $(VGDB)                                \
+	TOOL := valgrind -q                                         \
+	                 -q                                         \
+	                 $(VALGRIND_TOOL)                           \
+	                 --suppressions=../../../src/.valgrind.supp \
+	                 --error-exitcode=123                       \
+	                 --log-file=valgrind-\%p.$*                 \
+	                 $(VGDB)                                    \
 	                 --trace-children=yes
 else
 	ifdef USE_GDB
@@ -70,6 +70,7 @@ report:
 		then echo TEST FAILURE; exit 1; \
 		else echo ALL DONE; \
 		fi"
+	@rm -f starttime
 
 test1.out: $(NVIM_PRG)
 
@@ -86,10 +87,13 @@ fixff:
 	-$(NVIM_PRG) $(NO_INITS) -u unix.vim "+argdo set ff=dos|upd" +q \
 	  dotest.in
 
+# File to delete when testing starts
+CLEANUP_FILES = test.log messages starttime
+
 # Execute an individual new style test, e.g.:
 # 	make test_largefile
 $(NEW_TESTS):
-	rm -f $@.res test.log messages
+	rm -f $@.res $(CLEANUP_FILES)
 	@MAKEFLAGS=--no-print-directory $(MAKE) -f Makefile $@.res
 	@cat messages
 	@if test -f test.log; then \
@@ -108,9 +112,8 @@ CLEAN_FILES := *.out \
   *.rej             \
   *.orig            \
   *.tlog            \
-  test.log          \
   test_result.log   \
-  messages          \
+  $(CLEANUP_FILES)  \
   $(RM_ON_RUN)      \
   $(RM_ON_START)    \
   valgrind.*        \
@@ -118,7 +121,8 @@ CLEAN_FILES := *.out \
   .*.swo            \
   .gdbinit          \
   $(TMPDIR)         \
-  del
+  del               \
+  $(ROOT)/runtime/doc/.*.swp
 clean:
 	$(RM) -rf $(CLEAN_FILES)
 
@@ -132,7 +136,7 @@ test1.out: .gdbinit test1.in
 
 nolog:
 	@echo "[OLDTEST-PREP] Removing test.log and messages"
-	@rm -f test.log messages
+	@rm -f test_result.log $(CLEANUP_FILES)
 
 
 # New style of tests uses Vim script with assert calls.  These are easier

@@ -1,6 +1,9 @@
 " Tests for the getbufinfo(), getwininfo() and gettabinfo() functions
+source check.vim
 
-function Test_getbufwintabinfo()
+func Test_getbufwintabinfo()
+  CheckFeature quickfix
+
   edit Xtestfile1
   edit Xtestfile2
   let buflist = getbufinfo()
@@ -42,6 +45,7 @@ function Test_getbufwintabinfo()
     sign undefine Mark
     enew!
   endif
+  call assert_notequal([], getbufinfo(v:_null_dict))
 
   only
   let w1_id = win_getid()
@@ -108,7 +112,7 @@ function Test_getbufwintabinfo()
   call assert_true(winlist[2].quickfix)
   call assert_false(winlist[2].loclist)
   wincmd t | only
-endfunction
+endfunc
 
 function Test_get_buf_options()
   let opts = bufnr()->getbufvar('&')

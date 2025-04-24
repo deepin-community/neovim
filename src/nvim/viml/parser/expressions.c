@@ -1,10 +1,7 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
-/// VimL expression parser
+/// Vimscript expression parser
 
 // Planned incompatibilities (to be included into vim_diff.txt when this parser
-// will be an actual part of VimL evaluation process):
+// will be an actual part of Vimscript evaluation process):
 //
 // 1. Expressions are first fully parsed and only then executed.  This means
 //    that while ":echo [system('touch abc')" will create file "abc" in Vim and
@@ -58,17 +55,16 @@
 #include <string.h>
 
 #include "klib/kvec.h"
-#include "nvim/ascii.h"
-#include "nvim/assert.h"
+#include "nvim/ascii_defs.h"
+#include "nvim/assert_defs.h"
 #include "nvim/charset.h"
-#include "nvim/eval/typval.h"
-#include "nvim/gettext.h"
+#include "nvim/eval.h"
+#include "nvim/gettext_defs.h"
 #include "nvim/keycodes.h"
-#include "nvim/macros.h"
+#include "nvim/macros_defs.h"
 #include "nvim/mbyte.h"
 #include "nvim/memory.h"
-#include "nvim/types.h"
-#include "nvim/vim.h"
+#include "nvim/types_defs.h"
 #include "nvim/viml/parser/expressions.h"
 #include "nvim/viml/parser/parser.h"
 
@@ -89,7 +85,7 @@ typedef enum {
 
 /// Parse type: what is being parsed currently
 typedef enum {
-  /// Parsing regular VimL expression
+  /// Parsing regular Vimscript expression
   kEPTExpr = 0,
   /// Parsing lambda arguments
   ///
@@ -171,7 +167,7 @@ static inline float_T scale_number(const float_T num, const uint8_t base,
   return ret;
 }
 
-/// Get next token for the VimL expression input
+/// Get next token for the Vimscript expression input
 ///
 /// @param  pstate  Parser state.
 /// @param[in]  flags  Flags, @see LexExprFlags.
@@ -367,7 +363,7 @@ LexExprToken viml_pexpr_next_token(ParserState *const pstate, const int flags)
       // uses recorded position to scale number down when processing exponent.
       float_T significand_part = 0;
       uvarnumber_T exp_part = 0;
-      const size_t frac_size = (size_t)(frac_end - frac_start);
+      const size_t frac_size = frac_end - frac_start;
       for (size_t i = 0; i < frac_end; i++) {
         if (i == frac_start - 1) {
           continue;
@@ -938,7 +934,6 @@ static const char *intchar2str(const int ch)
 }
 
 #ifdef UNIT_TESTING
-# include <stdio.h>
 
 REAL_FATTR_UNUSED
 static inline void viml_pexpr_debug_print_ast_node(const ExprASTNode *const *const eastnode_p,
@@ -1168,7 +1163,7 @@ static struct {
   // represented as "list(comma(a, comma(b, comma(c, d))))" then if it is
   // "list(comma(comma(comma(a, b), c), d))" in which case you will need to
   // traverse all three comma() structures. And with comma operator (including
-  // actual comma operator from C which is not present in VimL) nobody cares
+  // actual comma operator from C which is not present in Vimscript) nobody cares
   // about associativity, only about order of execution.
   [kExprNodeComma] = { kEOpLvlComma, kEOpAssRight },
 
@@ -1269,21 +1264,12 @@ static bool viml_pexpr_handle_bop(const ParserState *const pstate, ExprASTStack 
                                    || bop_node->type == kExprNodeSubscript)
                                   ? kEOpLvlSubscript
                                   : node_lvl(*bop_node));
-#ifndef NDEBUG
-  const ExprOpAssociativity bop_node_ass = (
-                                            (bop_node->type == kExprNodeCall
-                                             || bop_node->type == kExprNodeSubscript)
-      ? kEOpAssLeft
-      : node_ass(*bop_node));
-#endif
   do {
     ExprASTNode **new_top_node_p = kv_last(*ast_stack);
     ExprASTNode *new_top_node = *new_top_node_p;
     assert(new_top_node != NULL);
     const ExprOpLvl new_top_node_lvl = node_lvl(*new_top_node);
     const ExprOpAssociativity new_top_node_ass = node_ass(*new_top_node);
-    assert(bop_node_lvl != new_top_node_lvl
-           || bop_node_ass == new_top_node_ass);
     if (top_node_p != NULL
         && ((bop_node_lvl > new_top_node_lvl
              || (bop_node_lvl == new_top_node_lvl
@@ -1915,7 +1901,7 @@ static const uint8_t base_to_prefix_length[] = {
   [16] = 2,
 };
 
-/// Parse one VimL expression
+/// Parse one Vimscript expression
 ///
 /// @param  pstate  Parser state.
 /// @param[in]  flags  Additional flags, see ExprParserFlags
@@ -2207,8 +2193,8 @@ viml_pexpr_parse_process_token:
         cur_node->data.opt.ident_len = 0;
         cur_node->data.opt.scope = (
                                     cur_token.len == 3
-              ? (ExprOptScope)pline.data[cur_token.start.col + 1]
-              : kExprOptScopeUnspecified);
+                                    ? (ExprOptScope)pline.data[cur_token.start.col + 1]
+                                    : kExprOptScopeUnspecified);
       } else {
         cur_node->data.opt.ident = cur_token.data.opt.name;
         cur_node->data.opt.ident_len = cur_token.data.opt.len;
@@ -2866,7 +2852,7 @@ viml_pexpr_parse_no_paren_closing_error: {}
         case kENodeOperator:
           if (prev_token.type == kExprLexSpacing) {
             // For some reason "function (args)" is a function call, but
-            // "(funcref) (args)" is not. AFAIR this somehow involves
+            // "(funcref) (args)" is not. As far as I remember this somehow involves
             // compatibility and Bram was commenting that this is
             // intentionally inconsistent and he is not very happy with the
             // situation himself.

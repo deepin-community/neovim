@@ -1,6 +1,3 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 /// @file fileio.c
 ///
 /// Buffered reading/writing to a file. Unlike fileio.c this is not dealing with
@@ -15,20 +12,21 @@
 #include <uv.h>
 
 #include "auto/config.h"
-#include "nvim/gettext.h"
+#include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
 #include "nvim/log.h"
-#include "nvim/macros.h"
+#include "nvim/macros_defs.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
 #include "nvim/os/fileio.h"
-#include "nvim/os/os.h"
+#include "nvim/os/fs.h"
 #include "nvim/os/os_defs.h"
 #include "nvim/rbuffer.h"
-#include "nvim/types.h"
+#include "nvim/rbuffer_defs.h"
+#include "nvim/types_defs.h"
 
-#ifdef MSWIN
-# include "nvim/os/os_win_console.h"
+#ifdef HAVE_SYS_UIO_H
+# include <sys/uio.h>
 #endif
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
@@ -53,7 +51,6 @@ int file_open(FileDescriptor *const ret_fp, const char *const fname, const int f
 {
   int os_open_flags = 0;
   TriState wr = kNone;
-  // -V:FLAG:501
 #define FLAG(flags, flag, fcntl_flags, wrval, cond) \
   do { \
     if (flags & flag) { \
@@ -132,69 +129,15 @@ int file_open_fd(FileDescriptor *const ret_fp, const int fd, const int flags)
   return 0;
 }
 
-/// Like file_open(), but allocate and return ret_fp
-///
-/// @param[out]  error  Error code, or 0 on success. @see os_strerror()
-/// @param[in]  fname  File name to open.
-/// @param[in]  flags  Flags, @see FileOpenFlags.
-/// @param[in]  mode  Permissions for the newly created file (ignored if flags
-///                   does not have kFileCreate\*).
-///
-/// @return [allocated] Opened file or NULL in case of error.
-FileDescriptor *file_open_new(int *const error, const char *const fname, const int flags,
-                              const int mode)
-  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
-{
-  FileDescriptor *const fp = xmalloc(sizeof(*fp));
-  if ((*error = file_open(fp, fname, flags, mode)) != 0) {
-    xfree(fp);
-    return NULL;
-  }
-  return fp;
-}
-
-/// Like file_open_fd(), but allocate and return ret_fp
-///
-/// @param[out]  error  Error code, or 0 on success. @see os_strerror()
-/// @param[in]  fd  File descriptor to wrap.
-/// @param[in]  flags  Flags, @see FileOpenFlags.
-/// @param[in]  mode  Permissions for the newly created file (ignored if flags
-///                   does not have FILE_CREATE\*).
-///
-/// @return [allocated] Opened file or NULL in case of error.
-FileDescriptor *file_open_fd_new(int *const error, const int fd, const int flags)
-  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_MALLOC FUNC_ATTR_WARN_UNUSED_RESULT
-{
-  FileDescriptor *const fp = xmalloc(sizeof(*fp));
-  if ((*error = file_open_fd(fp, fd, flags)) != 0) {
-    xfree(fp);
-    return NULL;
-  }
-  return fp;
-}
-
 /// Opens standard input as a FileDescriptor.
-FileDescriptor *file_open_stdin(void)
-  FUNC_ATTR_MALLOC FUNC_ATTR_WARN_UNUSED_RESULT
+int file_open_stdin(FileDescriptor *fp)
+  FUNC_ATTR_WARN_UNUSED_RESULT
 {
-  int error;
-  int stdin_dup_fd;
-  if (stdin_fd > 0) {
-    stdin_dup_fd = stdin_fd;
-  } else {
-    stdin_dup_fd = os_dup(STDIN_FILENO);
-#ifdef MSWIN
-    // Replace the original stdin with the console input handle.
-    os_replace_stdin_to_conin();
-#endif
-  }
-  FileDescriptor *const stdin_dup = file_open_fd_new(&error, stdin_dup_fd,
-                                                     kFileReadOnly|kFileNonBlocking);
-  assert(stdin_dup != NULL);
+  int error = file_open_fd(fp, os_open_stdin_fd(), kFileReadOnly|kFileNonBlocking);
   if (error != 0) {
     ELOG("failed to open stdin: %s", os_strerror(error));
   }
-  return stdin_dup;
+  return error;
 }
 
 /// Close file and free its buffer
@@ -213,20 +156,6 @@ int file_close(FileDescriptor *const fp, const bool do_fsync)
     return close_error;
   }
   return flush_error;
-}
-
-/// Close and free file obtained using file_open_new()
-///
-/// @param[in,out]  fp  File to close.
-/// @param[in]  do_fsync  If true, use fsync() to write changes to disk.
-///
-/// @return 0 or error code.
-int file_free(FileDescriptor *const fp, const bool do_fsync)
-  FUNC_ATTR_NONNULL_ALL
-{
-  const int ret = file_close(fp, do_fsync);
-  xfree(fp);
-  return ret;
 }
 
 /// Flush file modifications to disk
@@ -282,9 +211,10 @@ static char writebuf[kRWBufferSize];
 ///
 /// @param[in,out]  rv  RBuffer instance used.
 /// @param[in,out]  fp  File to work with.
-static void file_rb_write_full_cb(RBuffer *const rv, FileDescriptor *const fp)
+static void file_rb_write_full_cb(RBuffer *const rv, void *const fp_in)
   FUNC_ATTR_NONNULL_ALL
 {
+  FileDescriptor *const fp = fp_in;
   assert(fp->wr);
   assert(rv->data == (void *)fp);
   if (rbuffer_size(rv) == 0) {
@@ -434,24 +364,6 @@ ptrdiff_t file_skip(FileDescriptor *const fp, const size_t size)
   } while (read_bytes < size && !file_eof(fp));
 
   return (ptrdiff_t)read_bytes;
-}
-
-/// Msgpack callback for writing to a file
-///
-/// @param  data  File to write to.
-/// @param[in]  buf  Data to write.
-/// @param[in]  len  Length of the data to write.
-///
-/// @return 0 in case of success, -1 in case of error.
-int msgpack_file_write(void *data, const char *buf, size_t len)
-  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_WARN_UNUSED_RESULT
-{
-  assert(len < PTRDIFF_MAX);
-  const ptrdiff_t written_bytes = file_write((FileDescriptor *)data, buf, len);
-  if (written_bytes < 0) {
-    return msgpack_file_write_error((int)written_bytes);
-  }
-  return 0;
 }
 
 /// Print error which occurs when failing to write msgpack data

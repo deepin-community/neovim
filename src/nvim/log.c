@@ -1,6 +1,3 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 //
 // Log module
 //
@@ -20,13 +17,15 @@
 #include <uv.h>
 
 #include "auto/config.h"
-#include "nvim/ascii.h"
+#include "nvim/ascii_defs.h"
 #include "nvim/eval.h"
 #include "nvim/globals.h"
 #include "nvim/log.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
+#include "nvim/os/fs.h"
 #include "nvim/os/os.h"
+#include "nvim/os/os_defs.h"
 #include "nvim/os/stdpaths_defs.h"
 #include "nvim/os/time.h"
 #include "nvim/path.h"
@@ -76,7 +75,7 @@ static void log_path_init(void)
     char *failed_dir = NULL;
     bool log_dir_failure = false;
     if (!os_isdir(loghome)) {
-      log_dir_failure = (os_mkdir_recurse(loghome, 0700, &failed_dir) != 0);
+      log_dir_failure = (os_mkdir_recurse(loghome, 0700, &failed_dir, NULL) != 0);
     }
     XFREE_CLEAR(loghome);
     // Invalid $NVIM_LOG_FILE or failed to expand; fall back to default.
@@ -131,7 +130,7 @@ void log_unlock(void)
 /// @return true if log was emitted normally, false if failed or recursive
 bool logmsg(int log_level, const char *context, const char *func_name, int line_num, bool eol,
             const char *fmt, ...)
-  FUNC_ATTR_UNUSED FUNC_ATTR_PRINTF(6, 7)
+  FUNC_ATTR_PRINTF(6, 7)
 {
   static bool recursive = false;
   static bool did_msg = false;  // Showed recursion message?
@@ -152,7 +151,17 @@ bool logmsg(int log_level, const char *context, const char *func_name, int line_
 #ifdef EXITFREE
   // Logging after we've already started freeing all our memory will only cause
   // pain.  We need access to VV_PROGPATH, homedir, etc.
-  assert(!entered_free_all_mem);
+  if (entered_free_all_mem) {
+    fprintf(stderr, "FATAL: error in free_all_mem\n %s %s %d: ", context, func_name, line_num);
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(stderr, fmt, args);
+    va_end(args);
+    if (eol) {
+      fprintf(stderr, "\n");
+    }
+    abort();
+  }
 #endif
 
   log_lock();
@@ -332,13 +341,13 @@ static bool v_do_log_to_file(FILE *log_file, int log_level, const char *context,
 
   // Print the log message.
   int rv = (line_num == -1 || func_name == NULL)
-    ? fprintf(log_file, "%s %s.%03d %-10s %s",
-              log_levels[log_level], date_time, millis, name,
-              (context == NULL ? "?:" : context))
-                               : fprintf(log_file, "%s %s.%03d %-10s %s%s:%d: ",
-                                         log_levels[log_level], date_time, millis, name,
-                                         (context == NULL ? "" : context),
-                                         func_name, line_num);
+           ? fprintf(log_file, "%s %s.%03d %-10s %s",
+                     log_levels[log_level], date_time, millis, name,
+                     (context == NULL ? "?:" : context))
+           : fprintf(log_file, "%s %s.%03d %-10s %s%s:%d: ",
+                     log_levels[log_level], date_time, millis, name,
+                     (context == NULL ? "" : context),
+                     func_name, line_num);
   if (name[0] == '?') {
     // No v:servername yet. Clear `name` so that the next log can try again.
     name[0] = '\0';

@@ -1,29 +1,201 @@
-neovim (0.9.5-0deepin) unstable; urgency=medium
+neovim (0.10.4-7) unstable; urgency=medium
 
-  * New upstream version 0.9.5
-  * This is a maintenance release, focusing on bug fixes.
+  * Fix typo in Link name for view alternative (Closes: #1100108)
+  * Skip "quitting swapfile dialog on startup stops TUI" test, which fails
+    only in Salsa CI
+  * Remove rvim and rview alternatives, since the "restricted" mode was
+    removed from nvim.
 
- -- xiangzelong <xiangzelong@deepin.org>  Wed, 03 Jan 2024 15:12:48 +0800
+ -- James McCoy <jamessan@debian.org>  Tue, 11 Mar 2025 16:18:19 -0400
 
-neovim (0.9.4-deepin) unstable; urgency=medium
+neovim (0.10.4-6) unstable; urgency=medium
 
-  * New upstream version 0.9.4
-  * Deps: Bump libmpack-lua to 1.0.11
-  * This is a maintenance release, focusing on bug fixes.
+  * Use git-debrebase to manage patches
+  * Skip flaky tests in test_stat.vim
+  * Switch to declarative alternatives instead of manual postinst/prerm scripts
+  * d/copyright: Remove obsolete runtime/plugin/health.vim
 
- -- xiangzelong <xiangzelong@deepin.org>  Wed, 18 Oct 2023 13:30:23 +0800
+ -- James McCoy <jamessan@debian.org>  Tue, 11 Mar 2025 06:24:54 -0400
 
-neovim (0.9.2-deepin) unstable; urgency=medium
+neovim (0.10.4-5) unstable; urgency=medium
 
-  * New upstream version 0.9.2
+  * Upload to unstable
+  * Revert "Switch to debian/experimental"
+  * salsa-ci.yml: Remove explicit RELEASE
+  * d/copyright: Update based on lintian feedback
 
- -- xiangzelong <xiangzelong@deepin.org>  Fri, 15 Sep 2023 11:39:33 +0800
+ -- James McCoy <jamessan@debian.org>  Sat, 08 Mar 2025 15:23:17 -0500
 
-neovim (0.9.1-7deepin) unstable; urgency=medium
+neovim (0.10.4-4) experimental; urgency=medium
 
-  * New upstream version 0.9.1
+  * Use dh_builtusing to populate Static-Built-Using for tree-sitter parsers
+  * Backport upstream patch to fix vim_snprintf tests on 32-bit platforms
+  * Revert filtering out of vim_snprintf tests
+  * Skip "treesitter foldexpr" tests
 
- -- xiangzelong <xiangzelong@deepin.org>  Wed, 13 Sep 2023 11:43:22 +0800
+ -- James McCoy <jamessan@debian.org>  Fri, 28 Feb 2025 06:41:47 -0500
+
+neovim (0.10.4-3) experimental; urgency=medium
+
+  * Add a new variable for filtering out unit tests and use that for vim_snprintf tests
+
+ -- James McCoy <jamessan@debian.org>  Wed, 12 Feb 2025 16:56:20 -0500
+
+neovim (0.10.4-2) experimental; urgency=medium
+
+  * Skip vim_snprintf unit tests on armhf
+
+ -- James McCoy <jamessan@debian.org>  Mon, 10 Feb 2025 20:29:38 -0500
+
+neovim (0.10.4-1) experimental; urgency=medium
+
+  * New upstream version
+    + Remove invalid bool definition to fix build with gcc-15 (Closes:
+      #1097446)
+  * Backport patches to fix strings_spec failure on 32-bit platforms
+
+ -- James McCoy <jamessan@debian.org>  Wed, 29 Jan 2025 16:57:17 -0500
+
+neovim (0.10.3-2) experimental; urgency=medium
+
+  * Disable coloring of test output
+  * Temporarily disable some treesitter based tests
+
+ -- James McCoy <jamessan@debian.org>  Mon, 27 Jan 2025 20:30:00 -0500
+
+neovim (0.10.3-1) experimental; urgency=medium
+
+  * New upstream release (Closes: #1071572)
+  * Remove backported patches
+  * Remove libtermkey as a dependency, since it has been vendored
+  * d/rules: Set -DUSE_BUNDLED_BUSTED=OFF
+  * Add markdown(-inline) parsers, as required by upstream
+  * Bump lua-lpeg minimum version to 1.1.0
+  * Add xdg-utils to Build-Depends for vim.ui.open test
+  * Skip TUI tests which fail with "process does not own the terminal"
+  * Set minimum versions for all tree-sitter-*-src Build-Depends
+
+ -- James McCoy <jamessan@debian.org>  Sat, 04 Jan 2025 21:50:13 -0500
+
+neovim (0.9.5-10) unstable; urgency=medium
+
+  * Work around CMake's default CMAKE_C_FLAGS_RELEASE value overriding flags
+    specified in CFLAGS, thus making the previous upload's -O1 setting
+    ineffective.
+
+ -- James McCoy <jamessan@debian.org>  Sun, 13 Oct 2024 20:18:29 -0400
+
+neovim (0.9.5-9) unstable; urgency=medium
+
+  * Build with -O1 on s390x to workaround #1082125
+
+ -- James McCoy <jamessan@debian.org>  Sun, 13 Oct 2024 13:39:14 -0400
+
+neovim (0.9.5-8) unstable; urgency=medium
+
+  * Backport upstream patch to fix FTBFS with new tzdata
+    - vim-patch:9.1.0776: test_strftime may fail because of missing TZ data (Closes: #1084888)
+  * Declare compliance with Policy 4.7.0, no changes required
+
+ -- James McCoy <jamessan@debian.org>  Sun, 13 Oct 2024 12:13:47 -0400
+
+neovim (0.9.5-7) unstable; urgency=medium
+
+  [ Colin Watson ]
+  * fix(fileio): fix off-by-one in rename_with_tmp
+  * Revert "Explicitly downgrade _FORTIFY_SOURCE to 1"
+
+  [ James McCoy ]
+  * Use cmake+ninja buildsystem instead of overriding dh_auto_configure
+  * Remove pkg-config Build-Depends
+
+ -- James McCoy <jamessan@debian.org>  Sun, 24 Mar 2024 09:13:28 -0400
+
+neovim (0.9.5-6) unstable; urgency=medium
+
+  * Revert "Change packaging branch to debian/experimental"
+  * Revert "CI: Set release to experimental"
+  * Skip "memory usage releases memory when closing windows" for all platforms
+
+ -- James McCoy <jamessan@debian.org>  Mon, 04 Mar 2024 09:22:50 -0500
+
+neovim (0.9.5-5) unstable; urgency=medium
+
+  * Upload to unstable
+  * Build with LuaJIT on arm64 (Closes: #1061154)
+
+ -- James McCoy <jamessan@debian.org>  Mon, 04 Mar 2024 06:33:29 -0500
+
+neovim (0.9.5-4) experimental; urgency=medium
+
+  * Add lua-coxpcall as a test Build-Depends, since it's needed for non-LuaJIT
+    platforms
+
+ -- James McCoy <jamessan@debian.org>  Tue, 09 Jan 2024 16:58:30 -0500
+
+neovim (0.9.5-3) experimental; urgency=medium
+
+  * Remove lua-nvim Build-Depends
+  * Provide a custom $XDG_RUNTIME_DIR when running tests.  $XDG_RUNTIME_DIR is
+    leaking into the sbuild environment on the buildds and causing the tests
+    to hang because the test can't access the external directory.
+    Thanks to Vincent Blut for diagnosing the problem. (Closes: #1060340)
+  * Revert "Skip wundo_spec.lua tests since they hang on the buildds"
+
+ -- James McCoy <jamessan@debian.org>  Tue, 09 Jan 2024 15:42:25 -0500
+
+neovim (0.9.5-2) experimental; urgency=medium
+
+  * Backport upstream patch
+    + fix(tui): use buflen to calculate remaining buffer size
+  * Skip wundo_spec.lua tests since they hang on the buildds
+
+ -- James McCoy <jamessan@debian.org>  Sun, 07 Jan 2024 15:34:34 -0500
+
+neovim (0.9.5-1) experimental; urgency=medium
+
+  * New upstream release
+    + Remove backported patches
+  * Skip functionaltest which hangs in Salsa CI/buildd environments
+  * Backport upstream patches
+    + fix(test): call separate_arguments() correctly to honor $BUSTED_ARGS
+    + fix(test/tui_spec): pass the expected NULL-sentinel to execl()
+  * Skip "parser API supports caching queries" test, since it is too variable
+
+ -- James McCoy <jamessan@debian.org>  Sat, 06 Jan 2024 10:06:26 -0500
+
+neovim (0.9.4-2) experimental; urgency=medium
+
+  * Backport fixes for big-endian systems
+
+ -- James McCoy <jamessan@debian.org>  Fri, 22 Dec 2023 09:30:56 -0500
+
+neovim (0.9.4-1) experimental; urgency=medium
+
+  * New upstream release (Closes: #1021339)
+  * Remove backported patches from 0.7 release
+  * Revert "Disable strict aliasing to fix gcc-12 FTBFS", fixed upstream
+  * Backport patches to fix test failures
+  * Backport patch to remove incompatible tree-sitter query for c parser
+  * debian/control:
+    + Remove gperf Build-Depends, replaced by upstream's "hashy" script
+    + Bump minimum versions of libvterm/libtermkey to 0.3/0.22
+  * debian/rules:
+    + Remove override of BUSTED_OUTPUT_TYPE
+    + Fix spelling of "noopt" when checking DEB_BUILD_OPTIONS
+    + Stop exporting $USERNAME and $HOSTNAME during the build, no longer used
+  * Change packaging branch to debian/experimental
+  * Enable tree-sitter support for C, lua, vim, vimdoc, and tree-sitter
+    queries
+
+ -- James McCoy <jamessan@debian.org>  Mon, 18 Dec 2023 08:13:20 -0500
+
+neovim (0.7.2-8) unstable; urgency=medium
+
+  * Backport upstream patch, "fix(unittests): ignore __s128 and __u128 types
+    in ffi", to fix FTBFS with recent Linux headers. (Closes: #1052945)
+
+ -- James McCoy <jamessan@debian.org>  Fri, 29 Sep 2023 09:21:25 -0400
 
 neovim (0.7.2-7) unstable; urgency=medium
 

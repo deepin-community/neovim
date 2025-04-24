@@ -372,7 +372,7 @@ func Test_multibyte_chars()
 endfunc
 
 " check that 'ambiwidth' does not change the meaning of \p
-func Test_ambiwidth()
+func Test_regexp_ambiwidth()
   set regexpengine=1 ambiwidth=single
   call assert_equal(0, match("\u00EC", '\p'))
   set regexpengine=1 ambiwidth=double
@@ -599,5 +599,16 @@ func Test_match_too_complicated()
   set regexpengine=0
 endfunc
 
+func Test_combining_chars_in_collection()
+  new
+  for i in range(0,2)
+    exe "set re=".i
+    put =['ɔ̃', 'ɔ',  '̃  ã', 'abcd']
+    :%s/[ɔ̃]//
+    call assert_equal(['', '', 'ɔ', '̃  ã', 'abcd'], getline(1,'$'))
+    %d
+  endfor
+  bw!
+endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

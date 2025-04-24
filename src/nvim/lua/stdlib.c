@@ -1,6 +1,3 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <lauxlib.h>
 #include <lua.h>
@@ -9,37 +6,40 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <sys/types.h>
+#include <uv.h>
 
 #ifdef NVIM_VENDOR_BIT
 # include "bit.h"
 #endif
 
-#include "auto/config.h"
 #include "cjson/lua_cjson.h"
 #include "mpack/lmpack.h"
 #include "nvim/api/private/defs.h"
 #include "nvim/api/private/helpers.h"
-#include "nvim/ascii.h"
+#include "nvim/ascii_defs.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/eval/typval.h"
 #include "nvim/eval/typval_defs.h"
+#include "nvim/eval/vars.h"
 #include "nvim/ex_eval.h"
 #include "nvim/fold.h"
 #include "nvim/globals.h"
+#include "nvim/lua/base64.h"
 #include "nvim/lua/converter.h"
 #include "nvim/lua/spell.h"
 #include "nvim/lua/stdlib.h"
 #include "nvim/lua/xdiff.h"
-#include "nvim/map.h"
+#include "nvim/map_defs.h"
 #include "nvim/mbyte.h"
+#include "nvim/mbyte_defs.h"
 #include "nvim/memline.h"
 #include "nvim/memory.h"
-#include "nvim/pos.h"
+#include "nvim/pos_defs.h"
 #include "nvim/regexp.h"
+#include "nvim/regexp_defs.h"
 #include "nvim/runtime.h"
-#include "nvim/types.h"
-#include "nvim/vim.h"
+#include "nvim/strings.h"
+#include "nvim/types_defs.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "lua/stdlib.c.generated.h"
@@ -85,7 +85,8 @@ static int regex_match_line(lua_State *lstate)
 
   handle_T bufnr = (handle_T)luaL_checkinteger(lstate, 2);
   linenr_T rownr = (linenr_T)luaL_checkinteger(lstate, 3);
-  int start = 0, end = -1;
+  int start = 0;
+  int end = -1;
   if (narg >= 4) {
     start = (int)luaL_checkinteger(lstate, 4);
   }
@@ -105,16 +106,16 @@ static int regex_match_line(lua_State *lstate)
     return luaL_error(lstate, "invalid row");
   }
 
-  char *line = ml_get_buf(buf, rownr + 1, false);
-  size_t len = strlen(line);
+  char *line = ml_get_buf(buf, rownr + 1);
+  colnr_T len = ml_get_buf_len(buf, rownr + 1);
 
-  if (start < 0 || (size_t)start > len) {
+  if (start < 0 || start > len) {
     return luaL_error(lstate, "invalid start");
   }
 
   char save = NUL;
   if (end >= 0) {
-    if ((size_t)end > len || end < start) {
+    if (end > len || end < start) {
       return luaL_error(lstate, "invalid end");
     }
     save = line[end];
@@ -180,11 +181,12 @@ int nlua_str_utfindex(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
     }
   }
 
-  size_t codepoints = 0, codeunits = 0;
+  size_t codepoints = 0;
+  size_t codeunits = 0;
   mb_utflen(s1, (size_t)idx, &codepoints, &codeunits);
 
-  lua_pushinteger(lstate, (long)codepoints);
-  lua_pushinteger(lstate, (long)codeunits);
+  lua_pushinteger(lstate, (lua_Integer)codepoints);
+  lua_pushinteger(lstate, (lua_Integer)codeunits);
 
   return 2;
 }
@@ -204,7 +206,7 @@ static int nlua_str_utf_pos(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
   size_t clen;
   for (size_t i = 0; i < s1_len && s1[i] != NUL; i += clen) {
     clen = (size_t)utf_ptr2len_len(s1 + i, (int)(s1_len - i));
-    lua_pushinteger(lstate, (long)i + 1);
+    lua_pushinteger(lstate, (lua_Integer)i + 1);
     lua_rawseti(lstate, -2, (int)idx);
     idx++;
   }
@@ -224,11 +226,12 @@ static int nlua_str_utf_start(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
   size_t s1_len;
   const char *s1 = luaL_checklstring(lstate, 1, &s1_len);
   ptrdiff_t offset = luaL_checkinteger(lstate, 2);
-  if (offset < 0 || offset > (intptr_t)s1_len) {
+  if (offset <= 0 || offset > (intptr_t)s1_len) {
     return luaL_error(lstate, "index out of range");
   }
-  int head_offset = utf_cp_head_off(s1, s1 + offset - 1);
-  lua_pushinteger(lstate, head_offset);
+  size_t const off = (size_t)(offset - 1);
+  int head_off = -utf_cp_bounds_len(s1, s1 + off, (int)(s1_len - off)).begin_off;
+  lua_pushinteger(lstate, head_off);
   return 1;
 }
 
@@ -244,11 +247,12 @@ static int nlua_str_utf_end(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
   size_t s1_len;
   const char *s1 = luaL_checklstring(lstate, 1, &s1_len);
   ptrdiff_t offset = luaL_checkinteger(lstate, 2);
-  if (offset < 0 || offset > (intptr_t)s1_len) {
+  if (offset <= 0 || offset > (intptr_t)s1_len) {
     return luaL_error(lstate, "index out of range");
   }
-  int tail_offset = utf_cp_tail_off(s1, s1 + offset - 1);
-  lua_pushinteger(lstate, tail_offset);
+  size_t const off = (size_t)(offset - 1);
+  int tail_off = utf_cp_bounds_len(s1, s1 + off, (int)(s1_len - off)).end_off - 1;
+  lua_pushinteger(lstate, tail_off);
   return 1;
 }
 
@@ -276,7 +280,7 @@ int nlua_str_byteindex(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
     return luaL_error(lstate, "index out of range");
   }
 
-  lua_pushinteger(lstate, (long)byteidx);
+  lua_pushinteger(lstate, (lua_Integer)byteidx);
 
   return 1;
 }
@@ -397,6 +401,15 @@ int nlua_setvar(lua_State *lstate)
       di = tv_dict_item_alloc_len(key.data, key.size);
       tv_dict_add(dict, di);
     } else {
+      bool type_error = false;
+      if (dict == &vimvardict
+          && !before_set_vvar(key.data, di, &tv, true, watched, &type_error)) {
+        tv_clear(&tv);
+        if (type_error) {
+          return luaL_error(lstate, "Setting v:%s to value with wrong type", key.data);
+        }
+        return 0;
+      }
       if (watched) {
         tv_copy(&di->di_tv, &oldtv);
       }
@@ -436,7 +449,7 @@ int nlua_getvar(lua_State *lstate)
   if (di == NULL) {
     return 0;  // nil
   }
-  nlua_push_typval(lstate, &di->di_tv, false);
+  nlua_push_typval(lstate, &di->di_tv, 0);
   return 1;
 }
 
@@ -458,7 +471,7 @@ static int nlua_stricmp(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
   int ret = 0;
   assert(s1[s1_len] == NUL);
   assert(s2[s2_len] == NUL);
-  do {
+  while (true) {
     nul1 = memchr(s1, NUL, s1_len);
     nul2 = memchr(s2, NUL, s2_len);
     ret = STRICMP(s1, s2);
@@ -482,7 +495,7 @@ static int nlua_stricmp(lua_State *const lstate) FUNC_ATTR_NONNULL_ALL
     } else {
       break;
     }
-  } while (true);
+  }
   lua_pop(lstate, 2);
   lua_pushnumber(lstate, (lua_Number)((ret > 0) - (ret < 0)));
   return 1;
@@ -507,7 +520,7 @@ static int nlua_iconv(lua_State *lstate)
   const char *str = lua_tolstring(lstate, 1, &str_len);
 
   char *from = enc_canonize(enc_skip((char *)lua_tolstring(lstate, 2, NULL)));
-  char *to   = enc_canonize(enc_skip((char *)lua_tolstring(lstate, 3, NULL)));
+  char *to = enc_canonize(enc_skip((char *)lua_tolstring(lstate, 3, NULL)));
 
   vimconv_T vimconv;
   vimconv.vc_type = CONV_NONE;
@@ -530,11 +543,27 @@ static int nlua_iconv(lua_State *lstate)
   return 1;
 }
 
-// Like 'zx' but don't call newFoldLevel()
+// Update foldlevels (e.g., by evaluating 'foldexpr') for the given line range in the given window,
+// without invoking other side effects. Unlike `zx`, it does not close manually opened folds and
+// does not open folds under the cursor.
 static int nlua_foldupdate(lua_State *lstate)
 {
-  curwin->w_foldinvalid = true;  // recompute folds
-  foldOpenCursor();
+  handle_T window = (handle_T)luaL_checkinteger(lstate, 1);
+  win_T *win = handle_get_window(window);
+  if (!win) {
+    return luaL_error(lstate, "invalid window");
+  }
+  // input is zero-based end-exclusive range
+  linenr_T top = (linenr_T)luaL_checkinteger(lstate, 2) + 1;
+  if (top < 1 || top > win->w_buffer->b_ml.ml_line_count) {
+    return luaL_error(lstate, "invalid top");
+  }
+  linenr_T bot = (linenr_T)luaL_checkinteger(lstate, 3);
+  if (top > bot) {
+    return luaL_error(lstate, "invalid bot");
+  }
+
+  foldUpdate(win, top, bot);
 
   return 0;
 }
@@ -598,6 +627,10 @@ void nlua_state_add_stdlib(lua_State *const lstate, bool is_thread)
     lua_pushcfunction(lstate, &nlua_iconv);
     lua_setfield(lstate, -2, "iconv");
 
+    // vim.base64
+    luaopen_base64(lstate);
+    lua_setfield(lstate, -2, "base64");
+
     nlua_state_add_internal(lstate);
   }
 
@@ -613,6 +646,19 @@ void nlua_state_add_stdlib(lua_State *const lstate, bool is_thread)
   lua_pushvalue(lstate, -3);
   lua_setfield(lstate, -2, "mpack");
   lua_pop(lstate, 3);
+
+  // vim.lpeg
+  int luaopen_lpeg(lua_State *);
+  luaopen_lpeg(lstate);
+  lua_pushvalue(lstate, -1);
+  lua_setfield(lstate, -4, "lpeg");
+
+  // package.loaded.lpeg = vim.lpeg
+  lua_getglobal(lstate, "package");
+  lua_getfield(lstate, -1, "loaded");
+  lua_pushvalue(lstate, -3);
+  lua_setfield(lstate, -2, "lpeg");
+  lua_pop(lstate, 4);
 
   // vim.diff
   lua_pushcfunction(lstate, &nlua_xdl_diff);

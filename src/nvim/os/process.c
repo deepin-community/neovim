@@ -1,29 +1,21 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 /// OS process functions
 ///
 /// psutil is a good reference for cross-platform syscall voodoo:
 /// https://github.com/giampaolo/psutil/tree/master/psutil/arch
 
+// IWYU pragma: no_include <sys/param.h>
+
 #include <assert.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <uv.h>
-
-#include "nvim/log.h"
-#include "nvim/memory.h"
-#include "nvim/os/process.h"
 
 #ifdef MSWIN
 # include <tlhelp32.h>
-
-# include "nvim/api/private/helpers.h"
 #endif
 
-#if defined(__FreeBSD__)  // XXX: OpenBSD ?
+#if defined(__FreeBSD__)
 # include <string.h>
 # include <sys/types.h>
 # include <sys/user.h>
@@ -34,12 +26,25 @@
 #endif
 
 #if defined(__APPLE__) || defined(BSD)
-# include <pwd.h>
 # include <sys/sysctl.h>
+
+# include "nvim/macros_defs.h"
+#endif
+
+#if defined(__linux__)
+# include <stdio.h>
+#endif
+
+#include "nvim/log.h"
+#include "nvim/memory.h"
+#include "nvim/os/process.h"
+
+#ifdef MSWIN
+# include "nvim/api/private/helpers.h"
 #endif
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "os/process.c.generated.h"  // IWYU pragma: export
+# include "os/process.c.generated.h"
 #endif
 
 #ifdef MSWIN
@@ -72,7 +77,7 @@ static bool os_proc_tree_kill_rec(HANDLE process, int sig)
   }
 
 theend:
-  return (bool)TerminateProcess(process, (unsigned int)sig);
+  return (bool)TerminateProcess(process, (unsigned)sig);
 }
 /// Kills process `pid` and its descendants recursively.
 bool os_proc_tree_kill(int pid, int sig)
@@ -109,6 +114,7 @@ bool os_proc_tree_kill(int pid, int sig)
 /// @param[out] proc_count Number of child processes.
 /// @return 0 on success, 1 if process not found, 2 on other error.
 int os_proc_children(int ppid, int **proc_list, size_t *proc_count)
+  FUNC_ATTR_NONNULL_ALL
 {
   if (ppid < 0) {
     return 2;
@@ -224,7 +230,7 @@ int os_proc_children(int ppid, int **proc_list, size_t *proc_count)
 ///
 /// @param pid Process to inspect.
 /// @return Map of process properties, empty on error.
-Dictionary os_proc_info(int pid)
+Dictionary os_proc_info(int pid, Arena *arena)
 {
   Dictionary pinfo = ARRAY_DICT_INIT;
   PROCESSENTRY32 pe;
@@ -252,9 +258,10 @@ Dictionary os_proc_info(int pid)
   CloseHandle(h);
 
   if (pe.th32ProcessID == (DWORD)pid) {
-    PUT(pinfo, "pid", INTEGER_OBJ(pid));
-    PUT(pinfo, "ppid", INTEGER_OBJ((int)pe.th32ParentProcessID));
-    PUT(pinfo, "name", STRING_OBJ(cstr_to_string(pe.szExeFile)));
+    pinfo = arena_dict(arena, 3);
+    PUT_C(pinfo, "pid", INTEGER_OBJ(pid));
+    PUT_C(pinfo, "ppid", INTEGER_OBJ((int)pe.th32ParentProcessID));
+    PUT_C(pinfo, "name", CSTR_TO_ARENA_OBJ(arena, pe.szExeFile));
   }
 
   return pinfo;
