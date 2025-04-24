@@ -1,6 +1,6 @@
 "  matchit.vim: (global plugin) Extended "%" matching
 "  autload script of matchit plugin, see ../plugin/matchit.vim
-"  Last Change: Jun 10, 2021
+"  Last Change: Jan 24, 2022
 
 " Neovim does not support scriptversion
 if has("vimscript-4")
@@ -41,6 +41,10 @@ function s:RestoreOptions()
   if &ve != ''
     let restore_options = " ve=" .. &ve .. restore_options
     set ve=
+  endif
+  if &smartcase
+    let restore_options = " smartcase " .. restore_options
+    set nosmartcase
   endif
   return restore_options
 endfunction
@@ -134,9 +138,6 @@ function matchit#Match_wrapper(word, forward, mode) range
     let curcol = match(matchline, regexp)
     " If there is no match, give up.
     if curcol == -1
-      " Make sure macros abort properly
-      "exe "norm! \<esc>"
-      call feedkeys("\e", 'tni')
       return s:CleanUp(restore_options, a:mode, startpos)
     endif
     let endcol = matchend(matchline, regexp)
@@ -217,6 +218,7 @@ function matchit#Match_wrapper(word, forward, mode) range
   let view = winsaveview()
   call cursor(0, curcol + 1)
   if skip =~ 'synID' && !(has("syntax") && exists("g:syntax_on"))
+        \ || skip =~ 'v:lua.vim.treesitter' && !exists('b:ts_highlight')
     let skip = "0"
   else
     execute "if " .. skip .. "| let skip = '0' | endif"
@@ -671,6 +673,7 @@ fun! matchit#MultiMatch(spflag, mode)
   let middlepat = substitute(middlepat, ',', '\\|', 'g')
 
   if skip =~ 'synID' && !(has("syntax") && exists("g:syntax_on"))
+        \ || skip =~ 'v:lua.vim.treesitter' && !exists('b:ts_highlight')
     let skip = '0'
   else
     try
@@ -753,18 +756,24 @@ endfun
 "   S:foo becomes (current syntax item) !~ foo
 "   r:foo becomes (line before cursor) =~ foo
 "   R:foo becomes (line before cursor) !~ foo
+"   t:foo becomes (current treesitter captures) =~ foo
+"   T:foo becomes (current treesitter captures) !~ foo
 fun! s:ParseSkip(str)
   let skip = a:str
   if skip[1] == ":"
-    if skip[0] == "s"
+    if skip[0] ==# "t" || skip[0] ==# "s" && &syntax != 'on' && exists("b:ts_highlight")
+      let skip = "match(v:lua.vim.treesitter.get_captures_at_cursor(), '" .. strpart(skip,2) .. "') != -1"
+    elseif skip[0] ==# "T" || skip[0] ==# "S" && &syntax != 'on' && exists("b:ts_highlight")
+      let skip = "match(v:lua.vim.treesitter.get_captures_at_cursor(), '" .. strpart(skip,2) .. "') == -1"
+    elseif skip[0] ==# "s"
       let skip = "synIDattr(synID(line('.'),col('.'),1),'name') =~? '" ..
         \ strpart(skip,2) .. "'"
-    elseif skip[0] == "S"
+    elseif skip[0] ==# "S"
       let skip = "synIDattr(synID(line('.'),col('.'),1),'name') !~? '" ..
         \ strpart(skip,2) .. "'"
-    elseif skip[0] == "r"
+    elseif skip[0] ==# "r"
       let skip = "strpart(getline('.'),0,col('.'))=~'" .. strpart(skip,2) .. "'"
-    elseif skip[0] == "R"
+    elseif skip[0] ==# "R"
       let skip = "strpart(getline('.'),0,col('.'))!~'" .. strpart(skip,2) .. "'"
     endif
   endif

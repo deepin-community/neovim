@@ -1,17 +1,14 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 
-#include "nvim/macros.h"
+#include "nvim/macros_defs.h"
 #include "nvim/memory.h"
 #include "nvim/rbuffer.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
-# include "rbuffer.c.generated.h"  // IWYU pragma: export
+# include "rbuffer.c.generated.h"
 #endif
 
 /// Creates a new `RBuffer` instance.
@@ -32,25 +29,10 @@ RBuffer *rbuffer_new(size_t capacity)
   return rv;
 }
 
-void rbuffer_free(RBuffer *buf)
+void rbuffer_free(RBuffer *buf) FUNC_ATTR_NONNULL_ALL
 {
   xfree(buf->temp);
   xfree(buf);
-}
-
-size_t rbuffer_size(RBuffer *buf) FUNC_ATTR_NONNULL_ALL
-{
-  return buf->size;
-}
-
-size_t rbuffer_capacity(RBuffer *buf) FUNC_ATTR_NONNULL_ALL
-{
-  return (size_t)(buf->end_ptr - buf->start_ptr);
-}
-
-size_t rbuffer_space(RBuffer *buf) FUNC_ATTR_NONNULL_ALL
-{
-  return rbuffer_capacity(buf) - buf->size;
 }
 
 /// Return a pointer to a raw buffer containing the first empty slot available
@@ -141,7 +123,10 @@ char *rbuffer_read_ptr(RBuffer *buf, size_t *read_count) FUNC_ATTR_NONNULL_ALL
 void rbuffer_consumed(RBuffer *buf, size_t count)
   FUNC_ATTR_NONNULL_ALL
 {
-  assert(count && count <= buf->size);
+  if (count == 0) {
+    return;
+  }
+  assert(count <= buf->size);
 
   buf->read_ptr += count;
   if (buf->read_ptr >= buf->end_ptr) {
@@ -216,7 +201,7 @@ size_t rbuffer_read(RBuffer *buf, char *dst, size_t dst_size)
 }
 
 char *rbuffer_get(RBuffer *buf, size_t index)
-    FUNC_ATTR_NONNULL_ALL FUNC_ATTR_NONNULL_RET
+  FUNC_ATTR_NONNULL_ALL FUNC_ATTR_NONNULL_RET
 {
   assert(index < buf->size);
   char *rptr = buf->read_ptr + index;
@@ -231,7 +216,7 @@ int rbuffer_cmp(RBuffer *buf, const char *str, size_t count)
 {
   assert(count <= buf->size);
   size_t rcnt;
-  (void)rbuffer_read_ptr(buf, &rcnt);
+  rbuffer_read_ptr(buf, &rcnt);
   size_t n = MIN(count, rcnt);
   int rv = memcmp(str, buf->read_ptr, n);
   count -= n;

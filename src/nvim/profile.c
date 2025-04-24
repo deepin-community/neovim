@@ -1,6 +1,3 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <math.h>
 #include <stdbool.h>
@@ -9,8 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "nvim/ascii.h"
+#include "nvim/ascii_defs.h"
 #include "nvim/charset.h"
+#include "nvim/cmdexpand_defs.h"
 #include "nvim/debugger.h"
 #include "nvim/eval.h"
 #include "nvim/eval/typval_defs.h"
@@ -18,27 +16,27 @@
 #include "nvim/ex_cmds_defs.h"
 #include "nvim/fileio.h"
 #include "nvim/garray.h"
-#include "nvim/gettext.h"
+#include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
 #include "nvim/hashtab.h"
+#include "nvim/hashtab_defs.h"
 #include "nvim/keycodes.h"
 #include "nvim/memory.h"
 #include "nvim/message.h"
-#include "nvim/option_defs.h"
+#include "nvim/os/fs.h"
 #include "nvim/os/os.h"
 #include "nvim/os/time.h"
-#include "nvim/pos.h"
+#include "nvim/pos_defs.h"
 #include "nvim/profile.h"
 #include "nvim/runtime.h"
-#include "nvim/types.h"
-#include "nvim/vim.h"
+#include "nvim/types_defs.h"
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "profile.c.generated.h"
 #endif
 
 /// Struct used in sn_prl_ga for every line of a script.
-typedef struct sn_prl_S {
+typedef struct {
   int snp_count;                ///< nr of times line was executed
   proftime_T sn_prl_total;      ///< time spent in a line + children
   proftime_T sn_prl_self;       ///< time spent in a line itself
@@ -47,6 +45,7 @@ typedef struct sn_prl_S {
 #define PRL_ITEM(si, idx)     (((sn_prl_T *)(si)->sn_prl_ga.ga_data)[(idx)])
 
 static proftime_T prof_wait_time;
+static char *startuptime_buf = NULL;  // --startuptime buffer
 
 /// Gets the current time.
 ///
@@ -234,21 +233,21 @@ void profile_reset(void)
   for (int id = 1; id <= script_items.ga_len; id++) {
     scriptitem_T *si = SCRIPT_ITEM(id);
     if (si->sn_prof_on) {
-      si->sn_prof_on      = false;
-      si->sn_pr_force     = false;
-      si->sn_pr_child     = profile_zero();
-      si->sn_pr_nest      = 0;
-      si->sn_pr_count     = 0;
-      si->sn_pr_total     = profile_zero();
-      si->sn_pr_self      = profile_zero();
-      si->sn_pr_start     = profile_zero();
-      si->sn_pr_children  = profile_zero();
+      si->sn_prof_on = false;
+      si->sn_pr_force = false;
+      si->sn_pr_child = profile_zero();
+      si->sn_pr_nest = 0;
+      si->sn_pr_count = 0;
+      si->sn_pr_total = profile_zero();
+      si->sn_pr_self = profile_zero();
+      si->sn_pr_start = profile_zero();
+      si->sn_pr_children = profile_zero();
       ga_clear(&si->sn_prl_ga);
-      si->sn_prl_start    = profile_zero();
+      si->sn_prl_start = profile_zero();
       si->sn_prl_children = profile_zero();
-      si->sn_prl_wait     = profile_zero();
-      si->sn_prl_idx      = -1;
-      si->sn_prl_execed   = 0;
+      si->sn_prl_wait = profile_zero();
+      si->sn_prl_idx = -1;
+      si->sn_prl_execed = 0;
     }
   }
 
@@ -257,27 +256,27 @@ void profile_reset(void)
   size_t todo = functbl->ht_used;
   hashitem_T *hi = functbl->ht_array;
 
-  for (; todo > (size_t)0; hi++) {
+  for (; todo > 0; hi++) {
     if (!HASHITEM_EMPTY(hi)) {
       todo--;
       ufunc_T *uf = HI2UF(hi);
       if (uf->uf_prof_initialized) {
-        uf->uf_profiling    = 0;
-        uf->uf_tm_count     = 0;
-        uf->uf_tm_total     = profile_zero();
-        uf->uf_tm_self      = profile_zero();
-        uf->uf_tm_children  = profile_zero();
+        uf->uf_profiling = 0;
+        uf->uf_tm_count = 0;
+        uf->uf_tm_total = profile_zero();
+        uf->uf_tm_self = profile_zero();
+        uf->uf_tm_children = profile_zero();
 
         for (int i = 0; i < uf->uf_lines.ga_len; i++) {
           uf->uf_tml_count[i] = 0;
           uf->uf_tml_total[i] = uf->uf_tml_self[i] = 0;
         }
 
-        uf->uf_tml_start    = profile_zero();
+        uf->uf_tml_start = profile_zero();
         uf->uf_tml_children = profile_zero();
-        uf->uf_tml_wait     = profile_zero();
-        uf->uf_tml_idx      = -1;
-        uf->uf_tml_execed   = 0;
+        uf->uf_tml_wait = profile_zero();
+        uf->uf_tml_idx = -1;
+        uf->uf_tml_execed = 0;
       }
     }
   }
@@ -290,11 +289,8 @@ void ex_profile(exarg_T *eap)
 {
   static proftime_T pause_time;
 
-  char *e;
-  int len;
-
-  e = skiptowhite(eap->arg);
-  len = (int)(e - eap->arg);
+  char *e = skiptowhite(eap->arg);
+  int len = (int)(e - eap->arg);
   e = skipwhite(e);
 
   if (len == 5 && strncmp(eap->arg, "start", 5) == 0 && *e != NUL) {
@@ -302,13 +298,13 @@ void ex_profile(exarg_T *eap)
     profile_fname = expand_env_save_opt(e, true);
     do_profiling = PROF_YES;
     profile_set_wait(profile_zero());
-    set_vim_var_nr(VV_PROFILING, 1L);
+    set_vim_var_nr(VV_PROFILING, 1);
   } else if (do_profiling == PROF_NONE) {
     emsg(_("E750: First use \":profile start {fname}\""));
   } else if (strcmp(eap->arg, "stop") == 0) {
     profile_dump();
     do_profiling = PROF_NONE;
-    set_vim_var_nr(VV_PROFILING, 0L);
+    set_vim_var_nr(VV_PROFILING, 0);
     profile_reset();
   } else if (strcmp(eap->arg, "pause") == 0) {
     if (do_profiling == PROF_YES) {
@@ -438,13 +434,10 @@ static void prof_func_line(FILE *fd, int count, const proftime_T *total, const p
 /// @param prefer_self  when equal print only self time
 static void prof_sort_list(FILE *fd, ufunc_T **sorttab, int st_len, char *title, bool prefer_self)
 {
-  int i;
-  ufunc_T *fp;
-
   fprintf(fd, "FUNCTIONS SORTED ON %s TIME\n", title);
   fprintf(fd, "count  total (s)   self (s)  function\n");
-  for (i = 0; i < 20 && i < st_len; i++) {
-    fp = sorttab[i];
+  for (int i = 0; i < 20 && i < st_len; i++) {
+    ufunc_T *fp = sorttab[i];
     prof_func_line(fd, fp->uf_tm_count, &fp->uf_tm_total, &fp->uf_tm_self,
                    prefer_self);
     if ((uint8_t)fp->uf_name[0] == K_SPECIAL) {
@@ -513,8 +506,8 @@ void prof_child_enter(proftime_T *tm)
 {
   funccall_T *fc = get_current_funccal();
 
-  if (fc != NULL && fc->func->uf_profiling) {
-    fc->prof_child = profile_start();
+  if (fc != NULL && fc->fc_func->uf_profiling) {
+    fc->fc_prof_child = profile_start();
   }
 
   script_prof_save(tm);
@@ -528,14 +521,14 @@ void prof_child_exit(proftime_T *tm)
 {
   funccall_T *fc = get_current_funccal();
 
-  if (fc != NULL && fc->func->uf_profiling) {
-    fc->prof_child = profile_end(fc->prof_child);
+  if (fc != NULL && fc->fc_func->uf_profiling) {
+    fc->fc_prof_child = profile_end(fc->fc_prof_child);
     // don't count waiting time
-    fc->prof_child = profile_sub_wait(*tm, fc->prof_child);
-    fc->func->uf_tm_children =
-      profile_add(fc->func->uf_tm_children, fc->prof_child);
-    fc->func->uf_tml_children =
-      profile_add(fc->func->uf_tml_children, fc->prof_child);
+    fc->fc_prof_child = profile_sub_wait(*tm, fc->fc_prof_child);
+    fc->fc_func->uf_tm_children =
+      profile_add(fc->fc_func->uf_tm_children, fc->fc_prof_child);
+    fc->fc_func->uf_tml_children =
+      profile_add(fc->fc_func->uf_tml_children, fc->fc_prof_child);
   }
   script_prof_restore(tm);
 }
@@ -547,7 +540,7 @@ void prof_child_exit(proftime_T *tm)
 void func_line_start(void *cookie)
 {
   funccall_T *fcp = (funccall_T *)cookie;
-  ufunc_T *fp = fcp->func;
+  ufunc_T *fp = fcp->fc_func;
 
   if (fp->uf_profiling && SOURCING_LNUM >= 1 && SOURCING_LNUM <= fp->uf_lines.ga_len) {
     fp->uf_tml_idx = SOURCING_LNUM - 1;
@@ -566,7 +559,7 @@ void func_line_start(void *cookie)
 void func_line_exec(void *cookie)
 {
   funccall_T *fcp = (funccall_T *)cookie;
-  ufunc_T *fp = fcp->func;
+  ufunc_T *fp = fcp->fc_func;
 
   if (fp->uf_profiling && fp->uf_tml_idx >= 0) {
     fp->uf_tml_execed = true;
@@ -577,7 +570,7 @@ void func_line_exec(void *cookie)
 void func_line_end(void *cookie)
 {
   funccall_T *fcp = (funccall_T *)cookie;
-  ufunc_T *fp = fcp->func;
+  ufunc_T *fp = fcp->fc_func;
 
   if (fp->uf_profiling && fp->uf_tml_idx >= 0) {
     if (fp->uf_tml_execed) {
@@ -598,23 +591,19 @@ void func_line_end(void *cookie)
 static void func_dump_profile(FILE *fd)
 {
   hashtab_T *const functbl = func_tbl_get();
-  hashitem_T *hi;
-  int todo;
-  ufunc_T *fp;
-  ufunc_T **sorttab;
   int st_len = 0;
 
-  todo = (int)functbl->ht_used;
+  int todo = (int)functbl->ht_used;
   if (todo == 0) {
     return;         // nothing to dump
   }
 
-  sorttab = xmalloc(sizeof(ufunc_T *) * (size_t)todo);
+  ufunc_T **sorttab = xmalloc(sizeof(ufunc_T *) * (size_t)todo);
 
-  for (hi = functbl->ht_array; todo > 0; hi++) {
+  for (hashitem_T *hi = functbl->ht_array; todo > 0; hi++) {
     if (!HASHITEM_EMPTY(hi)) {
       todo--;
-      fp = HI2UF(hi);
+      ufunc_T *fp = HI2UF(hi);
       if (fp->uf_prof_initialized) {
         sorttab[st_len++] = fp;
 
@@ -718,7 +707,6 @@ void script_prof_restore(const proftime_T *tm)
 /// Dump the profiling results for all scripts in file "fd".
 static void script_dump_profile(FILE *fd)
 {
-  FILE *sfd;
   sn_prl_T *pp;
 
   for (int id = 1; id <= script_items.ga_len; id++) {
@@ -735,7 +723,7 @@ static void script_dump_profile(FILE *fd)
       fprintf(fd, "\n");
       fprintf(fd, "count  total (s)   self (s)\n");
 
-      sfd = os_fopen(si->sn_name, "r");
+      FILE *sfd = os_fopen(si->sn_name, "r");
       if (sfd == NULL) {
         fprintf(fd, "Cannot open file!\n");
       } else {
@@ -811,7 +799,7 @@ void script_line_start(void)
   if (si->sn_prof_on && SOURCING_LNUM >= 1) {
     // Grow the array before starting the timer, so that the time spent
     // here isn't counted.
-    (void)ga_grow(&si->sn_prl_ga, SOURCING_LNUM - si->sn_prl_ga.ga_len);
+    ga_grow(&si->sn_prl_ga, SOURCING_LNUM - si->sn_prl_ga.ga_len);
     si->sn_prl_idx = SOURCING_LNUM - 1;
     while (si->sn_prl_ga.ga_len <= si->sn_prl_idx
            && si->sn_prl_ga.ga_len < si->sn_prl_ga.ga_maxlen) {
@@ -920,7 +908,7 @@ void time_start(const char *message)
   // initialize the global variables
   g_prev_time = g_start_time = profile_start();
 
-  fprintf(time_fd, "\n\ntimes in msec\n");
+  fprintf(time_fd, "\ntimes in msec\n");
   fprintf(time_fd, " clock   self+sourced   self:  sourced script\n");
   fprintf(time_fd, " clock   elapsed:              other lines\n\n");
 
@@ -956,4 +944,47 @@ void time_msg(const char *mesg, const proftime_T *start)
   // reset `g_prev_time` and print the message
   g_prev_time = now;
   fprintf(time_fd, ": %s\n", mesg);
+}
+
+/// Initializes the `time_fd` stream for the --startuptime report.
+///
+/// @param fname startuptime report file path
+/// @param process_name name of the current Nvim process to write in the report.
+void time_init(const char *fname, const char *process_name)
+{
+  const size_t bufsize = 8192;  // Big enough for the entire --startuptime report.
+  time_fd = fopen(fname, "a");
+  if (time_fd == NULL) {
+    fprintf(stderr, _(e_notopen), fname);
+    return;
+  }
+  startuptime_buf = xmalloc(sizeof(char) * (bufsize + 1));
+  // The startuptime file is (potentially) written by multiple Nvim processes concurrently. So each
+  // report is buffered, and flushed to disk (`time_finish`) once after startup. `_IOFBF` mode
+  // ensures the buffer is not auto-flushed ("controlled buffering").
+  int r = setvbuf(time_fd, startuptime_buf, _IOFBF, bufsize + 1);
+  if (r != 0) {
+    XFREE_CLEAR(startuptime_buf);
+    fclose(time_fd);
+    time_fd = NULL;
+    fprintf(stderr, "time_init: setvbuf failed: %d %s", r, uv_err_name(r));
+    return;
+  }
+  fprintf(time_fd, "--- Startup times for process: %s ---\n", process_name);
+}
+
+/// Flushes the startuptimes to disk for the current process
+void time_finish(void)
+{
+  if (time_fd == NULL) {
+    return;
+  }
+  assert(startuptime_buf != NULL);
+  TIME_MSG("--- NVIM STARTED ---\n");
+
+  // flush buffer to disk
+  fclose(time_fd);
+  time_fd = NULL;
+
+  XFREE_CLEAR(startuptime_buf);
 }

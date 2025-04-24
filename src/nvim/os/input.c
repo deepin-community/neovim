@@ -1,6 +1,3 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -9,28 +6,31 @@
 #include <uv.h>
 
 #include "nvim/api/private/defs.h"
-#include "nvim/ascii.h"
+#include "nvim/ascii_defs.h"
 #include "nvim/autocmd.h"
+#include "nvim/autocmd_defs.h"
 #include "nvim/buffer_defs.h"
 #include "nvim/event/loop.h"
 #include "nvim/event/multiqueue.h"
 #include "nvim/event/rstream.h"
 #include "nvim/event/stream.h"
 #include "nvim/getchar.h"
-#include "nvim/gettext.h"
+#include "nvim/gettext_defs.h"
 #include "nvim/globals.h"
 #include "nvim/keycodes.h"
 #include "nvim/log.h"
-#include "nvim/macros.h"
+#include "nvim/macros_defs.h"
 #include "nvim/main.h"
 #include "nvim/msgpack_rpc/channel.h"
-#include "nvim/option_defs.h"
+#include "nvim/option_vars.h"
 #include "nvim/os/input.h"
+#include "nvim/os/os_defs.h"
 #include "nvim/os/time.h"
 #include "nvim/profile.h"
 #include "nvim/rbuffer.h"
+#include "nvim/rbuffer_defs.h"
 #include "nvim/state.h"
-#include "nvim/vim.h"
+#include "nvim/state_defs.h"
 
 #define READ_BUFFER_SIZE 0xfff
 #define INPUT_BUFFER_SIZE (READ_BUFFER_SIZE * 4)
@@ -78,6 +78,13 @@ void input_stop(void)
   stream_close(&read_stream, NULL, NULL);
 }
 
+#ifdef EXITFREE
+void input_free_all_mem(void)
+{
+  rbuffer_free(input_buffer);
+}
+#endif
+
 static void cursorhold_event(void **argv)
 {
   event_T event = State & MODE_INSERT ? EVENT_CURSORHOLDI : EVENT_CURSORHOLD;
@@ -88,11 +95,11 @@ static void cursorhold_event(void **argv)
 static void create_cursorhold_event(bool events_enabled)
 {
   // If events are enabled and the queue has any items, this function should not
-  // have been called(inbuf_poll would return kInputAvail)
+  // have been called (inbuf_poll would return kInputAvail).
   // TODO(tarruda): Cursorhold should be implemented as a timer set during the
   // `state_check` callback for the states where it can be triggered.
   assert(!events_enabled || multiqueue_empty(main_loop.events));
-  multiqueue_put(main_loop.events, cursorhold_event, 0);
+  multiqueue_put(main_loop.events, cursorhold_event, NULL);
 }
 
 static void restart_cursorhold_wait(int tb_change_cnt)
@@ -103,7 +110,7 @@ static void restart_cursorhold_wait(int tb_change_cnt)
 
 /// Low level input function
 ///
-/// wait until either the input buffer is non-empty or, if `events` is not NULL
+/// Wait until either the input buffer is non-empty or, if `events` is not NULL
 /// until `events` is non-empty.
 int os_inchar(uint8_t *buf, int maxlen, int ms, int tb_change_cnt, MultiQueue *events)
 {
@@ -240,22 +247,28 @@ bool os_isatty(int fd)
   return uv_guess_handle(fd) == UV_TTY;
 }
 
+void input_enqueue_raw(String keys)
+{
+  if (keys.size > 0) {
+    rbuffer_write(input_buffer, keys.data, keys.size);
+  }
+}
+
 size_t input_enqueue(String keys)
 {
-  char *ptr = keys.data;
-  char *end = ptr + keys.size;
+  const char *ptr = keys.data;
+  const char *end = ptr + keys.size;
 
   while (rbuffer_space(input_buffer) >= 19 && ptr < end) {
     // A "<x>" form occupies at least 1 characters, and produces up
     // to 19 characters (1 + 5 * 3 for the char and 3 for a modifier).
-    // In the case of K_SPECIAL(0x80), 3 bytes are escaped and needed,
+    // In the case of K_SPECIAL (0x80), 3 bytes are escaped and needed,
     // but since the keys are UTF-8, so the first byte cannot be
-    // K_SPECIAL(0x80).
+    // K_SPECIAL (0x80).
     uint8_t buf[19] = { 0 };
     // Do not simplify the keys here. Simplification will be done later.
-    unsigned int new_size
-      = trans_special((const char **)&ptr, (size_t)(end - ptr), (char *)buf, FSK_KEYCODE, true,
-                      NULL);
+    unsigned new_size
+      = trans_special(&ptr, (size_t)(end - ptr), (char *)buf, FSK_KEYCODE, true, NULL);
 
     if (new_size) {
       new_size = handle_mouse_event(&ptr, buf, new_size);
@@ -264,7 +277,7 @@ size_t input_enqueue(String keys)
     }
 
     if (*ptr == '<') {
-      char *old_ptr = ptr;
+      const char *old_ptr = ptr;
       // Invalid or incomplete key sequence, skip until the next '>' or *end.
       do {
         ptr++;
@@ -308,7 +321,8 @@ static uint8_t check_multiclick(int code, int grid, int row, int col)
   }
 
   // For click events the number of clicks is updated.
-  if (code == KE_LEFTMOUSE || code == KE_RIGHTMOUSE || code == KE_MIDDLEMOUSE) {
+  if (code == KE_LEFTMOUSE || code == KE_RIGHTMOUSE || code == KE_MIDDLEMOUSE
+      || code == KE_X1MOUSE || code == KE_X2MOUSE) {
     uint64_t mouse_time = os_hrtime();    // time of current mouse click (ns)
     // compute the time elapsed since the previous mouse click and
     // convert p_mouse from ms to ns
@@ -344,9 +358,8 @@ static uint8_t check_multiclick(int code, int grid, int row, int col)
   return modifiers;
 }
 
-// Mouse event handling code(Extract row/col if available and detect multiple
-// clicks)
-static unsigned int handle_mouse_event(char **ptr, uint8_t *buf, unsigned int bufsize)
+/// Mouse event handling code (extract row/col if available and detect multiple clicks)
+static unsigned handle_mouse_event(const char **ptr, uint8_t *buf, unsigned bufsize)
 {
   int mouse_code = 0;
   int type = 0;
@@ -412,7 +425,8 @@ static unsigned int handle_mouse_event(char **ptr, uint8_t *buf, unsigned int bu
 size_t input_enqueue_mouse(int code, uint8_t modifier, int grid, int row, int col)
 {
   modifier |= check_multiclick(code, grid, row, col);
-  uint8_t buf[7], *p = buf;
+  uint8_t buf[7];
+  uint8_t *p = buf;
   if (modifier) {
     p[0] = K_SPECIAL;
     p[1] = KS_MODIFIER;
@@ -441,7 +455,7 @@ bool input_blocking(void)
 // This is a replacement for the old `WaitForChar` function in os_unix.c
 static InbufPollResult inbuf_poll(int ms, MultiQueue *events)
 {
-  if (input_ready(events)) {
+  if (os_input_ready(events)) {
     return kInputAvail;
   }
 
@@ -457,14 +471,14 @@ static InbufPollResult inbuf_poll(int ms, MultiQueue *events)
   DLOG("blocking... events_enabled=%d events_pending=%d", events != NULL,
        events && !multiqueue_empty(events));
   LOOP_PROCESS_EVENTS_UNTIL(&main_loop, NULL, ms,
-                            input_ready(events) || input_eof);
+                            os_input_ready(events) || input_eof);
   blocking = false;
 
   if (do_profiling == PROF_YES && ms) {
     prof_inchar_exit();
   }
 
-  if (input_ready(events)) {
+  if (os_input_ready(events)) {
     return kInputAvail;
   }
   return input_eof ? kInputEof : kInputNone;
@@ -530,12 +544,12 @@ static int push_event_key(uint8_t *buf, int maxlen)
   return buf_idx;
 }
 
-// Check if there's pending input
-static bool input_ready(MultiQueue *events)
+/// Check if there's pending input already in typebuf or `events`
+bool os_input_ready(MultiQueue *events)
 {
   return (typebuf_was_filled             // API call filled typeahead
           || rbuffer_size(input_buffer)  // Input buffer filled
-          || pending_events(events));          // Events must be processed
+          || pending_events(events));    // Events must be processed
 }
 
 // Exit because of an input read error.

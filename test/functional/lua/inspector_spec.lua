@@ -1,8 +1,10 @@
-local helpers = require('test.functional.helpers')(after_each)
-local exec_lua = helpers.exec_lua
-local eq = helpers.eq
-local eval = helpers.eval
-local clear = helpers.clear
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
+
+local exec_lua = n.exec_lua
+local eq = t.eq
+local eval = n.eval
+local clear = n.clear
 
 describe('vim.inspect_pos', function()
   before_each(function()
@@ -18,8 +20,8 @@ describe('vim.inspect_pos', function()
       vim.api.nvim_set_current_buf(buf)
       vim.api.nvim_buf_set_lines(0, 0, -1, false, {"local a = 123"})
       vim.api.nvim_buf_set_lines(buf1, 0, -1, false, {"--commentline"})
-      vim.api.nvim_buf_set_option(buf, "filetype", "lua")
-      vim.api.nvim_buf_set_option(buf1, "filetype", "lua")
+      vim.bo[buf].filetype = 'lua'
+      vim.bo[buf1].filetype = 'lua'
       vim.api.nvim_buf_set_extmark(buf, ns1, 0, 10, { hl_group = "Normal" })
       vim.api.nvim_buf_set_extmark(buf, ns2, 0, 10, { hl_group = "Normal" })
       vim.cmd("syntax on")
@@ -46,9 +48,9 @@ describe('vim.inspect_pos', function()
             hl_group_link = 'Normal',
             ns_id = 1,
             priority = 4096,
-            right_gravity = true
+            right_gravity = true,
           },
-          row = 0
+          row = 0,
         },
         {
           col = 10,
@@ -63,10 +65,10 @@ describe('vim.inspect_pos', function()
             hl_group_link = 'Normal',
             ns_id = 2,
             priority = 4096,
-            right_gravity = true
+            right_gravity = true,
           },
-          row = 0
-        }
+          row = 0,
+        },
       },
       treesitter = {},
       semantic_tokens = {},
@@ -97,7 +99,7 @@ describe('vim.show_pos', function()
       local buf = vim.api.nvim_create_buf(true, false)
       vim.api.nvim_set_current_buf(buf)
       vim.api.nvim_buf_set_lines(0, 0, -1, false, {"local a = 123"})
-      vim.api.nvim_buf_set_option(buf, "filetype", "lua")
+      vim.bo[buf].filetype = 'lua'
       vim.cmd("syntax on")
       return {buf, vim.show_pos(0, 0, 10)}
     ]])

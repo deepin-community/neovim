@@ -1,90 +1,77 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 #include <assert.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "nvim/linematch.h"
-#include "nvim/macros.h"
+#include "nvim/macros_defs.h"
 #include "nvim/memory.h"
-
-// struct for running the diff linematch algorithm
-typedef struct {
-  int *df_decision;  // to keep track of this path traveled
-  int df_lev_score;  // to keep track of the total score of this path
-  size_t df_path_idx;   // current index of this path
-} diffcmppath_T;
+#include "nvim/pos_defs.h"
+#include "nvim/strings.h"
+#include "xdiff/xdiff.h"
 
 #define LN_MAX_BUFS 8
+#define LN_DECISION_MAX 255  // pow(2, LN_MAX_BUFS(8)) - 1 = 255
+
+// struct for running the diff linematch algorithm
+typedef struct diffcmppath_S diffcmppath_T;
+struct diffcmppath_S {
+  int df_lev_score;  // to keep track of the total score of this path
+  size_t df_path_n;   // current index of this path
+  int df_choice_mem[LN_DECISION_MAX + 1];
+  int df_choice[LN_DECISION_MAX];
+  diffcmppath_T *df_decision[LN_DECISION_MAX];  // to keep track of this path traveled
+  size_t df_optimal_choice;
+};
 
 #ifdef INCLUDE_GENERATED_DECLARATIONS
 # include "linematch.c.generated.h"
 #endif
 
-static size_t line_len(const char *s)
+static size_t line_len(const mmfile_t *m)
 {
-  char *end = strchr(s, '\n');
+  char *s = m->ptr;
+  size_t n = (size_t)m->size;
+  char *end = strnchr(s, &n, '\n');
   if (end) {
     return (size_t)(end - s);
   }
-  return strlen(s);
+  return (size_t)m->size;
 }
+
+#define MATCH_CHAR_MAX_LEN 800
 
 /// Same as matching_chars but ignore whitespace
 ///
 /// @param s1
 /// @param s2
-static int matching_chars_iwhite(const char *s1, const char *s2)
+static int matching_chars_iwhite(const mmfile_t *s1, const mmfile_t *s2)
 {
   // the newly processed strings that will be compared
-  // delete the white space characters, and/or replace all upper case with lower
-  char *strsproc[2];
-  const char *strsorig[2] = { s1, s2 };
+  // delete the white space characters
+  mmfile_t sp[2];
+  char p[2][MATCH_CHAR_MAX_LEN];
   for (int k = 0; k < 2; k++) {
-    size_t d = 0;
-    size_t i = 0;
-    size_t slen = line_len(strsorig[k]);
-    strsproc[k] = xmalloc((slen + 1) * sizeof(char));
-    while (d + i < slen) {
-      char e = strsorig[k][i + d];
+    const mmfile_t *s = k == 0 ? s1 : s2;
+    size_t pi = 0;
+    size_t slen = MIN(MATCH_CHAR_MAX_LEN - 1, line_len(s));
+    for (size_t i = 0; i <= slen; i++) {
+      char e = s->ptr[i];
       if (e != ' ' && e != '\t') {
-        strsproc[k][i] = e;
-        i++;
-      } else {
-        d++;
+        p[k][pi] = e;
+        pi++;
       }
     }
-    strsproc[k][i] = '\0';
+
+    sp[k] = (mmfile_t){
+      .ptr = p[k],
+      .size = (int)pi,
+    };
   }
-  int matching = matching_chars(strsproc[0], strsproc[1]);
-  xfree(strsproc[0]);
-  xfree(strsproc[1]);
-  return matching;
+  return matching_chars(&sp[0], &sp[1]);
 }
-
-/// update the path of a point in the diff linematch algorithm
-/// @param diffcmppath
-/// @param score
-/// @param to
-/// @param from
-/// @param choice
-static void update_path_flat(diffcmppath_T *diffcmppath, int score, size_t to, size_t from,
-                             const int choice)
-{
-  size_t path_idx = diffcmppath[from].df_path_idx;
-
-  for (size_t k = 0; k < path_idx; k++) {
-    diffcmppath[to].df_decision[k] = diffcmppath[from].df_decision[k];
-  }
-
-  diffcmppath[to].df_decision[path_idx] = choice;
-  diffcmppath[to].df_lev_score = score;
-  diffcmppath[to].df_path_idx = path_idx + 1;
-}
-
-#define MATCH_CHAR_MAX_LEN 800
 
 /// Return matching characters between "s1" and "s2" whilst respecting sequence order.
 /// Consider the case of two strings 'AAACCC' and 'CCCAAA', the
@@ -97,12 +84,14 @@ static void update_path_flat(diffcmppath_T *diffcmppath, int score, size_t to, s
 ///   matching_chars("abcdefg", "gfedcba")         -> 1  // all characters in common,
 ///                                                      // but only at most 1 in sequence
 ///
-/// @param s1
-/// @param s2
-static int matching_chars(const char *s1, const char *s2)
+/// @param m1
+/// @param m2
+static int matching_chars(const mmfile_t *m1, const mmfile_t *m2)
 {
-  size_t s1len = MIN(MATCH_CHAR_MAX_LEN - 1, line_len(s1));
-  size_t s2len = MIN(MATCH_CHAR_MAX_LEN - 1, line_len(s2));
+  size_t s1len = MIN(MATCH_CHAR_MAX_LEN - 1, line_len(m1));
+  size_t s2len = MIN(MATCH_CHAR_MAX_LEN - 1, line_len(m2));
+  char *s1 = m1->ptr;
+  char *s2 = m2->ptr;
   int matrix[2][MATCH_CHAR_MAX_LEN] = { 0 };
   bool icur = 1;  // save space by storing only two rows for i axis
   for (size_t i = 0; i < s1len; i++) {
@@ -133,13 +122,13 @@ static int matching_chars(const char *s1, const char *s2)
 /// @param sp
 /// @param fomvals
 /// @param n
-static int count_n_matched_chars(const char **sp, const size_t n, bool iwhite)
+static int count_n_matched_chars(mmfile_t **sp, const size_t n, bool iwhite)
 {
   int matched_chars = 0;
   int matched = 0;
   for (size_t i = 0; i < n; i++) {
     for (size_t j = i + 1; j < n; j++) {
-      if (sp[i] != NULL && sp[j] != NULL) {
+      if (sp[i]->ptr != NULL && sp[j]->ptr != NULL) {
         matched++;
         // TODO(lewis6991): handle whitespace ignoring higher up in the stack
         matched_chars += iwhite ? matching_chars_iwhite(sp[i], sp[j])
@@ -157,15 +146,19 @@ static int count_n_matched_chars(const char **sp, const size_t n, bool iwhite)
   return matched_chars;
 }
 
-void fastforward_buf_to_lnum(const char **s, long lnum)
+mmfile_t fastforward_buf_to_lnum(mmfile_t s, linenr_T lnum)
 {
-  for (long i = 0; i < lnum - 1; i++) {
-    *s = strchr(*s, '\n');
-    if (!*s) {
-      return;
+  for (int i = 0; i < lnum - 1; i++) {
+    size_t n = (size_t)s.size;
+    s.ptr = strnchr(s.ptr, &n, '\n');
+    s.size = (int)n;
+    if (!s.ptr) {
+      break;
     }
-    (*s)++;
+    s.ptr++;
+    s.size--;
   }
+  return s;
 }
 
 /// try all the different ways to compare these lines and use the one that
@@ -181,42 +174,39 @@ void fastforward_buf_to_lnum(const char **s, long lnum)
 /// @param diff_blk
 static void try_possible_paths(const int *df_iters, const size_t *paths, const int npaths,
                                const int path_idx, int *choice, diffcmppath_T *diffcmppath,
-                               const int *diff_len, const size_t ndiffs, const char **diff_blk,
+                               const int *diff_len, const size_t ndiffs, const mmfile_t **diff_blk,
                                bool iwhite)
 {
   if (path_idx == npaths) {
     if ((*choice) > 0) {
       int from_vals[LN_MAX_BUFS] = { 0 };
       const int *to_vals = df_iters;
-      const char *current_lines[LN_MAX_BUFS];
+      mmfile_t mm[LN_MAX_BUFS];  // stack memory for current_lines
+      mmfile_t *current_lines[LN_MAX_BUFS];
       for (size_t k = 0; k < ndiffs; k++) {
         from_vals[k] = df_iters[k];
         // get the index at all of the places
         if ((*choice) & (1 << k)) {
           from_vals[k]--;
-          const char *p = diff_blk[k];
-          fastforward_buf_to_lnum(&p, df_iters[k]);
-          current_lines[k] = p;
+          mm[k] = fastforward_buf_to_lnum(*diff_blk[k], df_iters[k]);
         } else {
-          current_lines[k] = NULL;
+          mm[k] = (mmfile_t){ 0 };
         }
+        current_lines[k] = &mm[k];
       }
       size_t unwrapped_idx_from = unwrap_indexes(from_vals, diff_len, ndiffs);
       size_t unwrapped_idx_to = unwrap_indexes(to_vals, diff_len, ndiffs);
       int matched_chars = count_n_matched_chars(current_lines, ndiffs, iwhite);
       int score = diffcmppath[unwrapped_idx_from].df_lev_score + matched_chars;
       if (score > diffcmppath[unwrapped_idx_to].df_lev_score) {
-        update_path_flat(diffcmppath, score, unwrapped_idx_to, unwrapped_idx_from, *choice);
-      }
-    } else {
-      // initialize the 0, 0, 0 ... choice
-      size_t i = 0;
-      while (i < ndiffs && df_iters[i] == 0) {
-        i++;
-        if (i == ndiffs) {
-          diffcmppath[0].df_lev_score = 0;
-          diffcmppath[0].df_path_idx = 0;
-        }
+        diffcmppath[unwrapped_idx_to].df_path_n = 1;
+        diffcmppath[unwrapped_idx_to].df_decision[0] = &diffcmppath[unwrapped_idx_from];
+        diffcmppath[unwrapped_idx_to].df_choice[0] = *choice;
+        diffcmppath[unwrapped_idx_to].df_lev_score = score;
+      } else if (score == diffcmppath[unwrapped_idx_to].df_lev_score) {
+        size_t k = diffcmppath[unwrapped_idx_to].df_path_n++;
+        diffcmppath[unwrapped_idx_to].df_decision[k] = &diffcmppath[unwrapped_idx_from];
+        diffcmppath[unwrapped_idx_to].df_choice[k] = *choice;
       }
     }
     return;
@@ -245,8 +235,7 @@ static size_t unwrap_indexes(const int *values, const int *diff_len, const size_
   for (size_t k = 0; k < ndiffs; k++) {
     num_unwrap_scalar /= (size_t)diff_len[k] + 1;
 
-    // (k == 0) space optimization
-    int n = k == 0 ? values[k] % 2 : values[k];
+    int n = values[k];
     path_idx += num_unwrap_scalar * (size_t)n;
   }
   return path_idx;
@@ -262,7 +251,7 @@ static size_t unwrap_indexes(const int *values, const int *diff_len, const size_
 /// @param ndiffs
 /// @param diff_blk
 static void populate_tensor(int *df_iters, const size_t ch_dim, diffcmppath_T *diffcmppath,
-                            const int *diff_len, const size_t ndiffs, const char **diff_blk,
+                            const int *diff_len, const size_t ndiffs, const mmfile_t **diff_blk,
                             bool iwhite)
 {
   if (ch_dim == ndiffs) {
@@ -345,7 +334,7 @@ static void populate_tensor(int *df_iters, const size_t ch_dim, diffcmppath_T *d
 /// @param ndiffs
 /// @param [out] [allocated] decisions
 /// @return the length of decisions
-size_t linematch_nbuffers(const char **diff_blk, const int *diff_len, const size_t ndiffs,
+size_t linematch_nbuffers(const mmfile_t **diff_blk, const int *diff_len, const size_t ndiffs,
                           int **decisions, bool iwhite)
 {
   assert(ndiffs <= LN_MAX_BUFS);
@@ -354,7 +343,7 @@ size_t linematch_nbuffers(const char **diff_blk, const int *diff_len, const size
   size_t memsize_decisions = 0;
   for (size_t i = 0; i < ndiffs; i++) {
     assert(diff_len[i] >= 0);
-    memsize *= i == 0 ? 2 : (size_t)(diff_len[i] + 1);
+    memsize *= (size_t)(diff_len[i] + 1);
     memsize_decisions += (size_t)diff_len[i];
   }
 
@@ -362,7 +351,11 @@ size_t linematch_nbuffers(const char **diff_blk, const int *diff_len, const size
   diffcmppath_T *diffcmppath = xmalloc(sizeof(diffcmppath_T) * memsize);
   // allocate memory here
   for (size_t i = 0; i < memsize; i++) {
-    diffcmppath[i].df_decision = xmalloc(memsize_decisions * sizeof(int));
+    diffcmppath[i].df_lev_score = 0;
+    diffcmppath[i].df_path_n = 0;
+    for (size_t j = 0; j < (size_t)pow(2, (double)ndiffs); j++) {
+      diffcmppath[i].df_choice_mem[j] = -1;
+    }
   }
 
   // memory for avoiding repetitive calculations of score
@@ -370,18 +363,49 @@ size_t linematch_nbuffers(const char **diff_blk, const int *diff_len, const size
   populate_tensor(df_iters, 0, diffcmppath, diff_len, ndiffs, diff_blk, iwhite);
 
   const size_t u = unwrap_indexes(diff_len, diff_len, ndiffs);
-  const size_t best_path_idx = diffcmppath[u].df_path_idx;
-  const int *best_path_decisions = diffcmppath[u].df_decision;
+  diffcmppath_T *startNode = &diffcmppath[u];
 
-  *decisions = xmalloc(sizeof(int) * best_path_idx);
-  for (size_t i = 0; i < best_path_idx; i++) {
-    (*decisions)[i] = best_path_decisions[i];
+  *decisions = xmalloc(sizeof(int) * memsize_decisions);
+  size_t n_optimal = 0;
+  test_charmatch_paths(startNode, 0);
+  while (startNode->df_path_n > 0) {
+    size_t j = startNode->df_optimal_choice;
+    (*decisions)[n_optimal++] = startNode->df_choice[j];
+    startNode = startNode->df_decision[j];
+  }
+  // reverse array
+  for (size_t i = 0; i < (n_optimal / 2); i++) {
+    int tmp = (*decisions)[i];
+    (*decisions)[i] = (*decisions)[n_optimal - 1 - i];
+    (*decisions)[n_optimal - 1 - i] = tmp;
   }
 
-  for (size_t i = 0; i < memsize; i++) {
-    xfree(diffcmppath[i].df_decision);
-  }
   xfree(diffcmppath);
 
-  return best_path_idx;
+  return n_optimal;
+}
+
+// returns the minimum amount of path changes from start to end
+static size_t test_charmatch_paths(diffcmppath_T *node, int lastdecision)
+{
+  // memoization
+  if (node->df_choice_mem[lastdecision] == -1) {
+    if (node->df_path_n == 0) {
+      // we have reached the end of the tree
+      node->df_choice_mem[lastdecision] = 0;
+    } else {
+      size_t minimum_turns = SIZE_MAX;  // the minimum amount of turns required to reach the end
+      for (size_t i = 0; i < node->df_path_n; i++) {
+        // recurse
+        size_t t = test_charmatch_paths(node->df_decision[i], node->df_choice[i]) +
+                   (lastdecision != node->df_choice[i] ? 1 : 0);
+        if (t < minimum_turns) {
+          node->df_optimal_choice = i;
+          minimum_turns = t;
+        }
+      }
+      node->df_choice_mem[lastdecision] = (int)minimum_turns;
+    }
+  }
+  return (size_t)node->df_choice_mem[lastdecision];
 }

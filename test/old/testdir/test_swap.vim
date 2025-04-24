@@ -115,8 +115,19 @@ func Test_swapinfo()
   w
   let fname = s:swapname()
   call assert_match('Xswapinfo', fname)
-  let info = fname->swapinfo()
 
+  " Check the tail appears in the list from swapfilelist().  The path depends
+  " on the system.
+  let tail = fnamemodify(fname, ":t")->fnameescape()
+  let nr = 0
+  for name in swapfilelist()
+    if name =~ tail .. '$'
+      let nr += 1
+    endif
+  endfor
+  call assert_equal(1, nr, 'not found in ' .. string(swapfilelist()))
+
+  let info = fname->swapinfo()
   let ver = printf('VIM %d.%d', v:version / 100, v:version % 100)
   call assert_equal(ver, info.version)
 
@@ -363,14 +374,14 @@ func Test_swap_prompt_splitwin()
   call term_sendkeys(buf, ":set noruler\n")
 
   call term_sendkeys(buf, ":split Xfile1\n")
-  call term_wait(buf)
+  call TermWait(buf)
   call WaitForAssert({-> assert_match('^\[O\]pen Read-Only, (E)dit anyway, (R)ecover, (Q)uit, (A)bort: $', term_getline(buf, 20))})
   call term_sendkeys(buf, "q")
-  call term_wait(buf)
+  call TermWait(buf)
   call term_sendkeys(buf, ":\<CR>")
   call WaitForAssert({-> assert_match('^:$', term_getline(buf, 20))})
   call term_sendkeys(buf, ":echomsg winnr('$')\<CR>")
-  call term_wait(buf)
+  call TermWait(buf)
   call WaitForAssert({-> assert_match('^1$', term_getline(buf, 20))})
   call StopVimInTerminal(buf)
 

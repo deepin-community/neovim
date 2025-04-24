@@ -1,26 +1,29 @@
-local helpers = require('test.functional.helpers')(after_each)
-local clear = helpers.clear
-local command = helpers.command
-local eq = helpers.eq
-local pathsep = helpers.get_pathsep()
-local curbufmeths = helpers.curbufmeths
-local funcs = helpers.funcs
-local meths = helpers.meths
-local exec_lua = helpers.exec_lua
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
+
+local clear = n.clear
+local command = n.command
+local eq = t.eq
+local pathsep = n.get_pathsep()
+local fn = n.fn
+local api = n.api
+local exec_lua = n.exec_lua
 
 local testdir = 'Xtest-editorconfig'
 
+--- @param name string
+--- @param expected table<string,any>
 local function test_case(name, expected)
   local filename = testdir .. pathsep .. name
   command('edit ' .. filename)
   for opt, val in pairs(expected) do
-    eq(val, curbufmeths.get_option(opt), name)
+    eq(val, api.nvim_get_option_value(opt, { buf = 0 }), name)
   end
 end
 
 setup(function()
-  helpers.mkdir_p(testdir)
-  helpers.write_file(
+  n.mkdir_p(testdir)
+  t.write_file(
     testdir .. pathsep .. '.editorconfig',
     [[
     root = true
@@ -95,7 +98,7 @@ setup(function()
 end)
 
 teardown(function()
-  helpers.rmdir(testdir)
+  n.rmdir(testdir)
 end)
 
 describe('editorconfig', function()
@@ -177,18 +180,18 @@ But not this one
     -- luacheck: pop
     local trimmed = untrimmed:gsub('%s+\n', '\n')
 
-    helpers.write_file(filename, untrimmed)
+    t.write_file(filename, untrimmed)
     command('edit ' .. filename)
     command('write')
     command('bdelete')
-    eq(trimmed, helpers.read_file(filename))
+    eq(trimmed, t.read_file(filename))
 
     filename = testdir .. pathsep .. 'no_trim.txt'
-    helpers.write_file(filename, untrimmed)
+    t.write_file(filename, untrimmed)
     command('edit ' .. filename)
     command('write')
     command('bdelete')
-    eq(untrimmed, helpers.read_file(filename))
+    eq(untrimmed, t.read_file(filename))
   end)
 
   it('sets textwidth', function()
@@ -196,15 +199,15 @@ But not this one
   end)
 
   it('can be disabled globally', function()
-    meths.set_var('editorconfig', false)
-    meths.set_option_value('shiftwidth', 42, {})
+    api.nvim_set_var('editorconfig', false)
+    api.nvim_set_option_value('shiftwidth', 42, {})
     test_case('3_space.txt', { shiftwidth = 42 })
   end)
 
   it('can be disabled per-buffer', function()
-    meths.set_option_value('shiftwidth', 42, {})
-    local bufnr = funcs.bufadd(testdir .. pathsep .. '3_space.txt')
-    meths.buf_set_var(bufnr, 'editorconfig', false)
+    api.nvim_set_option_value('shiftwidth', 42, {})
+    local bufnr = fn.bufadd(testdir .. pathsep .. '3_space.txt')
+    api.nvim_buf_set_var(bufnr, 'editorconfig', false)
     test_case('3_space.txt', { shiftwidth = 42 })
     test_case('4_space.py', { shiftwidth = 4 })
   end)

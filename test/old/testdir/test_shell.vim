@@ -5,6 +5,11 @@ source check.vim
 source shared.vim
 
 func Test_shell_options()
+  if has('win32')
+    " FIXME: This test is flaky on MS-Windows.
+    let g:test_is_flaky = 1
+  endif
+
   " The expected value of 'shellcmdflag', 'shellpipe', 'shellquote',
   " 'shellredir', 'shellxescape', 'shellxquote' for the supported shells.
   let shells = []
@@ -204,6 +209,50 @@ func Test_set_shell()
     call assert_equal(expected, lines[0])
   endif
   call delete('Xtestout')
+endfunc
+
+func Test_shell_repeat()
+  CheckUnix
+
+  let save_shell = &shell
+
+  call writefile(['#!/bin/sh', 'echo "Cmd: [$*]" > Xlog'], 'Xtestshell', 'D')
+  call setfperm('Xtestshell', "r-x------")
+  set shell=./Xtestshell
+  defer delete('Xlog')
+
+  call feedkeys(":!echo coconut\<CR>", 'xt')   " Run command
+  call assert_equal(['Cmd: [-c echo coconut]'], readfile('Xlog'))
+
+  call feedkeys(":!!\<CR>", 'xt')              " Re-run previous
+  call assert_equal(['Cmd: [-c echo coconut]'], readfile('Xlog'))
+
+  call writefile(['empty'], 'Xlog')
+  call feedkeys(":!\<CR>", 'xt')               " :!
+  call assert_equal(['Cmd: [-c ]'], readfile('Xlog'))
+
+  call feedkeys(":!!\<CR>", 'xt')              " :! doesn't clear previous command
+  call assert_equal(['Cmd: [-c echo coconut]'], readfile('Xlog'))
+
+  call feedkeys(":!echo banana\<CR>", 'xt')    " Make sure setting previous command keeps working after a :! no-op
+  call assert_equal(['Cmd: [-c echo banana]'], readfile('Xlog'))
+  call feedkeys(":!!\<CR>", 'xt')
+  call assert_equal(['Cmd: [-c echo banana]'], readfile('Xlog'))
+
+  let &shell = save_shell
+endfunc
+
+func Test_shell_no_prevcmd()
+  " this doesn't do anything, just check it doesn't crash
+  let after =<< trim END
+    exe "normal !!\<CR>"
+    call writefile([v:errmsg, 'done'], 'Xtestdone')
+    qall!
+  END
+  if RunVim([], after, '--clean')
+    call assert_equal(['E34: No previous command', 'done'], readfile('Xtestdone'))
+  endif
+  call delete('Xtestdone')
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

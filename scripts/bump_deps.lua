@@ -63,12 +63,13 @@ local function rm_file_if_present(path_to_file)
 end
 
 local nvim_src_dir = vim.fn.getcwd()
+local deps_file = nvim_src_dir .. '/' .. 'cmake.deps/deps.txt'
 local temp_dir = nvim_src_dir .. '/tmp'
 run({ 'mkdir', '-p', temp_dir })
 
 local function get_dependency(dependency_name)
   local dependency_table = {
-    ['LuaJIT'] = {
+    ['luajit'] = {
       repo = 'LuaJIT/LuaJIT',
       symbol = 'LUAJIT',
     },
@@ -76,13 +77,33 @@ local function get_dependency(dependency_name)
       repo = 'libuv/libuv',
       symbol = 'LIBUV',
     },
-    ['Luv'] = {
+    ['luv'] = {
       repo = 'luvit/luv',
       symbol = 'LUV',
     },
     ['tree-sitter'] = {
       repo = 'tree-sitter/tree-sitter',
       symbol = 'TREESITTER',
+    },
+    ['tree-sitter-c'] = {
+      repo = 'tree-sitter/tree-sitter-c',
+      symbol = 'TREESITTER_C',
+    },
+    ['tree-sitter-lua'] = {
+      repo = 'MunifTanjim/tree-sitter-lua',
+      symbol = 'TREESITTER_LUA',
+    },
+    ['tree-sitter-vim'] = {
+      repo = 'neovim/tree-sitter-vim',
+      symbol = 'TREESITTER_VIM',
+    },
+    ['tree-sitter-vimdoc'] = {
+      repo = 'neovim/tree-sitter-vimdoc',
+      symbol = 'TREESITTER_VIMDOC',
+    },
+    ['tree-sitter-query'] = {
+      repo = 'nvim-treesitter/tree-sitter-query',
+      symbol = 'TREESITTER_QUERY',
     },
   }
   local dependency = dependency_table[dependency_name]
@@ -117,9 +138,10 @@ local function get_archive_info(repo, ref)
     'Failed to download archive from GitHub'
   )
 
-  local shacmd = (vim.fn.executable('sha256sum') == 1
-    and{ 'sha256sum', archive_path }
-    or { 'shasum', '-a', '256', archive_path })
+  local shacmd = (
+    vim.fn.executable('sha256sum') == 1 and { 'sha256sum', archive_path }
+    or { 'shasum', '-a', '256', archive_path }
+  )
   local archive_sha = run(shacmd):gmatch('%w+')()
   return { url = archive_url, sha = archive_sha }
 end
@@ -127,26 +149,13 @@ end
 local function write_cmakelists_line(symbol, kind, value)
   require_executable('sed')
 
-  local cmakelists_path = nvim_src_dir .. '/' .. 'cmake.deps/CMakeLists.txt'
   run_die({
     'sed',
     '-i',
     '-e',
-    's/set('
-      .. symbol
-      .. '_'
-      .. kind
-      .. '.*$'
-      .. '/set('
-      .. symbol
-      .. '_'
-      .. kind
-      .. ' '
-      .. value
-      .. ')'
-      .. '/',
-    cmakelists_path,
-  }, 'Failed to write ' .. cmakelists_path)
+    's/' .. symbol .. '_' .. kind .. '.*$' .. '/' .. symbol .. '_' .. kind .. ' ' .. value .. '/',
+    deps_file,
+  }, 'Failed to write ' .. deps_file)
 end
 
 local function explicit_create_branch(dep)
@@ -181,30 +190,24 @@ local function update_cmakelists(dependency, archive, comment)
 
   verify_branch(dependency.name)
 
-  local changed_file = nvim_src_dir .. '/' .. 'cmake.deps/CMakeLists.txt'
-
   p('Updating ' .. dependency.name .. ' to ' .. archive.url .. '\n')
   write_cmakelists_line(dependency.symbol, 'URL', archive.url:gsub('/', '\\/'))
   write_cmakelists_line(dependency.symbol, 'SHA256', archive.sha)
-  run_die(
-    {
-      'git',
-      'commit',
-      changed_file,
-      '-m',
-      commit_prefix .. 'bump ' .. dependency.name .. ' to ' .. comment,
-    },
-    'git failed to commit'
-  )
+  run_die({
+    'git',
+    'commit',
+    deps_file,
+    '-m',
+    commit_prefix .. 'bump ' .. dependency.name .. ' to ' .. comment,
+  }, 'git failed to commit')
 end
 
 local function verify_cmakelists_committed()
   require_executable('git')
 
-  local cmakelists_path = nvim_src_dir .. '/' .. 'cmake.deps/CMakeLists.txt'
   run_die(
-    { 'git', 'diff', '--quiet', 'HEAD', '--', cmakelists_path },
-    cmakelists_path .. ' has uncommitted changes'
+    { 'git', 'diff', '--quiet', 'HEAD', '--', deps_file },
+    deps_file .. ' has uncommitted changes'
   )
 end
 
@@ -302,9 +305,9 @@ function M.commit(dependency_name, commit)
 end
 
 function M.version(dependency_name, version)
-  vim.validate{
-    dependency_name={dependency_name,'s'},
-    version={version,'s'},
+  vim.validate {
+    dependency_name = { dependency_name, 's' },
+    version = { version, 's' },
   }
   local dependency = assert(get_dependency(dependency_name))
   verify_cmakelists_committed()
@@ -368,7 +371,7 @@ function M.submit_pr()
 end
 
 local function usage()
-  local this_script = _G.arg[0]:match("[^/]*.lua$")
+  local this_script = _G.arg[0]:match('[^/]*.lua$')
   print(([=[
     Bump Nvim dependencies
 
@@ -405,13 +408,13 @@ local function parseargs()
     elseif _G.arg[i] == '--pr' then
       args.pr = true
     elseif _G.arg[i] == '--branch' then
-      args.branch = _G.arg[i+1]
+      args.branch = _G.arg[i + 1]
     elseif _G.arg[i] == '--dep' then
-      args.dep = _G.arg[i+1]
+      args.dep = _G.arg[i + 1]
     elseif _G.arg[i] == '--version' then
-      args.version = _G.arg[i+1]
+      args.version = _G.arg[i + 1]
     elseif _G.arg[i] == '--commit' then
-      args.commit = _G.arg[i+1]
+      args.commit = _G.arg[i + 1]
     elseif _G.arg[i] == '--head' then
       args.head = true
     end

@@ -45,10 +45,23 @@ endfunc
 
 func Test_expand_tilde_filename()
   split ~
-  call assert_equal('~', expand('%')) 
+  call assert_equal('~', expand('%'))
   call assert_notequal(expand('%:p'), expand('~/'))
-  call assert_match('\~', expand('%:p')) 
+  call assert_match('\~', expand('%:p'))
   bwipe!
+endfunc
+
+func Test_expand_env_pathsep()
+  let $FOO = './foo'
+  call assert_equal('./foo/bar', expand('$FOO/bar'))
+  let $FOO = './foo/'
+  call assert_equal('./foo/bar', expand('$FOO/bar'))
+  let $FOO = 'C:'
+  call assert_equal('C:/bar', expand('$FOO/bar'))
+  let $FOO = 'C:/'
+  call assert_equal('C:/bar', expand('$FOO/bar'))
+
+  unlet $FOO
 endfunc
 
 func Test_expandcmd()
@@ -141,7 +154,7 @@ func Test_source_sfile()
   if RunVim([], [], '--clean -s Xscript')
     call assert_equal([
           \ 'E1274: No script file name to substitute for "<script>"',
-          \ 'E498: no :source file name to substitute for "<sfile>"'],
+          \ 'E498: No :source file name to substitute for "<sfile>"'],
           \ readfile('Xresult'))
   endif
   call delete('Xscript')

@@ -1,6 +1,3 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check
-// it. PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
-
 // Multi-level queue for selective async event processing.
 // Not threadsafe; access must be synchronized externally.
 //
@@ -40,7 +37,7 @@
 //
 // The main reason for this queue hierarchy is to allow focusing on a single
 // event emitter while blocking the main loop. For example, if the `jobwait`
-// VimL function is called on job1, the main loop will temporarily stop polling
+// Vimscript function is called on job1, the main loop will temporarily stop polling
 // the event loop queue and poll job1 queue instead. Same with channels, when
 // calling `rpcrequest` we want to temporarily stop processing events from
 // other sources and focus on a specific channel.
@@ -48,11 +45,10 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <uv.h>
 
 #include "nvim/event/defs.h"
 #include "nvim/event/multiqueue.h"
-#include "nvim/lib/queue.h"
+#include "nvim/lib/queue_defs.h"
 #include "nvim/memory.h"
 
 typedef struct multiqueue_item MultiQueueItem;
@@ -160,7 +156,7 @@ void multiqueue_purge_events(MultiQueue *self)
 {
   assert(self);
   while (!multiqueue_empty(self)) {
-    (void)multiqueue_remove(self);
+    multiqueue_remove(self);
   }
 }
 
@@ -264,7 +260,7 @@ Event event_create_oneshot(Event ev, int num)
   data->event = ev;
   data->fired = false;
   data->refcount = num;
-  return event_create(multiqueue_oneshot_event, 1, data);
+  return event_create(multiqueue_oneshot_event, data);
 }
 static void multiqueue_oneshot_event(void **argv)
 {

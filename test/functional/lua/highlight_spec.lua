@@ -1,9 +1,13 @@
-local helpers = require('test.functional.helpers')(after_each)
-local exec_lua = helpers.exec_lua
-local eq = helpers.eq
-local eval = helpers.eval
-local command = helpers.command
-local clear = helpers.clear
+local t = require('test.testutil')
+local n = require('test.functional.testnvim')()
+
+local exec_lua = n.exec_lua
+local eq = t.eq
+local neq = t.neq
+local eval = n.eval
+local command = n.command
+local clear = n.clear
+local api = n.api
 
 describe('vim.highlight.on_yank', function()
   before_each(function()
@@ -16,19 +20,49 @@ describe('vim.highlight.on_yank', function()
       vim.highlight.on_yank({timeout = 10, on_macro = true, event = {operator = "y", regtype = "v"}})
       vim.cmd('bwipeout!')
     ]])
-    helpers.sleep(10)
-    helpers.feed('<cr>') -- avoid hang if error message exists
+    vim.uv.sleep(10)
+    n.feed('<cr>') -- avoid hang if error message exists
     eq('', eval('v:errmsg'))
   end)
 
   it('does not close timer twice', function()
     exec_lua([[
       vim.highlight.on_yank({timeout = 10, on_macro = true, event = {operator = "y"}})
-      vim.loop.sleep(10)
+      vim.uv.sleep(10)
       vim.schedule(function()
         vim.highlight.on_yank({timeout = 0, on_macro = true, event = {operator = "y"}})
       end)
     ]])
     eq('', eval('v:errmsg'))
+  end)
+
+  it('does not show in another window', function()
+    command('vsplit')
+    exec_lua([[
+      vim.api.nvim_buf_set_mark(0,"[",1,1,{})
+      vim.api.nvim_buf_set_mark(0,"]",1,1,{})
+      vim.highlight.on_yank({timeout = math.huge, on_macro = true, event = {operator = "y"}})
+    ]])
+    neq({}, api.nvim__win_get_ns(0))
+    command('wincmd w')
+    eq({}, api.nvim__win_get_ns(0))
+  end)
+
+  it('removes old highlight if new one is created before old one times out', function()
+    command('vnew')
+    exec_lua([[
+      vim.api.nvim_buf_set_mark(0,"[",1,1,{})
+      vim.api.nvim_buf_set_mark(0,"]",1,1,{})
+      vim.highlight.on_yank({timeout = math.huge, on_macro = true, event = {operator = "y"}})
+    ]])
+    neq({}, api.nvim__win_get_ns(0))
+    command('wincmd w')
+    exec_lua([[
+      vim.api.nvim_buf_set_mark(0,"[",1,1,{})
+      vim.api.nvim_buf_set_mark(0,"]",1,1,{})
+      vim.highlight.on_yank({timeout = math.huge, on_macro = true, event = {operator = "y"}})
+    ]])
+    command('wincmd w')
+    eq({}, api.nvim__win_get_ns(0))
   end)
 end)

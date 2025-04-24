@@ -41,9 +41,9 @@ func AssertHighlightGroups(lnum, startcol, expected, trans = 1, msg = "")
 
   for l:i in range(a:startcol, a:startcol + l:expectedGroups->len() - 1)
     let l:errors += synID(a:lnum, l:i, a:trans)
-         \ ->synIDattr("name")
-         \ ->assert_equal(l:expectedGroups[l:i - 1],
-         \    l:msg .. l:i)
+          \ ->synIDattr("name")
+          \ ->assert_equal(l:expectedGroups[l:i - 1],
+          \    l:msg .. l:i)
   endfor
 endfunc
 
@@ -197,14 +197,14 @@ func Test_syntax_completion()
   " Check that clearing "Aap" avoids it showing up before Boolean.
   hi @Aap ctermfg=blue
   call feedkeys(":syn list \<C-A>\<C-B>\"\<CR>", 'tx')
-  call assert_match('^"syn list @Aap @boolean @character ', @:)
+  call assert_match('^"syn list @Aap @attribute @attribute.builtin @boolean @character ', @:)
   hi clear @Aap
 
   call feedkeys(":syn list \<C-A>\<C-B>\"\<CR>", 'tx')
-  call assert_match('^"syn list @boolean @character ', @:)
+  call assert_match('^"syn list @attribute @attribute.builtin @boolean @character ', @:)
 
   call feedkeys(":syn match \<C-A>\<C-B>\"\<CR>", 'tx')
-  call assert_match('^"syn match @boolean @character ', @:)
+  call assert_match('^"syn match @attribute @attribute.builtin @boolean @character ', @:)
 
   syn cluster Aax contains=Aap
   call feedkeys(":syn list @A\<C-A>\<C-B>\"\<CR>", 'tx')
@@ -214,7 +214,7 @@ endfunc
 func Test_echohl_completion()
   call feedkeys(":echohl no\<C-A>\<C-B>\"\<CR>", 'tx')
   " call assert_equal('"echohl NonText Normal none', @:)
-  call assert_equal('"echohl NonText Normal NormalFloat none', @:)
+  call assert_equal('"echohl NonText Normal NormalFloat NormalNC none', @:)
 endfunc
 
 func Test_syntax_arg_skipped()
@@ -460,7 +460,7 @@ func Test_invalid_name()
 endfunc
 
 func Test_ownsyntax()
-  new Xfoo
+  new XfooOwnSyntax
   call setline(1, '#define FOO')
   syntax on
   set filetype=c

@@ -21,6 +21,7 @@ func MyHandlerWithLists(lists, timer)
 endfunc
 
 func Test_timer_oneshot()
+  let g:test_is_flaky = 1
   let g:val = 0
   let timer = timer_start(50, 'MyHandler')
   let slept = WaitFor('g:val == 1')
@@ -33,6 +34,7 @@ func Test_timer_oneshot()
 endfunc
 
 func Test_timer_repeat_three()
+  let g:test_is_flaky = 1
   let g:val = 0
   let timer = timer_start(50, 'MyHandler', {'repeat': 3})
   let slept = WaitFor('g:val == 3')
@@ -45,6 +47,7 @@ func Test_timer_repeat_three()
 endfunc
 
 func Test_timer_repeat_many()
+  let g:test_is_flaky = 1
   let g:val = 0
   let timer = timer_start(50, 'MyHandler', {'repeat': -1})
   sleep 200m
@@ -53,6 +56,7 @@ func Test_timer_repeat_many()
 endfunc
 
 func Test_timer_with_partial_callback()
+  let g:test_is_flaky = 1
   let g:val = 0
   let meow = {'one': 1}
   function meow.bite(...)
@@ -93,7 +97,13 @@ func Test_timer_info()
   call timer_stop(id)
   call assert_equal([], timer_info(id))
 
-  call assert_fails('call timer_info("abc")', 'E39:')
+  call assert_fails('call timer_info("abc")', 'E1210:')
+
+  " check repeat count inside the callback
+  let g:timer_repeat = []
+  let tid = timer_start(10, {tid -> execute("call add(g:timer_repeat, timer_info(tid)[0].repeat)")}, #{repeat: 3})
+  call WaitForAssert({-> assert_equal([2, 1, 0], g:timer_repeat)})
+  unlet g:timer_repeat
 endfunc
 
 func Test_timer_stopall()
@@ -108,6 +118,7 @@ func Test_timer_stopall()
 endfunc
 
 func Test_timer_paused()
+  let g:test_is_flaky = 1
   let g:val = 0
 
   let id = timer_start(50, 'MyHandler')
@@ -162,6 +173,7 @@ func StopTimer2(timer)
 endfunc
 
 func Test_timer_stop_in_callback()
+  let g:test_is_flaky = 1
   call assert_equal(0, len(timer_info()))
   let g:timer1 = timer_start(10, 'StopTimer1')
   let slept = 0
@@ -181,6 +193,7 @@ func StopTimerAll(timer)
 endfunc
 
 func Test_timer_stop_all_in_callback()
+  let g:test_is_flaky = 1
   call assert_equal(0, len(timer_info()))
   call timer_start(10, 'StopTimerAll')
   call assert_equal(1, len(timer_info()))
@@ -228,9 +241,9 @@ func Test_timer_errors()
   sleep 50m
   call assert_equal(3, g:call_count)
 
-  call assert_fails('call timer_start(100, "MyHandler", "abc")', 'E475:')
+  call assert_fails('call timer_start(100, "MyHandler", "abc")', 'E1206:')
   call assert_fails('call timer_start(100, [])', 'E921:')
-  call assert_fails('call timer_stop("abc")', 'E39:')
+  call assert_fails('call timer_stop("abc")', 'E1210:')
 endfunc
 
 func FuncWithCaughtError(timer)
@@ -380,9 +393,9 @@ func Test_timer_error_in_timer_callback()
   call WaitForAssert({-> assert_notequal('', term_getline(buf, 8))})
 
   " GC must not run during timer callback, which can make Vim crash.
-  call term_wait(buf, 100)
+  call TermWait(buf, 50)
   call term_sendkeys(buf, "\<CR>")
-  call term_wait(buf, 100)
+  call TermWait(buf, 50)
   call assert_equal('run', job_status(job))
 
   call term_sendkeys(buf, ":qall!\<CR>")

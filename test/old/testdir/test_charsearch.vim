@@ -41,7 +41,7 @@ func Test_charsearch()
   call assert_beeps('normal ;')
   call assert_beeps('normal ,')
 
-  call assert_fails("call setcharsearch([])", 'E715:')
+  call assert_fails("call setcharsearch([])", 'E1206:')
   enew!
 endfunc
 

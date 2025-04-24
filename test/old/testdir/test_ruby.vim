@@ -282,7 +282,7 @@ func Test_ruby_Vim_buffer_get()
   call assert_match('Xfoo1$', rubyeval('Vim::Buffer[1].name'))
   call assert_match('Xfoo2$', rubyeval('Vim::Buffer[2].name'))
   call assert_fails('ruby print Vim::Buffer[3].name',
-        \           "NoMethodError: undefined method `name' for nil:NilClass")
+        \           "NoMethodError: undefined method `name' for nil")
   %bwipe
 endfunc
 
@@ -341,11 +341,11 @@ func Test_ruby_Vim_evaluate_list()
   call setline(line('$'), ['2 line 2'])
   ruby Vim.command("normal /^2\n")
   let l = ["abc", "def"]
-  ruby << EOF
-  curline = $curbuf.line_number
-  l = Vim.evaluate("l");
-  $curbuf.append(curline, l.join("|"))
-EOF
+  ruby << trim EOF
+    curline = $curbuf.line_number
+    l = Vim.evaluate("l");
+    $curbuf.append(curline, l.join("|"))
+  EOF
   normal j
   .rubydo $_ = $_.gsub(/\|/, '/')
   call assert_equal('abc/def', getline('$'))
@@ -412,6 +412,26 @@ func Test_rubyeval_error()
   "   "SyntaxError: array length must be 2"
   " Unclear why. The test does not check the error message.
   call assert_fails('call rubyeval("(")')
+endfunc
+
+" Test for various heredoc syntax
+func Test_ruby_heredoc()
+  ruby << END
+Vim.command('let s = "A"')
+END
+  ruby <<
+Vim.command('let s ..= "B"')
+.
+  ruby << trim END
+    Vim.command('let s ..= "C"')
+  END
+  ruby << trim
+    Vim.command('let s ..= "D"')
+  .
+  ruby << trim eof
+    Vim.command('let s ..= "E"')
+  eof
+  call assert_equal('ABCDE', s)
 endfunc
 
 " vim: shiftwidth=2 sts=2 expandtab

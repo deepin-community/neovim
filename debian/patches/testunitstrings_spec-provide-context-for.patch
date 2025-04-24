@@ -1,0 +1,53 @@
+From: James McCoy <jamessan@jamessan.com>
+Date: Tue, 28 Jan 2025 20:32:40 -0500
+Subject: test(unit/strings_spec): provide context for vim_snprintf tests
+
+Since these assertions all use a common function to perform the test
+assertions, it's difficult to figure out which test failed:
+
+    ERROR    test/unit/testutil.lua @ 785: vim_snprintf() positional arguments
+    test/unit/testutil.lua:757: test/unit/testutil.lua:741: (string) '
+    test/unit/strings_spec.lua:143: Expected objects to be the same.
+    Passed in:
+    (number) 6400
+    Expected:
+    (number) 6'
+    exit code: 256
+
+Adding context to the assertion makes it clearer what the problem is:
+
+    ERROR    test/unit/testutil.lua @ 785: vim_snprintf() positional arguments
+    test/unit/testutil.lua:757: test/unit/testutil.lua:741: (string) '
+    test/unit/strings_spec.lua:149: snprintf(buf, 0, "%1$0.*2$b", cdata<unsigned int>: 0xf78d0f38, cdata<int>: 0xf78dc4e0) = 001100
+    Expected objects to be the same.
+    Passed in:
+    (number) 6400
+    Expected:
+    (number) 6'
+    exit code: 256
+
+(cherry picked from commit a7be4b7bf857de9680ee3d1723a9f616e8a20776)
+(cherry picked from commit 452ed57b7166e44cdf149886647d4e4d1e9ad096)
+---
+ test/unit/strings_spec.lua | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/test/unit/strings_spec.lua b/test/unit/strings_spec.lua
+index 25cdc27..86d528f 100644
+--- a/test/unit/strings_spec.lua
++++ b/test/unit/strings_spec.lua
+@@ -140,7 +140,13 @@ end)
+ 
+ describe('vim_snprintf()', function()
+   local function a(expected, buf, bsize, fmt, ...)
+-    eq(#expected, strings.vim_snprintf(buf, bsize, fmt, ...))
++    local args = { ... }
++    local ctx = string.format('snprintf(buf, %d, "%s"', bsize, fmt)
++    for _, x in ipairs(args) do
++      ctx = ctx .. ', ' .. tostring(x)
++    end
++    ctx = ctx .. string.format(') = %s', expected)
++    eq(#expected, strings.vim_snprintf(buf, bsize, fmt, ...), ctx)
+     if bsize > 0 then
+       local actual = ffi.string(buf, math.min(#expected + 1, bsize))
+       eq(expected:sub(1, bsize - 1) .. '\0', actual)
